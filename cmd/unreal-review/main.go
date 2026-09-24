@@ -20,6 +20,8 @@ func run(args []string) error {
 	switch args[0] {
 	case "run":
 		return cmdRun(args[1:])
+	case "group":
+		return cmdGroup(args[1:])
 	case "render":
 		return cmdRender(args[1:])
 	case "help", "-h", "--help":
@@ -37,6 +39,7 @@ Render that file for GitHub inline comments, markdown, or another host.
 
 Usage:
   unreal-review run [--from <rev>] [--to <rev>] [--exclude <glob>] [paths...]
+  unreal-review group [--from <rev>] [--to <rev>] [--exclude <glob>] [paths...]
   unreal-review render github [flags] [findings.jsonl]
   unreal-review render markdown [flags] [findings.jsonl]
 
@@ -44,7 +47,9 @@ Run writes a findings JSONL document. That file is the review and the
 checkpoint: it records status and the reviewed commit SHAs. Omit --from
 and --to to review the working tree against the merge-base of main or
 master. Pass either flag as a branch, tag, or SHA to pin the range.
-Interrupt to pause; run again with the same --out to continue. Render
+Interrupt to pause; run again with the same --out to continue.
+Group prints related files from the same git range so a large change
+can be reviewed in pieces; it does not start the agent. Render
 reads that document and produces a display-specific output. GitHub
 inline comments are a renderer, not the review itself. GitHub posting
 requires a complete review.

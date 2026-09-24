@@ -1,6 +1,6 @@
 ---
 name: verify-unreal-review
-description: Drive the unreal-review CLI the way a user does — build the binary, review a git range into findings.jsonl, render markdown or a GitHub dry-run payload, and keep stdout/stderr/exit/files as evidence. Use when proving CLI behavior, verifying a change to run/render/checkpoint, or when asked to /verify-unreal-review.
+description: Drive the unreal-review CLI the way a user does — build the binary, review a git range into findings.jsonl, group related files, render markdown or a GitHub dry-run payload, and keep stdout/stderr/exit/files as evidence. Use when proving CLI behavior, verifying a change to run/group/render/checkpoint, or when asked to /verify-unreal-review.
 ---
 
 # Verify unreal-review
@@ -36,7 +36,7 @@ Read-only. Run after launch, at the start of every fresh session, and after unex
 It must report `doctor: ok` and confirm all of:
 
 - `VERIFY_BIN` is `$REPO/bin/unreal-review` and executable
-- `unreal-review help` exits 0 and names `run`
+- `unreal-review help` exits 0 and names `run` and `group`
 - the binary is not older than `cmd/unreal-review/*.go` or `internal/*/*.go`
 - `go` and `git` are on `PATH`
 - evidence and scratch live under `$VERIFY_ROOT`, outside the repo
@@ -71,7 +71,7 @@ Live review of a non-empty diff spends OpenRouter credit. Drive it only when the
 
 Do not post a GitHub review unless the user names a disposable pull request. Default GitHub proof is `--dry-run`.
 
-Stable handles: subcommands `run`, `render markdown`, `render github`; flags `--from`, `--to`, `--exclude`, `--out`, `--fresh`, `--workspace`, `--dry-run`, `--pr`, `--token`; positional pathspecs; `examples/findings.jsonl`.
+Stable handles: subcommands `run`, `group`, `render markdown`, `render github`; flags `--from`, `--to`, `--exclude`, `--out`, `--fresh`, `--workspace`, `--dry-run`, `--pr`, `--token`; positional pathspecs; `examples/findings.jsonl`.
 
 ## Evidence
 

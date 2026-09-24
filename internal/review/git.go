@@ -12,38 +12,14 @@ import (
 )
 
 func loadGitDiff(ctx context.Context, workspace, from, to string, paths, exclude []string) (string, findings.Source, error) {
-	if from == "" {
-		detected, err := detectFrom(ctx, workspace)
-		if err != nil {
-			return "", findings.Source{}, err
-		}
-		from = detected
-	}
-	if _, err := gitRev(ctx, workspace, from); err != nil {
+	from, to, fromSHA, toSHA, err := resolveRevs(ctx, workspace, from, to)
+	if err != nil {
 		return "", findings.Source{}, err
 	}
-	if to != "" {
-		if _, err := gitRev(ctx, workspace, to); err != nil {
-			return "", findings.Source{}, err
-		}
-	}
-
-	scope := make([]string, 0, len(paths)+len(exclude)+1)
-	scope = append(scope, paths...)
-	if len(scope) == 0 && len(exclude) > 0 {
-		scope = append(scope, ".")
-	}
-	for _, pattern := range exclude {
-		scope = append(scope, excludeSpec(pattern))
-	}
-
-	diff, err := git(ctx, workspace, gitDiffArgs(from, to, scope)...)
+	diff, err := git(ctx, workspace, gitDiffArgs(from, to, pathspecScope(paths, exclude))...)
 	if err != nil {
 		return "", findings.Source{}, fmt.Errorf("git diff: %w", err)
 	}
-
-	fromSHA, _ := gitRev(ctx, workspace, from)
-	toSHA, _ := gitRev(ctx, workspace, headRev(to))
 	source := findings.Source{
 		Kind:    "git",
 		Base:    from,
@@ -53,6 +29,37 @@ func loadGitDiff(ctx context.Context, workspace, from, to string, paths, exclude
 		DiffSHA: diffFingerprint(diff),
 	}
 	return diff, source, nil
+}
+
+func resolveRevs(ctx context.Context, workspace, from, to string) (string, string, string, string, error) {
+	if from == "" {
+		detected, err := detectFrom(ctx, workspace)
+		if err != nil {
+			return "", "", "", "", err
+		}
+		from = detected
+	}
+	fromSHA, err := gitRev(ctx, workspace, from)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	toSHA, err := gitRev(ctx, workspace, headRev(to))
+	if err != nil {
+		return "", "", "", "", err
+	}
+	return from, to, fromSHA, toSHA, nil
+}
+
+func pathspecScope(paths, exclude []string) []string {
+	scope := make([]string, 0, len(paths)+len(exclude)+1)
+	scope = append(scope, paths...)
+	if len(scope) == 0 && len(exclude) > 0 {
+		scope = append(scope, ".")
+	}
+	for _, pattern := range exclude {
+		scope = append(scope, excludeSpec(pattern))
+	}
+	return scope
 }
 
 func excludeSpec(pattern string) string {
@@ -66,7 +73,16 @@ func excludeSpec(pattern string) string {
 }
 
 func gitDiffArgs(from, to string, pathspecs []string) []string {
-	args := []string{"diff", "--no-color", "--no-ext-diff", "--merge-base", from}
+	return gitDiffFlags(from, to, pathspecs, "--no-color", "--no-ext-diff")
+}
+
+func gitNumstatArgs(from, to string, pathspecs []string) []string {
+	return gitDiffFlags(from, to, pathspecs, "--numstat", "--no-color", "--no-ext-diff")
+}
+
+func gitDiffFlags(from, to string, pathspecs []string, flags ...string) []string {
+	args := append([]string{"diff"}, flags...)
+	args = append(args, "--merge-base", from)
 	if to != "" {
 		args = append(args, to)
 	}

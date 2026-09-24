@@ -29,7 +29,7 @@ Preconditions:
 - Launch and doctor have succeeded.
 - This recipe unsets `UNREAL_HARNESS_LLM_MODEL` where noted so the model gate is visible.
 
-- **Help.** Run `unreal-review help`. Run `scripts/cli.sh --name usage-help -- help`. Exit code `0`. `stdout.txt` contains `Usage:` and `unreal-review run`.
+- **Help.** Run `unreal-review help`. Run `scripts/cli.sh --name usage-help -- help`. Exit code `0`. `stdout.txt` contains `Usage:`, `unreal-review run`, and `unreal-review group`.
 - **Missing command.** Run `unreal-review` with no args. Run `scripts/cli.sh --name usage-required --`. `exit.txt` is `1`. `stderr.txt` ends with `unreal-review: command required`.
 - **Unknown command.** Run `scripts/cli.sh --name usage-unknown -- frob`. Exit code `1`. `stderr.txt` contains `unreal-review: unknown command "frob"`.
 - **Missing model.** Run `env -u UNREAL_HARNESS_LLM_MODEL scripts/cli.sh --name run-model -- run --workspace "$VERIFY_SCRATCH" --out "$VERIFY_SCRATCH/unused.jsonl"`. Exit code `1`. `stderr.txt` contains `unreal-review: set --model or UNREAL_HARNESS_LLM_MODEL`.
