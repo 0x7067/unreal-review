@@ -1,0 +1,19 @@
+internal/review/review.go
+  s_cfea8b045bf4d3::t_66ba4dd41306d7 21-33,81,83,85-87,89-90,104,109,133,148-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a45e66f5bf1b48c37561d9f98115f99e60cce172",
+  "prompts": {},
+  "sessions": {
+    "s_cfea8b045bf4d3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a0d0b6-bc59-7ba0-bd8d-055d6cd7940b",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
