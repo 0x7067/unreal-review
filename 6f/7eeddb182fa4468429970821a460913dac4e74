@@ -1,0 +1,57 @@
+.grok/skills/verify-unreal-review/scripts/fixture-repo.sh
+  s_5a97bc0709e61c::t_aaaea9e7031cc6 1-36
+.grok/skills/verify-unreal-review/scripts/lib.sh
+  s_5a97bc0709e61c::t_7aeacc8d1b8561 1-38,42
+  s_5a97bc0709e61c::t_919b99aeac8f95 39-41
+.grok/skills/verify-unreal-review/scripts/sample-findings.sh
+  s_5a97bc0709e61c::t_a367859f2ec902 1-58
+.grok/skills/verify-unreal-review/features/cli-usage.md
+  s_5a97bc0709e61c::t_90d6d3bb76beec 1-48
+.grok/skills/verify-unreal-review/scripts/cli.sh
+  s_5a97bc0709e61c::t_fe3934eea14860 1-82
+.grok/skills/verify-unreal-review/features/review-git-range.md
+  s_5a97bc0709e61c::t_8b3b28a346fa94 1-48
+.grok/skills/verify-unreal-review/scripts/launch.sh
+  s_5a97bc0709e61c::t_b54a0914a63afe 1-22
+  s_5a97bc0709e61c::t_73039c49fd89b5 23-25
+.grok/skills/verify-unreal-review/features/README.md
+  s_5a97bc0709e61c::t_80baee16ef5766 1-49
+  s_d8828a5b22fa32::t_e34198d9a469a6 50
+.grok/skills/verify-unreal-review/features/render-markdown.md
+  s_5a97bc0709e61c::t_7bb83242707a93 1-54
+.grok/skills/verify-unreal-review/features/checkpoint.md
+  s_5a97bc0709e61c::t_b0ffbb527d9972 1-41
+.grok/skills/verify-unreal-review/scripts/cleanup.sh
+  s_5a97bc0709e61c::t_20252ecd1f8c10 1-26
+.grok/skills/verify-unreal-review/SKILL.md
+  s_5a97bc0709e61c::t_a6b4ff90bb39d0 1-113
+.grok/skills/verify-unreal-review/scripts/doctor.sh
+  s_5a97bc0709e61c::t_3a063badca849d 1-85
+.grok/skills/verify-unreal-review/features/render-github.md
+  s_5a97bc0709e61c::t_f0f43a0e4960df 1-52
+  s_5a97bc0709e61c::t_b5f3cc265aee51 53-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6f7eeddb182fa4468429970821a460913dac4e74",
+  "prompts": {},
+  "sessions": {
+    "s_5a97bc0709e61c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a0d35d-017c-7202-9459-bd3256e83052",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_d8828a5b22fa32": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0cc85-a92b-7c92-b031-f141fdcecdc0",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
