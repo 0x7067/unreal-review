@@ -1,0 +1,24 @@
+.golangci.yml
+  h_29be57c0addd47 6,10-23
+AGENTS.md
+  h_29be57c0addd47 7,18,20
+internal/findings/findings.go
+  h_29be57c0addd47 156-166,177,181,208,214,229,237,242,245,247-251,267,294-304,426
+internal/findings/findings_test.go
+  h_29be57c0addd47 1-86
+internal/review/git_test.go
+  h_29be57c0addd47 1-78
+schema/findings-v1.md
+  h_29be57c0addd47 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d840035332ca46b973c9dba8ac3bfb902d85ea79",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
