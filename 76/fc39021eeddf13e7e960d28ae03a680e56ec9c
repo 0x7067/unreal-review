@@ -1,0 +1,35 @@
+.grok/hooks/prove.sh
+  s_cc19439ed2384d::t_4d5f9e23abe1c5 1-8
+.grok/hooks/prove.json
+  s_cc19439ed2384d::t_ea29c3e11d1253 1-26
+.opencode/plugin/prove-stop.js
+  s_944e726431c9fb::t_96d2efbca530ee 1-43
+.pi/extensions/prove-stop.mjs
+  s_944e726431c9fb::t_bcbc58a2f4f0c3 1-18
+.pi/settings.json
+  s_944e726431c9fb::t_aab5ad8db42752 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "76fc39021eeddf13e7e960d28ae03a680e56ec9c",
+  "prompts": {},
+  "sessions": {
+    "s_944e726431c9fb": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d4c1-b16b-71a2-9bd7-c9ed929c9ede",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_cc19439ed2384d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a0d490-17c3-7aa0-bc9f-b4286e4c9345",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
