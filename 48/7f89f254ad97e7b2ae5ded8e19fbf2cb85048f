@@ -1,0 +1,20 @@
+.grok/skills/verify-unreal-review/scripts/lib.sh
+  s_5a97bc0709e61c::t_7aeacc8d1b8561 3-5
+  s_5a97bc0709e61c::t_38c0d7a5f55034 6-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "487f89f254ad97e7b2ae5ded8e19fbf2cb85048f",
+  "prompts": {},
+  "sessions": {
+    "s_5a97bc0709e61c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a0d35d-017c-7202-9459-bd3256e83052",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
