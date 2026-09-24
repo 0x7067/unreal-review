@@ -1,0 +1,64 @@
+spec/checkpoint.bend
+  s_cc19439ed2384d::t_f53ae044e255e1 1-64,68-70
+  s_cc19439ed2384d::t_49ae4d118eae74 65-67
+  s_cc19439ed2384d::t_ca1562b90882d8 71
+spec/nat.bend
+  s_cc19439ed2384d::t_67737c363eaef2 1-48
+  s_cc19439ed2384d::t_496c127dea58f2 49-51
+spec/github.bend
+  s_cc19439ed2384d::t_9defae4d529664 1-7,11-17,25-27,29,31-32,34,36,38-39,41-53
+  s_cc19439ed2384d::t_6d76e485a51c28 8-10,18-24,28,30,33,35,37,40
+spec/group.bend
+  s_cc19439ed2384d::t_bb2f149321bacc 1-12,30-33,35,42-45,50-64,66-91,93-94,96-121,123-130,345
+  s_cc19439ed2384d::t_8d777dd6b3840e 13-29,34,36-41,46-49,65,122,131-343,346-357
+  s_944e726431c9fb::t_da6f2fc3a12a5c 92,95,344,358-1298
+LAWS.bend
+  s_cc19439ed2384d::t_cbe0cbdc8ac7fd 1-201
+  s_cc19439ed2384d::t_eaa24de1f3a821 202-204
+spec/range.bend
+  s_cc19439ed2384d::t_ca0ab2fe4ae62c 1-39
+PROOF.bend
+  s_cc19439ed2384d::t_fdcccfa6eeba07 1-165
+  s_944e726431c9fb::t_d0eb4ac0adc7bf 166-174
+spec/findings.bend
+  s_cc19439ed2384d::t_87f2d3e8cb5259 1-197
+  s_544e30f7a269cd::t_7705ccfaaab360 198-199
+.github/workflows/ci.yml
+  s_944e726431c9fb::t_229baae8ccfeca 26-36,38-39
+Makefile
+  s_944e726431c9fb::t_3367de9038a35a 1,5,25-28
+README.md
+  s_944e726431c9fb::t_634f9a1daebafe 22-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "beeac11c09667a279509ce63300ddd7f54d43fe4",
+  "prompts": {},
+  "sessions": {
+    "s_544e30f7a269cd": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d49c-a3bc-744b-8d19-c86297eec895",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_944e726431c9fb": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d4c1-b16b-71a2-9bd7-c9ed929c9ede",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_cc19439ed2384d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a0d490-17c3-7aa0-bc9f-b4286e4c9345",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
