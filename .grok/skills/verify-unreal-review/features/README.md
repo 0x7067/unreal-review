@@ -18,7 +18,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 
 - Start every recipe from the baseline unless its preconditions say otherwise.
 - Treat every command as literal. Keep flag names and example paths unchanged.
-- Isolate GitHub auth with `cli.sh --no-github-auth` when the recipe must not send `GH_TOKEN`/`GITHUB_TOKEN` or call `gh`. `--dry-run` still GETs if `--token` is passed.
+- Isolate GitHub auth with `cli.sh --no-github-auth` when the recipe must not send `GH_TOKEN`/`GITHUB_TOKEN` or succeed at `gh auth token`. `--dry-run` still GETs if `--token` is passed.
 - Restore nothing in the product repo. Fixture repos are disposable.
 - Keep proof artifacts; `scripts/cleanup.sh` removes scratch only.
 

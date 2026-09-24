@@ -39,6 +39,12 @@ if [ -z "$name" ]; then
 	echo "cli.sh: --name is required" >&2
 	exit 2
 fi
+case "$name" in
+*[!A-Za-z0-9._-]*)
+	echo "cli.sh: --name must be a single path segment of letters, digits, dot, underscore, or hyphen" >&2
+	exit 2
+	;;
+esac
 
 step="$VERIFY_EVIDENCE/$name"
 mkdir -p "$step"
@@ -46,7 +52,11 @@ mkdir -p "$step"
 bin=$VERIFY_BIN
 path=$PATH
 if [ "$no_github" -eq 1 ]; then
-	path="$(dirname "$VERIFY_BIN"):/usr/bin:/bin"
+	shim="$VERIFY_SCRATCH/no-github-bin"
+	mkdir -p "$shim"
+	printf '%s\n' '#!/bin/sh' 'exit 1' >"$shim/gh"
+	chmod +x "$shim/gh"
+	path="$shim:$PATH"
 fi
 
 {

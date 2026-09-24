@@ -55,7 +55,7 @@ Run every CLI invocation through `scripts/cli.sh` so command, stdout, stderr, an
 .grok/skills/verify-unreal-review/scripts/cli.sh --name <step> --stdin <file> -- render markdown -
 ```
 
-`--no-github-auth` unsets `GH_TOKEN`/`GITHUB_TOKEN` and puts `gh` off `PATH`. That keeps `--dry-run` off the network unless the command also passes `--token`. Posting without `--no-github-auth` may still use `gh auth token`.
+`--no-github-auth` unsets `GH_TOKEN`/`GITHUB_TOKEN` and puts a failing `gh` shim first on `PATH`, so `gh auth token` cannot succeed. That keeps posting from using a host `gh`. `--dry-run` still GETs if `--token` is passed.
 
 For `run`, create a disposable repo first:
 

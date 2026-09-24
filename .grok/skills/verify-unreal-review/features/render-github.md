@@ -47,7 +47,7 @@ Preconditions:
 ## Gotchas
 
 - `--dry-run` reads `--token`, `GH_TOKEN`, and `GITHUB_TOKEN` only. It does not run `gh auth token`. Posting does, when those three are empty.
-- `--no-github-auth` is the no-network dry-run: no env token and no `gh`. `--token` on the command line still causes a GET.
+- `--no-github-auth` unsets env tokens and shadows `gh` with a failing shim. `--token` on the command line still causes a GET.
 - `--dry-run` skips the completeness check and skips `CreateReview`. It does not skip `GetPullRequest` / `ListPullFiles` when a token exists.
 - Findings whose lines are not in the PR patch are dropped only when those files were fetched (`HasLines`). A no-token dry-run places every finding.
 - Completeness for posting: `status=complete`, or missing `status`. `running` and `failed` refuse to post.

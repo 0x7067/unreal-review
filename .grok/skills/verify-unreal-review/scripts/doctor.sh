@@ -33,8 +33,8 @@ check "help exits 0" sh -c '"$VERIFY_BIN" help >/dev/null'
 check "help names run and render" sh -c '"$VERIFY_BIN" help | grep -q "unreal-review run"'
 check "go is on PATH" sh -c 'command -v go >/dev/null'
 check "git is on PATH" sh -c 'command -v git >/dev/null'
-check "scratch is outside the repo" sh -c 'case "$VERIFY_SCRATCH" in "$VERIFY_REPO"/*) exit 1;; *) exit 0;; esac'
-check "evidence is outside the repo" sh -c 'case "$VERIFY_EVIDENCE" in "$VERIFY_REPO"/*) exit 1;; *) exit 0;; esac'
+check "scratch is outside the repo" [ "$(under_repo "$VERIFY_SCRATCH")" = no ]
+check "evidence is outside the repo" [ "$(under_repo "$VERIFY_EVIDENCE")" = no ]
 
 newer=0
 for src in "$VERIFY_REPO"/cmd/unreal-review/*.go "$VERIFY_REPO"/internal/*/*.go; do
