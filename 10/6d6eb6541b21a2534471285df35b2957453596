@@ -1,0 +1,27 @@
+.grok/skills/verify-unreal-review/features/group-files.md
+  s_8919e5912302ac::t_ee40058bbff325 10-13,39-41
+README.md
+  s_8919e5912302ac::t_5196b885c26a97 47
+go.sum
+  s_8919e5912302ac::t_9e250ea8bbdbf6 1-2
+internal/review/git_test.go
+  s_8919e5912302ac::t_3a19cd14dd0be6 68,88,103,118,122-156,164,176-351,362,465
+internal/review/group.go
+  s_8919e5912302ac::t_ed820c52ffa317 60-61,137,156-159,200-205,210-219,236,238-247,273-276,278-283,286-318,320-321,323,448-452,457-528,548,551,652-685
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "106d6eb6541b21a2534471285df35b2957453596",
+  "prompts": {},
+  "sessions": {
+    "s_8919e5912302ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a313bcf9-573c-4fee-ba6b-49c20b5ea6ea",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
