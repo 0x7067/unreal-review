@@ -63,7 +63,14 @@ bend_wrap=""
 if command -v timeout >/dev/null 2>&1; then bend_wrap="timeout 240"
 elif command -v gtimeout >/dev/null 2>&1; then bend_wrap="gtimeout 240"
 fi
-proof_out="$(cd "$root" && $bend_wrap "$bend_bin" "$rel" --check-only 2>&1)"
+# Prefer the repo's own check, so the hook enforces exactly what `make prove`
+# does - including the @unsafe allowlist. Otherwise an agent could silence a law
+# with @unsafe, get a green hook, and only fail later in CI.
+if [ -x "$root/tools/prove.sh" ]; then
+  proof_out="$(cd "$root" && $bend_wrap sh tools/prove.sh 2>&1)"
+else
+  proof_out="$(cd "$root" && $bend_wrap "$bend_bin" "$rel" --check-only 2>&1)"
+fi
 status=$?
 
 # Bend exits 0 and prints "All terms check." on success, but prints

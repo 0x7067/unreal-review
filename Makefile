@@ -23,7 +23,7 @@ test:
 	go test ./...
 
 prove:
-	$(BEND) PROOF.bend --check-only
+	BEND=$(BEND) sh tools/prove.sh
 
 check: fmt-check lint vet test prove
 

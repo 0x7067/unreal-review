@@ -497,19 +497,15 @@ def uniqueImplGo(+stem: Nat, +ext: Nat, xs: List<&2, Item>, acc: Found) -> Found
 def uniqueImpl(stem: Nat, ext: Nat, xs: List<&2, Item>) -> Maybe<&2, Item>:
   foundItem(uniqueImplGo(stem, ext, xs, FoundNone{}))
 
-@unsafe def remapId(+id: Nat, +newKey: GKey, xs: List<&2, Item>) -> List<&2, Item>:
+# Single self-recursive def: Bool.pick does the branch inside its own body, so
+# the choice never has to be scrutinised here (a match cannot inspect a computed
+# value). That removes the mutual recursion, and with it the @unsafe marker.
+def remapId(+id: Nat, +newKey: GKey, xs: List<&2, Item>) -> List<&2, Item>:
   match xs:
     case Nil{}:
       Nil{}
     case Item{+f, k} <> t:
-      remapIdAt(id, newKey, f, k, t, Nat.is_eq(id, fileId(f)))
-
-def remapIdAt(+id: Nat, +newKey: GKey, f: ChangedFile, k: GKey, t: List<&2, Item>, eq: Bool) -> List<&2, Item>:
-  match eq:
-    case True{}:
-      Item{f, newKey} <> remapId(id, newKey, t)
-    case False{}:
-      Item{f, k} <> remapId(id, newKey, t)
+      Item{f, Bool.pick(GKey, Nat.is_eq(id, fileId(f)), newKey, k)} <> remapId(id, newKey, t)
 
 def testInDirK(k: FileKind) -> Bool:
   match k:
@@ -574,33 +570,19 @@ def attachFrom(todo: List<&2, Item>, xs: List<&2, Item>) -> List<&2, Item>:
 def attachAll(+xs: List<&2, Item>) -> List<&2, Item>:
   attachFrom(xs, xs)
 
-@unsafe def keyOf(+id: Nat, xs: List<&2, Item>) -> Maybe<&2, GKey>:
+def keyOf(+id: Nat, xs: List<&2, Item>) -> Maybe<&2, GKey>:
   match xs:
     case Nil{}:
       None{}
     case Item{+f, k} <> t:
-      keyOfAt(id, f, k, t, Nat.is_eq(id, fileId(f)))
+      Bool.pick(Maybe<&2, GKey>, Nat.is_eq(id, fileId(f)), Some{k}, keyOf(id, t))
 
-def keyOfAt(+id: Nat, f: ChangedFile, +k: GKey, t: List<&2, Item>, eq: Bool) -> Maybe<&2, GKey>:
-  match eq:
-    case True{}:
-      Some{k}
-    case False{}:
-      keyOf(id, t)
-
-@unsafe def remapKey(+old: GKey, +new: GKey, xs: List<&2, Item>) -> List<&2, Item>:
+def remapKey(+old: GKey, +new: GKey, xs: List<&2, Item>) -> List<&2, Item>:
   match xs:
     case Nil{}:
       Nil{}
     case Item{f, +k} <> t:
-      remapKeyAt(old, new, f, k, t, keyEq(old, k))
-
-def remapKeyAt(+old: GKey, +new: GKey, f: ChangedFile, k: GKey, t: List<&2, Item>, eq: Bool) -> List<&2, Item>:
-  match eq:
-    case True{}:
-      Item{f, new} <> remapKey(old, new, t)
-    case False{}:
-      Item{f, k} <> remapKey(old, new, t)
+      Item{f, Bool.pick(GKey, keyEq(old, k), new, k)} <> remapKey(old, new, t)
 
 def unionKeys(xs: List<&2, Item>, ka: Maybe<&2, GKey>, kb: Maybe<&2, GKey>) -> List<&2, Item>:
   match ka kb:
@@ -815,19 +797,13 @@ def mergeAllFilesGo(+xs: List<&2, Item>, +xs1: List<&2, Item>, e1: {filesOf(xs1)
 def mergeAllFiles(+xs: List<&2, Item>) -> {filesOf(mergeAll(xs)) == filesOf(xs) : List<&2, ChangedFile>}:
   mergeAllFilesGo(xs, mergePass(PassLocale{}, xs), mergePassFiles(PassLocale{}, xs))
 
-@unsafe def remapIdFiles(+id: Nat, +newKey: GKey, xs: List<&2, Item>) -> {filesOf(remapId(id, newKey, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
+# filesOf never looks at the key, so the pick above is invisible to it and this
+# needs no case analysis - just the induction hypothesis.
+def remapIdFiles(+id: Nat, +newKey: GKey, xs: List<&2, Item>) -> {filesOf(remapId(id, newKey, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
   match xs:
     case Nil{}:
       {==}
     case Item{+f, k} <> +t:
-      remapIdFilesAt(id, newKey, f, k, t, Nat.is_eq(id, fileId(f)))
-
-def remapIdFilesAt(+id: Nat, +newKey: GKey, +f: ChangedFile, k: GKey, +t: List<&2, Item>, eq: Bool) -> {filesOf(remapIdAt(id, newKey, f, k, t, eq)) == f <> filesOf(t) : List<&2, ChangedFile>}:
-  match eq:
-    case True{}:
-      %remapIdFiles(id, newKey, t) : {f <> filesOf(remapId(id, newKey, t)) == f <> _ : List<&2, ChangedFile>}
-      {==}
-    case False{}:
       %remapIdFiles(id, newKey, t) : {f <> filesOf(remapId(id, newKey, t)) == f <> _ : List<&2, ChangedFile>}
       {==}
 
@@ -877,19 +853,11 @@ def attachFromFiles(todo: List<&2, Item>, +xs: List<&2, Item>) -> {filesOf(attac
 def attachAllFiles(+xs: List<&2, Item>) -> {filesOf(attachAll(xs)) == filesOf(xs) : List<&2, ChangedFile>}:
   attachFromFiles(xs, xs)
 
-@unsafe def remapKeyFiles(+old: GKey, +new: GKey, xs: List<&2, Item>) -> {filesOf(remapKey(old, new, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
+def remapKeyFiles(+old: GKey, +new: GKey, xs: List<&2, Item>) -> {filesOf(remapKey(old, new, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
   match xs:
     case Nil{}:
       {==}
     case Item{+f, +k} <> +t:
-      remapKeyFilesAt(old, new, f, k, t, keyEq(old, k))
-
-def remapKeyFilesAt(+old: GKey, +new: GKey, +f: ChangedFile, k: GKey, +t: List<&2, Item>, eq: Bool) -> {filesOf(remapKeyAt(old, new, f, k, t, eq)) == f <> filesOf(t) : List<&2, ChangedFile>}:
-  match eq:
-    case True{}:
-      %remapKeyFiles(old, new, t) : {f <> filesOf(remapKey(old, new, t)) == f <> _ : List<&2, ChangedFile>}
-      {==}
-    case False{}:
       %remapKeyFiles(old, new, t) : {f <> filesOf(remapKey(old, new, t)) == f <> _ : List<&2, ChangedFile>}
       {==}
 

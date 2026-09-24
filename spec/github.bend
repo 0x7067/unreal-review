@@ -40,7 +40,7 @@ def commentable(f: F.Finding, hs: List<&2, Hunk>) -> Bool:
       rangeOk(ex, F.startLine(sp), hs)
 
 def cap50() -> Nat:
-  25n+25n
+  50n
 
 def underCap(n: Nat) -> Bool:
   Nat.is_le(n, cap50())
