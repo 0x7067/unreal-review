@@ -40,9 +40,12 @@ Usage:
   unreal-review render github [flags] [findings.jsonl]
   unreal-review render markdown [flags] [findings.jsonl]
 
-Run writes a findings JSONL document. Render reads that document and
-produces a display-specific output. GitHub inline comments are a renderer,
-not the review itself.
+Run writes a findings JSONL document. That file is the review and the
+checkpoint: it records status and the reviewed commit SHAs. Interrupt to
+pause; run again with the same --out to continue. Render reads that
+document and produces a display-specific output. GitHub inline comments
+are a renderer, not the review itself. GitHub posting requires a
+complete review.
 
 Environment:
   OPENROUTER_API_KEY             required for run

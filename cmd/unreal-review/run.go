@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"unreal-review/internal/agent"
 	"unreal-review/internal/findings"
 	"unreal-review/internal/review"
 )
@@ -20,6 +23,7 @@ func cmdRun(args []string) error {
 	base := fs.String("base", "", "git ref to diff against (default: main or master)")
 	head := fs.String("head", "", "git ref to diff; empty uses the working tree")
 	outPath := fs.String("out", "findings.jsonl", "findings JSONL path, or - for stdout")
+	fresh := fs.Bool("fresh", false, "start a new review even if --out already exists")
 	runner := fs.String("runner", "unreal-agent-runner", "unreal-agent-runner binary")
 	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
@@ -45,6 +49,13 @@ func cmdRun(args []string) error {
 	if key == "" {
 		return fmt.Errorf("set OPENROUTER_API_KEY")
 	}
+	level, err := agent.SanitizeLevel(*thinking)
+	if err != nil {
+		return err
+	}
+	if _, err := agent.LookPath(*runner); err != nil {
+		return err
+	}
 	var logWriter io.Writer
 	if *agentLog != "" {
 		file, err := os.Create(*agentLog)
@@ -54,34 +65,42 @@ func cmdRun(args []string) error {
 		defer func() { _ = file.Close() }()
 		logWriter = file
 	}
-	result, err := review.Run(context.Background(), review.Options{
-		Workspace:     *workspace,
-		Base:          *base,
-		Head:          *head,
-		Runner:        *runner,
-		Model:         *model,
-		ThinkingLevel: *thinking,
-		Provider:      *provider,
-		OpenRouterKey: key,
-		Timeout:       *timeout,
-		AgentLog:      logWriter,
-		Stderr:        os.Stderr,
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	result, err := review.Run(ctx, review.Options{
+		Workspace: *workspace,
+		Base:      *base,
+		Head:      *head,
+		Out:       *outPath,
+		Fresh:     *fresh,
+		Model:     *model,
+		Agent: agent.Runner{
+			Bin:           *runner,
+			ThinkingLevel: level,
+			Provider:      *provider,
+			APIKey:        key,
+			Log:           logWriter,
+			Stderr:        os.Stderr,
+			Timeout:       *timeout,
+		},
 	})
-	if err != nil {
-		return err
-	}
-	out, err := openOut(*outPath)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = out.Close() }()
-	if err := findings.Write(out, result.Report); err != nil {
-		return err
+	if (*outPath == "" || *outPath == "-") && result.Report.Run != nil {
+		out, writeErr := openOut(*outPath)
+		if writeErr != nil {
+			return writeErr
+		}
+		defer func() { _ = out.Close() }()
+		if writeErr := findings.Write(out, result.Report); writeErr != nil {
+			return writeErr
+		}
 	}
 	if result.Report.Run != nil {
 		fmt.Fprintf(os.Stderr, "cost: %s\n", result.Report.Run.Cost.Format())
+		if result.Report.Run.Status != "" && result.Report.Run.Status != findings.StatusComplete {
+			fmt.Fprintf(os.Stderr, "status: %s\n", result.Report.Run.Status)
+		}
 	}
-	return nil
+	return err
 }
 
 func openOut(path string) (io.WriteCloser, error) {

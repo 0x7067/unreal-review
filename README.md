@@ -29,6 +29,8 @@ unreal-review run --base main --out findings.jsonl
 
 `run` takes a git checkout (`--workspace`, default `.`), diffs `--base` against the working tree (or `--head`), and sends that unified diff to the agent with cwd at the checkout. It writes [findings.jsonl](schema/findings-v1.md). Every run records cost. Every finding has a severity: `error`, `warning`, or `note`.
 
+`--out` is the checkpoint. The `run` record stores completeness (`status`) and the reviewed commit SHAs plus a hash of the exact diff. Interrupt the process to pause. The same command continues that review if the diff is unchanged. `--fresh` starts over. GitHub rendering refuses a file that is not `complete`. The checkpoint is the findings file; it does not name an agent backend.
+
 ```sh
 unreal-review render markdown findings.jsonl
 ```

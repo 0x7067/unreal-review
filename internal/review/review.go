@@ -1,10 +1,11 @@
 package review
 
 import (
-	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,7 +13,6 @@ import (
 	"time"
 	"uuid"
 
-	"unreal-review/internal/agent"
 	"unreal-review/internal/findings"
 )
 
@@ -34,17 +34,13 @@ Prefer lines that appear in the diff. One finding per issue. If nothing material
 )
 
 type Options struct {
-	Workspace     string
-	Base          string
-	Head          string
-	Runner        string
-	Model         string
-	ThinkingLevel string
-	Provider      string
-	OpenRouterKey string
-	Timeout       time.Duration
-	AgentLog      io.Writer
-	Stderr        io.Writer
+	Workspace string
+	Base      string
+	Head      string
+	Out       string
+	Fresh     bool
+	Model     string
+	Agent     Agent
 }
 
 type Result struct {
@@ -71,81 +67,137 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	baseSHA, _ := gitRev(ctx, workspace, base)
 	headSHA, _ := gitRev(ctx, workspace, headRev(opts.Head))
-	runMeta := newRun(opts.Model, base, opts.Head, baseSHA, headSHA)
+	source := findings.Source{
+		Kind:    "git",
+		Base:    base,
+		Head:    opts.Head,
+		BaseSHA: baseSHA,
+		HeadSHA: headSHA,
+		DiffSHA: diffFingerprint(diff),
+	}
+	runMeta := newRun(opts.Model, source)
 	if strings.TrimSpace(diff) == "" {
-		return Result{Report: findings.Report{
+		runMeta.Status = findings.StatusComplete
+		result := Result{Report: findings.Report{
 			Run:     runMeta,
 			Summary: "No changes to review.",
-		}, Diff: diff}, nil
+		}, Diff: diff}
+		if err := persist(opts.Out, result.Report); err != nil {
+			return result, err
+		}
+		return result, nil
 	}
-	findingsFile, err := os.CreateTemp("", "unreal-review-findings-*.jsonl")
-	if err != nil {
-		return Result{}, fmt.Errorf("create findings file: %w", err)
-	}
-	findingsPath := findingsFile.Name()
-	if err := findingsFile.Close(); err != nil {
-		return Result{}, fmt.Errorf("close findings file: %w", err)
-	}
-	defer func() { _ = os.Remove(findingsPath) }()
 
-	level, err := agent.SanitizeLevel(opts.ThinkingLevel)
+	checkpoint, err := loadCheckpoint(opts.Out)
 	if err != nil {
 		return Result{}, err
 	}
-	if _, err := agent.LookPath(opts.Runner); err != nil {
-		return Result{}, err
-	}
-	var logBuf bytes.Buffer
-	logWriter := io.Writer(&logBuf)
-	if opts.AgentLog != nil {
-		logWriter = io.MultiWriter(&logBuf, opts.AgentLog)
-	}
-	if err := agent.Run(ctx, agent.Request{
-		Workspace:     workspace,
-		Runner:        opts.Runner,
-		Model:         opts.Model,
-		ThinkingLevel: level,
-		SystemPrompt:  systemPrompt,
-		Prompt:        reviewPrompt(base, opts.Head, findingsPath, diff),
-		Provider:      opts.Provider,
-		OpenRouterKey: opts.OpenRouterKey,
-		Log:           logWriter,
-		Stderr:        opts.Stderr,
-		Timeout:       opts.Timeout,
-	}); err != nil {
-		return Result{}, err
-	}
-	cost, generationIDs, err := agent.ParseLogCost(bytes.NewReader(logBuf.Bytes()))
-	if err != nil {
-		return Result{}, err
-	}
-	if !agent.CostRecorded(cost) && opts.OpenRouterKey != "" && len(generationIDs) > 0 {
-		fetched, fetchErr := agent.FetchOpenRouterCost(ctx, opts.OpenRouterKey, generationIDs)
-		if fetchErr != nil {
-			return Result{}, fmt.Errorf("track review cost: %w", fetchErr)
+	resuming := false
+	if !opts.Fresh && checkpoint.Run != nil {
+		if checkpoint.Complete() {
+			return Result{Report: checkpoint, Diff: diff}, fmt.Errorf(
+				"%s is a complete review of %s; pass --fresh to start over",
+				opts.Out, formatSource(checkpoint.Run.Source),
+			)
 		}
-		cost = fetched
+		if !checkpoint.Run.Source.SameDiff(source) {
+			return Result{Report: checkpoint, Diff: diff}, fmt.Errorf(
+				"%s is a review of %s; workspace is %s",
+				opts.Out, formatSource(checkpoint.Run.Source), formatSource(source),
+			)
+		}
+		resuming = true
+		runMeta.ID = checkpoint.Run.ID
+		runMeta.CreatedAt = checkpoint.Run.CreatedAt
+		runMeta.Cost = checkpoint.Run.Cost
+		if runMeta.Cost.Currency == "" {
+			runMeta.Cost.Currency = "USD"
+		}
 	}
-	if !agent.CostRecorded(cost) {
-		return Result{}, fmt.Errorf("track review cost: agent log had no usage; OpenRouter should return usage.cost on every response")
+
+	if opts.Agent == nil {
+		return Result{}, fmt.Errorf("agent is required")
 	}
-	runMeta.Cost = cost
-	report, err := agent.ReadFindings(findingsPath)
+
+	findingsPath, cleanup, err := prepareWork(opts.Out, !resuming)
 	if err != nil {
 		return Result{}, err
 	}
-	if report.Run == nil {
+	defer cleanup()
+
+	prior, err := readWork(findingsPath)
+	if err != nil {
+		return Result{}, err
+	}
+	if resuming && len(prior.Findings) == 0 && strings.TrimSpace(prior.Summary) == "" {
+		prior.Findings = checkpoint.Findings
+		prior.Summary = checkpoint.Summary
+		if err := writeWork(findingsPath, prior); err != nil {
+			return Result{}, err
+		}
+	}
+	runMeta.Status = findings.StatusRunning
+	report := findings.Report{Run: runMeta, Findings: prior.Findings, Summary: prior.Summary}
+	if err := persist(opts.Out, report); err != nil {
+		return Result{Report: report, Diff: diff}, err
+	}
+
+	agentResult, agentErr := opts.Agent.Run(ctx, AgentRequest{
+		Workspace:    workspace,
+		ReviewID:     runMeta.ID,
+		FindingsPath: findingsPath,
+		Prompt:       reviewPrompt(base, opts.Head, findingsPath, diff),
+		SystemPrompt: systemPrompt,
+		Model:        opts.Model,
+	})
+	interrupted := agentErr != nil && (errors.Is(agentErr, context.Canceled) || errors.Is(agentErr, context.DeadlineExceeded) || ctx.Err() != nil)
+	runMeta.Cost = runMeta.Cost.Add(agentResult.Cost)
+
+	work, err := readWork(findingsPath)
+	if err != nil {
+		return Result{Report: report, Diff: diff}, err
+	}
+	report.Findings = mergeFindings(work.Findings)
+	report.Summary = work.Summary
+
+	switch {
+	case agentErr == nil && strings.TrimSpace(report.Summary) != "" && runMeta.Cost.Recorded():
+		runMeta.Status = findings.StatusComplete
 		report.Run = runMeta
-	} else {
-		report.Run.Cost = cost
-		if report.Run.Model == "" {
-			report.Run.Model = opts.Model
+		if err := persist(opts.Out, report); err != nil {
+			return Result{Report: report, Diff: diff}, err
 		}
-		if report.Run.Source.Kind == "" {
-			report.Run.Source = runMeta.Source
+		if fileOut(opts.Out) {
+			_ = os.Remove(findingsPath)
 		}
+		return Result{Report: report, Diff: diff}, nil
+	case interrupted:
+		runMeta.Status = findings.StatusRunning
+		report.Run = runMeta
+		if err := persist(opts.Out, report); err != nil {
+			return Result{Report: report, Diff: diff}, err
+		}
+		if fileOut(opts.Out) {
+			return Result{Report: report, Diff: diff}, fmt.Errorf("review paused; resume with the same --out %s", opts.Out)
+		}
+		if agentErr != nil {
+			return Result{Report: report, Diff: diff}, agentErr
+		}
+		return Result{Report: report, Diff: diff}, fmt.Errorf("review paused")
+	default:
+		runMeta.Status = findings.StatusFailed
+		report.Run = runMeta
+		if err := persist(opts.Out, report); err != nil {
+			return Result{Report: report, Diff: diff}, err
+		}
+		if agentErr != nil {
+			return Result{Report: report, Diff: diff}, agentErr
+		}
+		if strings.TrimSpace(report.Summary) == "" {
+			return Result{Report: report, Diff: diff}, fmt.Errorf("review did not write a summary")
+		}
+		return Result{Report: report, Diff: diff}, fmt.Errorf("review did not record cost")
 	}
-	return Result{Report: report, Diff: diff}, nil
 }
 
 func reviewPrompt(base, head, findingsPath, diff string) string {
@@ -166,19 +218,14 @@ func reviewPrompt(base, head, findingsPath, diff string) string {
 	)
 }
 
-func newRun(model, base, head, baseSHA, headSHA string) *findings.Run {
+func newRun(model string, source findings.Source) *findings.Run {
 	return &findings.Run{
 		ID:        uuid.New().String(),
 		CreatedAt: time.Now().UTC(),
 		Model:     model,
-		Source: findings.Source{
-			Kind:    "git",
-			Base:    base,
-			Head:    head,
-			BaseSHA: baseSHA,
-			HeadSHA: headSHA,
-		},
-		Cost: findings.Cost{Currency: "USD"},
+		Status:    findings.StatusRunning,
+		Source:    source,
+		Cost:      findings.Cost{Currency: "USD"},
 	}
 }
 
@@ -216,4 +263,110 @@ func headRev(head string) string {
 		return "HEAD"
 	}
 	return head
+}
+
+func diffFingerprint(diff string) string {
+	sum := sha256.Sum256([]byte(diff))
+	return hex.EncodeToString(sum[:])
+}
+
+func formatSource(source findings.Source) string {
+	return fmt.Sprintf("base %s head %s diff %s", shortSHA(source.BaseSHA), shortSHA(source.HeadSHA), shortSHA(source.DiffSHA))
+}
+
+func shortSHA(sha string) string {
+	if sha == "" {
+		return "-"
+	}
+	if len(sha) > 12 {
+		return sha[:12]
+	}
+	return sha
+}
+
+func fileOut(path string) bool {
+	return path != "" && path != "-"
+}
+
+func loadCheckpoint(path string) (findings.Report, error) {
+	if !fileOut(path) {
+		return findings.Report{}, nil
+	}
+	report, err := findings.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return findings.Report{}, nil
+	}
+	return report, err
+}
+
+func prepareWork(out string, truncate bool) (string, func(), error) {
+	if fileOut(out) {
+		path := out + ".work"
+		if err := openWork(path, truncate); err != nil {
+			return "", func() {}, err
+		}
+		return path, func() {}, nil
+	}
+	file, err := os.CreateTemp("", "unreal-review-findings-*.jsonl")
+	if err != nil {
+		return "", func() {}, fmt.Errorf("create findings file: %w", err)
+	}
+	path := file.Name()
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", func() {}, fmt.Errorf("close findings file: %w", err)
+	}
+	return path, func() { _ = os.Remove(path) }, nil
+}
+
+func openWork(path string, truncate bool) error {
+	flags := os.O_RDWR | os.O_CREATE
+	if truncate {
+		flags |= os.O_TRUNC
+	}
+	file, err := os.OpenFile(path, flags, 0o644)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", path, err)
+	}
+	return nil
+}
+
+func writeWork(path string, report findings.Report) error {
+	return findings.WriteFile(path, findings.Report{Findings: report.Findings, Summary: report.Summary})
+}
+
+func readWork(path string) (findings.Report, error) {
+	report, err := findings.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return findings.Report{}, nil
+	}
+	return report, err
+}
+
+func persist(path string, report findings.Report) error {
+	if !fileOut(path) {
+		return nil
+	}
+	return findings.WriteFile(path, report)
+}
+
+func mergeFindings(items []findings.Finding) []findings.Finding {
+	seen := make(map[string]int, len(items))
+	out := make([]findings.Finding, 0, len(items))
+	for _, item := range items {
+		if item.ID == "" {
+			out = append(out, item)
+			continue
+		}
+		if i, ok := seen[item.ID]; ok {
+			out[i] = item
+			continue
+		}
+		seen[item.ID] = len(out)
+		out = append(out, item)
+	}
+	return out
 }

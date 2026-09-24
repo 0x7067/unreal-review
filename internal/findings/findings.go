@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -38,12 +40,25 @@ const (
 	SeverityNote    Severity = "note"
 )
 
+type Status string
+
+const (
+	StatusRunning  Status = "running"
+	StatusComplete Status = "complete"
+	StatusFailed   Status = "failed"
+)
+
 type Source struct {
 	Kind    string `json:"kind"`
 	Base    string `json:"base,omitempty"`
 	Head    string `json:"head,omitempty"`
 	BaseSHA string `json:"base_sha,omitempty"`
 	HeadSHA string `json:"head_sha,omitempty"`
+	DiffSHA string `json:"diff_sha,omitempty"`
+}
+
+func (s Source) SameDiff(other Source) bool {
+	return s.BaseSHA == other.BaseSHA && s.HeadSHA == other.HeadSHA && s.DiffSHA == other.DiffSHA
 }
 
 type Cost struct {
@@ -64,10 +79,34 @@ func (c Cost) Format() string {
 	return fmt.Sprintf("%s %.6f (%d input, %d output, %d requests)", currency, c.AmountUSD, c.InputTokens, c.OutputTokens, c.Requests)
 }
 
+func (c Cost) Add(other Cost) Cost {
+	currency := c.Currency
+	if currency == "" {
+		currency = other.Currency
+	}
+	if currency == "" {
+		currency = "USD"
+	}
+	return Cost{
+		AmountUSD:         c.AmountUSD + other.AmountUSD,
+		Currency:          currency,
+		InputTokens:       c.InputTokens + other.InputTokens,
+		OutputTokens:      c.OutputTokens + other.OutputTokens,
+		ReasoningTokens:   c.ReasoningTokens + other.ReasoningTokens,
+		CachedInputTokens: c.CachedInputTokens + other.CachedInputTokens,
+		Requests:          c.Requests + other.Requests,
+	}
+}
+
+func (c Cost) Recorded() bool {
+	return c.Requests > 0 || c.InputTokens > 0 || c.OutputTokens > 0 || c.AmountUSD > 0
+}
+
 type Run struct {
 	ID        string    `json:"id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	Model     string    `json:"model,omitempty"`
+	Status    Status    `json:"status,omitempty"`
 	Source    Source    `json:"source"`
 	Cost      Cost      `json:"cost"`
 }
@@ -88,6 +127,13 @@ type Report struct {
 	Summary  string
 }
 
+func (r Report) Complete() bool {
+	if r.Run == nil || r.Run.Status == "" {
+		return true
+	}
+	return r.Run.Status == StatusComplete
+}
+
 type record struct {
 	V         int             `json:"v"`
 	Type      Type            `json:"type"`
@@ -104,6 +150,7 @@ type record struct {
 	Summary   string          `json:"summary,omitempty"`
 	Findings  json.RawMessage `json:"findings,omitempty"`
 	Cost      *Cost           `json:"cost,omitempty"`
+	Status    string          `json:"status,omitempty"`
 }
 
 func Parse(r io.Reader) (Report, error) {
@@ -235,8 +282,14 @@ func reportFromRecords(records []record) (Report, error) {
 
 func parseRun(rec record) (Run, error) {
 	run := Run{
-		ID:    rec.ID,
-		Model: rec.Model,
+		ID:     rec.ID,
+		Model:  rec.Model,
+		Status: Status(strings.TrimSpace(rec.Status)),
+	}
+	switch run.Status {
+	case "", StatusRunning, StatusComplete, StatusFailed:
+	default:
+		return Run{}, fmt.Errorf("status must be running, complete, or failed")
 	}
 	if rec.Source != nil {
 		run.Source = *rec.Source
@@ -354,6 +407,7 @@ func Write(w io.Writer, report Report) error {
 			Type:      TypeRun,
 			ID:        report.Run.ID,
 			Model:     report.Run.Model,
+			Status:    string(report.Run.Status),
 			Source:    &report.Run.Source,
 			CreatedAt: report.Run.CreatedAt.UTC().Format(time.RFC3339),
 			Cost:      &cost,
@@ -397,6 +451,43 @@ func Write(w io.Writer, report Report) error {
 		}); err != nil {
 			return fmt.Errorf("encode summary: %w", err)
 		}
+	}
+	return nil
+}
+
+func ReadFile(path string) (Report, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return Report{}, err
+	}
+	defer func() { _ = file.Close() }()
+	report, err := Parse(file)
+	if err != nil {
+		return Report{}, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return report, nil
+}
+
+func WriteFile(path string, report Report) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-")
+	if err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	tmpName := tmp.Name()
+	writeErr := Write(tmp, report)
+	closeErr := tmp.Close()
+	if writeErr != nil {
+		_ = os.Remove(tmpName)
+		return writeErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("write %s: %w", path, closeErr)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
 }

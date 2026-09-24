@@ -9,6 +9,11 @@ import (
 )
 
 func Markdown(w io.Writer, report findings.Report) error {
+	if report.Run != nil && report.Run.Status != "" && report.Run.Status != findings.StatusComplete {
+		if _, err := fmt.Fprintf(w, "Status: %s\n\n", report.Run.Status); err != nil {
+			return err
+		}
+	}
 	if report.Run != nil {
 		if _, err := fmt.Fprintf(w, "Cost: %s\n\n", report.Run.Cost.Format()); err != nil {
 			return err

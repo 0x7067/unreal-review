@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,82 +13,92 @@ import (
 	"strings"
 	"time"
 
-	"unreal-review/internal/findings"
+	"unreal-review/internal/review"
 )
 
 const defaultRunner = "unreal-agent-runner"
 
-type Request struct {
-	Workspace     string
-	Runner        string
-	Model         string
+type Runner struct {
+	Bin           string
 	ThinkingLevel string
-	SystemPrompt  string
-	Prompt        string
 	Provider      string
-	OpenRouterKey string
+	APIKey        string
 	Log           io.Writer
 	Stderr        io.Writer
 	Timeout       time.Duration
 }
 
-func Run(ctx context.Context, req Request) error {
-	runner := req.Runner
+var _ review.Agent = Runner{}
+
+func (r Runner) Run(ctx context.Context, req review.AgentRequest) (review.AgentResult, error) {
+	runner := r.Bin
 	if runner == "" {
 		runner = defaultRunner
 	}
-	if req.Timeout > 0 {
+	if r.Timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, req.Timeout)
+		ctx, cancel = context.WithTimeout(ctx, r.Timeout)
 		defer cancel()
 	}
 	payload := map[string]any{
-		"prompt":        req.Prompt,
 		"system_prompt": req.SystemPrompt,
+		"prompt":        req.Prompt,
+	}
+	if req.ReviewID != "" {
+		payload["session_id"] = req.ReviewID
+		payload["messages"] = []any{map[string]any{
+			"role":       "user",
+			"content":    req.Prompt,
+			"message_id": req.ReviewID,
+		}}
+		delete(payload, "prompt")
 	}
 	if req.Model != "" {
 		payload["model"] = req.Model
 	}
-	if req.ThinkingLevel != "" {
-		payload["thinking_level"] = req.ThinkingLevel
+	if r.ThinkingLevel != "" {
+		payload["thinking_level"] = r.ThinkingLevel
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("encode agent request: %w", err)
+		return review.AgentResult{}, fmt.Errorf("encode agent request: %w", err)
 	}
 	cmd := exec.CommandContext(ctx, runner, "-workspace", req.Workspace)
 	cmd.Stdin = bytes.NewReader(encoded)
-	if req.Log != nil {
-		cmd.Stdout = req.Log
-	} else {
-		cmd.Stdout = io.Discard
+	var logBuf bytes.Buffer
+	logWriter := io.Writer(&logBuf)
+	if r.Log != nil {
+		logWriter = io.MultiWriter(&logBuf, r.Log)
 	}
-	if req.Stderr != nil {
-		cmd.Stderr = req.Stderr
+	cmd.Stdout = logWriter
+	if r.Stderr != nil {
+		cmd.Stderr = r.Stderr
 	} else {
 		cmd.Stderr = os.Stderr
 	}
-	cmd.Env = runnerEnv(req)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("run %s: %w", runner, err)
+	cmd.Env = r.environ(req.Model)
+	runErr := cmd.Run()
+	if runErr != nil {
+		runErr = fmt.Errorf("run %s: %w", runner, runErr)
 	}
-	return nil
+	cost, generationIDs, err := ParseLogCost(bytes.NewReader(logBuf.Bytes()))
+	if err != nil {
+		return review.AgentResult{}, errors.Join(runErr, err)
+	}
+	interrupted := runErr != nil && (errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) || ctx.Err() != nil)
+	if !cost.Recorded() && r.APIKey != "" && len(generationIDs) > 0 {
+		fetched, fetchErr := FetchOpenRouterCost(ctx, r.APIKey, generationIDs)
+		if fetchErr != nil && !interrupted && ctx.Err() == nil {
+			return review.AgentResult{Cost: cost}, errors.Join(runErr, fmt.Errorf("track review cost: %w", fetchErr))
+		}
+		if fetchErr == nil {
+			cost = fetched
+		}
+	}
+	return review.AgentResult{Cost: cost}, runErr
 }
 
-func ReadFindings(path string) (findings.Report, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return findings.Report{}, fmt.Errorf("open findings: %w", err)
-	}
-	defer func() { _ = file.Close() }()
-	report, err := findings.Parse(file)
-	if err != nil {
-		return findings.Report{}, err
-	}
-	return report, nil
-}
-
-func runnerEnv(req Request) []string {
+func (r Runner) environ(model string) []string {
 	keep := map[string]string{}
 	for _, name := range []string{
 		"PATH", "HOME", "USER", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM",
@@ -100,7 +111,7 @@ func runnerEnv(req Request) []string {
 			keep[name] = value
 		}
 	}
-	provider := req.Provider
+	provider := r.Provider
 	if provider == "" {
 		provider = os.Getenv("UNREAL_HARNESS_LLM_PROVIDER")
 	}
@@ -108,19 +119,16 @@ func runnerEnv(req Request) []string {
 		provider = "openrouter"
 	}
 	keep["UNREAL_HARNESS_LLM_PROVIDER"] = provider
-	if req.Model != "" {
-		keep["UNREAL_HARNESS_LLM_MODEL"] = req.Model
-	} else if model := os.Getenv("UNREAL_HARNESS_LLM_MODEL"); model != "" {
+	if model != "" {
 		keep["UNREAL_HARNESS_LLM_MODEL"] = model
+	} else if value := os.Getenv("UNREAL_HARNESS_LLM_MODEL"); value != "" {
+		keep["UNREAL_HARNESS_LLM_MODEL"] = value
 	}
-	key := req.OpenRouterKey
-	if key == "" {
-		key = os.Getenv("OPENROUTER_API_KEY")
-	}
-	if key == "" {
-		key = os.Getenv("UNREAL_HARNESS_LLM_API_KEY")
-	}
-	if key != "" {
+	if r.APIKey != "" {
+		keep["OPENROUTER_API_KEY"] = r.APIKey
+	} else if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
+		keep["OPENROUTER_API_KEY"] = key
+	} else if key := os.Getenv("UNREAL_HARNESS_LLM_API_KEY"); key != "" {
 		keep["OPENROUTER_API_KEY"] = key
 	}
 	env := make([]string, 0, len(keep))

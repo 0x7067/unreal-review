@@ -77,6 +77,13 @@ func renderGitHub(args []string) error {
 	if err != nil {
 		return err
 	}
+	if !*dryRun && !report.Complete() {
+		status := findings.StatusRunning
+		if report.Run != nil && report.Run.Status != "" {
+			status = report.Run.Status
+		}
+		return fmt.Errorf("findings are %s; resume the review before posting", status)
+	}
 	owner, name, number, err := resolvePR(*prSpec, *repo)
 	if err != nil {
 		return err

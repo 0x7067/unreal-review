@@ -7,10 +7,16 @@ Canonical review output. One JSON object per line. `v` is `1`.
 Present on every `unreal-review run`. `cost` is required.
 
 ```json
-{"v":1,"type":"run","id":"…","created_at":"2026-09-23T12:00:00Z","model":"anthropic/claude-sonnet-4.5","source":{"kind":"git","base":"main","head":"","base_sha":"abc","head_sha":"def"},"cost":{"amount_usd":0.0123,"currency":"USD","input_tokens":12000,"output_tokens":800,"reasoning_tokens":400,"cached_input_tokens":1000,"requests":3}}
+{"v":1,"type":"run","id":"…","created_at":"2026-09-23T12:00:00Z","model":"anthropic/claude-sonnet-4.5","status":"complete","source":{"kind":"git","base":"main","head":"","base_sha":"abc","head_sha":"def","diff_sha":"…"},"cost":{"amount_usd":0.0123,"currency":"USD","input_tokens":12000,"output_tokens":800,"reasoning_tokens":400,"cached_input_tokens":1000,"requests":3}}
 ```
 
-`cost.amount_usd` is the amount charged for the review. Token fields are additive across model turns.
+`id` is the review id. Resume uses the same `--out` file. An agent backend may use that id for its own continuation; the checkpoint does not.
+
+`status` is `running`, `complete`, or `failed`. A file written before this field existed is complete. GitHub posting requires `complete`.
+
+`source.base_sha` and `source.head_sha` are the git objects at review time. `source.diff_sha` is the SHA-256 of the exact unified diff that was reviewed, so a dirty working tree cannot resume against a different patch that shares the same HEAD.
+
+`cost.amount_usd` is the amount charged for the review. Token fields are additive across model turns and resumes.
 
 ## `finding`
 

@@ -126,10 +126,6 @@ func FetchOpenRouterCost(ctx context.Context, apiKey string, generationIDs []str
 	return sum, nil
 }
 
-func CostRecorded(cost findings.Cost) bool {
-	return cost.Requests > 0 || cost.InputTokens > 0 || cost.OutputTokens > 0 || cost.AmountUSD > 0
-}
-
 func looksLikeGenerationID(id string) bool {
 	return strings.HasPrefix(id, "gen-") || strings.HasPrefix(id, "resp-") || strings.HasPrefix(id, "chatcmpl-")
 }
