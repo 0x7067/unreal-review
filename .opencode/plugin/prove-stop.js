@@ -9,35 +9,47 @@
 //
 // Loaded from .opencode/plugin/ - the project-level discovery path. A "plugins"
 // entry in opencode.json does NOT load a local file (it is for npm packages).
-import { spawnSync } from 'node:child_process';
+//
+// The gate runs asynchronously: a plugin runs inside the OpenCode process, so a
+// synchronous spawn would freeze the editor for as long as bend takes.
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-// this file lives at <repo>/.opencode/plugin/, so the gate is two levels up
-const GATE = join(dirname(dirname(dirname(fileURLToPath(import.meta.url)))), 'hooks', 'prove-stop.sh');
+const run = promisify(execFile);
 
-function gate() {
-  return spawnSync('bash', [GATE], { encoding: 'utf8', timeout: 300000 });
+// this file lives at <repo>/.opencode/plugin/, so the gate is three levels up
+const GATE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'hooks', 'prove-stop.sh');
+
+// Built per invocation and closed over its own ctx, so two entry points (or two
+// concurrent sessions) cannot clobber each other's client.
+function makeHooks(ctx) {
+  return {
+    event: async ({ event }) => {
+      if (event?.type !== 'session.idle') return;
+      const sessionID = event?.properties?.sessionID;
+      if (!sessionID) return;
+
+      let code = 0;
+      let stderr = '';
+      try {
+        await run('bash', [GATE], { timeout: 300000 });
+      } catch (err) {
+        code = typeof err?.code === 'number' ? err.code : -1;
+        stderr = err?.stderr ?? '';
+      }
+      if (code !== 2) return;
+      const text = String(stderr).trim();
+      if (!text) return;
+
+      await ctx.client.session.prompt({ sessionID, parts: [{ type: 'text', text }] });
+    },
+  };
 }
 
-const hooks = {
-  event: async ({ event }) => {
-    if (event?.type !== 'session.idle') return;
-    const sessionID = event?.properties?.sessionID;
-    if (!sessionID) return;
-
-    const r = gate();
-    if (r.status !== 2) return;
-    const text = (r.stderr || '').trim();
-    if (!text) return;
-
-    await ctxRef.client.session.prompt({ sessionID, parts: [{ type: 'text', text }] });
-  },
-};
-
-let ctxRef = {};
 export default {
   id: 'prove-stop',
-  server: async (ctx) => { ctxRef = ctx; return hooks; },
-  setup: async (ctx) => { ctxRef = ctx; return hooks; },
+  server: async (ctx) => makeHooks(ctx),
+  setup: async (ctx) => makeHooks(ctx),
 };

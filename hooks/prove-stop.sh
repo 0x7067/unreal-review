@@ -18,9 +18,13 @@ format="claude"
 check_only=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --format) format="${2:-claude}"; shift 2 ;;
-    --check)  check_only=1; shift ;;
-    *) shift ;;
+    --format)
+      [ $# -ge 2 ] || { echo "prove-stop: --format needs a value" >&2; exit 2; }
+      format="$2"; shift 2 ;;
+    --check) check_only=1; shift ;;
+    *)
+      echo "prove-stop: unknown argument: $1" >&2
+      exit 2 ;;
   esac
 done
 
@@ -28,6 +32,7 @@ done
 # (<repo>/hooks/prove-stop.sh), so derive the root from the script's own location
 # rather than the hook process cwd, which differs per harness.
 if [ -n "${BEND_PROOF_ROOT:-}" ]; then
+  echo "prove-stop: BEND_PROOF_ROOT override in effect ($BEND_PROOF_ROOT)" >&2
   root="$BEND_PROOF_ROOT"
 else
   self_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
@@ -54,7 +59,11 @@ if [ -z "$bend_bin" ]; then
 fi
 
 rel="${proof#"$root"/}"
-proof_out="$(cd "$root" && "$bend_bin" "$rel" --check-only 2>&1)"
+bend_wrap=""
+if command -v timeout >/dev/null 2>&1; then bend_wrap="timeout 240"
+elif command -v gtimeout >/dev/null 2>&1; then bend_wrap="gtimeout 240"
+fi
+proof_out="$(cd "$root" && $bend_wrap "$bend_bin" "$rel" --check-only 2>&1)"
 status=$?
 
 # Bend exits 0 and prints "All terms check." on success, but prints
@@ -115,14 +124,23 @@ reason="The Bend law proof in $root is red ($rel). Fix the laws/proof, or the co
 
 $proof_out"
 
+# Emit an escaped JSON string body, without the surrounding quotes. A hand-rolled
+# sed/awk pipeline is not a JSON encoder: it leaves tabs and other C0 controls
+# literal, and JSON forbids those inside a string.
+json_body() {
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$1" | python3 -c 'import json,sys; sys.stdout.write(json.dumps(sys.stdin.read())[1:-1])'
+  else
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\011\013-\037' | awk '{printf "%s\\n", $0}'
+  fi
+}
+
 case "$format" in
   cursor)
-    escaped="$(printf '%s' "$reason" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | awk '{printf "%s\\n", $0}')"
-    printf '{"followup_message":"%s"}\n' "$escaped"
+    printf '{"followup_message":"%s"}\n' "$(json_body "$reason")"
     exit 0 ;;
   json)
-    escaped="$(printf '%s' "$reason" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | awk '{printf "%s\\n", $0}')"
-    printf '{"decision":"block","reason":"%s"}\n' "$escaped"
+    printf '{"decision":"block","reason":"%s"}\n' "$(json_body "$reason")"
     exit 0 ;;
   plain)
     printf '%s\n' "$reason"

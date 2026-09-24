@@ -6,7 +6,7 @@
         "type": "command",
         "command": "\"$CURSOR_PROJECT_DIR\"/hooks/prove-stop.sh --format cursor",
         "timeout": 300,
-        "loop_limit": 3
+        "loop_limit": 5
       }
     ]
   }
