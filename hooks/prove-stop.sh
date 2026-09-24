@@ -40,25 +40,29 @@ else
   [ -f "$root/LAWS.bend" ] || root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 fi
 
-# Find the proof: PROOF.bend beside LAWS.bend, at the root or under bend/.
+# Find the laws, and the proof beside them, at the root or under bend/. No laws at
+# all means nothing to gate and this exits quietly. Laws WITHOUT a proof, or laws
+# with no bend installed, are not the same thing: the gate cannot reach a verdict
+# there, and reporting success would let a renamed or deleted PROOF.bend turn the
+# gate off while CI keeps failing. Those fall through as failures instead.
+laws=""
 proof=""
-for candidate in "$root/PROOF.bend" "$root/bend/PROOF.bend"; do
-  if [ -f "$candidate" ] && [ -f "$(dirname "$candidate")/LAWS.bend" ]; then
-    proof="$candidate"; break
+for dir in "$root" "$root/bend"; do
+  if [ -f "$dir/LAWS.bend" ]; then
+    laws="$dir/LAWS.bend"
+    [ -f "$dir/PROOF.bend" ] && proof="$dir/PROOF.bend"
+    break
   fi
 done
-[ -n "$proof" ] || exit 0    # no Bend laws in this repo: nothing to gate
+[ -n "$laws" ] || exit 0     # no Bend laws in this repo: nothing to gate
 
 bend_bin="$(command -v bend 2>/dev/null || true)"
 if [ -z "$bend_bin" ] && [ -x "$HOME/.bend/bin/bend" ]; then
   bend_bin="$HOME/.bend/bin/bend"
 fi
-if [ -z "$bend_bin" ]; then
-  echo "prove-stop: bend not found; skipping law proof for $root" >&2
-  exit 0
-fi
 
-rel="${proof#"$root"/}"
+rel="${proof:-"${laws%LAWS.bend}PROOF.bend"}"
+rel="${rel#"$root"/}"
 bend_wrap=""
 if command -v timeout >/dev/null 2>&1; then bend_wrap="timeout 240"
 elif command -v gtimeout >/dev/null 2>&1; then bend_wrap="gtimeout 240"
@@ -66,12 +70,19 @@ fi
 # Prefer the repo's own check, so the hook enforces exactly what `make prove`
 # does - including the @unsafe allowlist. Otherwise an agent could silence a law
 # with @unsafe, get a green hook, and only fail later in CI.
-if [ -x "$root/tools/prove.sh" ]; then
+if [ -z "$proof" ]; then
+  proof_out="$rel is missing, so the laws in $laws cannot be checked. Restore it, or remove $laws with it."
+  status=1
+elif [ -z "$bend_bin" ]; then
+  proof_out="bend is not installed, so $laws cannot be checked (make prove fails the same way)."
+  status=1
+elif [ -x "$root/tools/prove.sh" ]; then
   proof_out="$(cd "$root" && $bend_wrap sh tools/prove.sh 2>&1)"
+  status=$?
 else
   proof_out="$(cd "$root" && $bend_wrap "$bend_bin" "$rel" --check-only 2>&1)"
+  status=$?
 fi
-status=$?
 
 # Bend exits 0 and prints "All terms check." on success, but prints
 # "All terms check, but N defs rely on unsafe or foreign code:" when a proven law
@@ -127,7 +138,7 @@ if [ "$count" -gt 3 ]; then
   exit 0
 fi
 
-reason="The Bend law proof in $root is red ($rel). Fix the laws/proof, or the code the laws bind, before ending the turn.
+reason="The Bend law gate in $root did not pass ($rel). Fix the laws/proof, or the code the laws bind, before ending the turn.
 
 $proof_out"
 

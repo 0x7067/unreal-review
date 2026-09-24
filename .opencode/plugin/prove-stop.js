@@ -19,8 +19,8 @@ import { dirname, join } from 'node:path';
 
 const run = promisify(execFile);
 
-// this file lives at <repo>/.opencode/plugin/, so the gate is three levels up
-const GATE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'hooks', 'prove-stop.sh');
+// this file lives at <repo>/.opencode/plugin/, so two directories up is <repo>
+const GATE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'hooks', 'prove-stop.sh');
 
 // Built per invocation and closed over its own ctx, so two entry points (or two
 // concurrent sessions) cannot clobber each other's client.
