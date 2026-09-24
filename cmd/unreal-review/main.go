@@ -22,6 +22,8 @@ func run(args []string) error {
 		return cmdRun(args[1:])
 	case "group":
 		return cmdGroup(args[1:])
+	case "eval":
+		return cmdEval(args[1:])
 	case "render":
 		return cmdRender(args[1:])
 	case "help", "-h", "--help":
@@ -40,6 +42,7 @@ Render that file for GitHub inline comments, markdown, or another host.
 Usage:
   unreal-review run [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>] [--exclude <glob>] [paths...]
   unreal-review group [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>] [--exclude <glob>] [paths...]
+  unreal-review eval [--model <id>] [--out <dir>] [--json]
   unreal-review render github [flags] [findings.jsonl]
   unreal-review render markdown [flags] [findings.jsonl]
 
@@ -51,10 +54,12 @@ include the working tree. --commit reviews one commit against its
 parent. --branch reviews a branch since it diverged from main or
 master. Interrupt to pause; run again with the same --out to continue.
 Group prints related files from the same git range so a large change
-can be reviewed in pieces; it does not start the agent. Render
-reads that document and produces a display-specific output. GitHub
-inline comments are a renderer, not the review itself. GitHub posting
-requires a complete review.
+can be reviewed in pieces; it does not start the agent. Eval runs a
+planted-issue corpus through the same pipeline as run and scores the
+findings file against the planted issues; it calls the model and
+costs money. Render reads that document and produces a
+display-specific output. GitHub inline comments are a renderer, not
+the review itself. GitHub posting requires a complete review.
 
 Environment:
   OPENROUTER_API_KEY             required for run

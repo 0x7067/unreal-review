@@ -62,6 +62,21 @@ unreal-review render github --pr owner/repo#12 findings.jsonl
 
 GitHub Actions is the same two commands. This repository reviews its own pull requests with [.github/workflows/review.yml](.github/workflows/review.yml); [examples/github-actions/review.yml](examples/github-actions/review.yml) is the shape to copy into another repository.
 
+## Evaluate a model
+
+```sh
+unreal-review eval --model openai/gpt-6-luna-pro
+unreal-review eval --json --model openai/gpt-6-luna-pro > eval.json
+```
+
+`eval` runs a planted-issue corpus — a data race, a nil dereference, and a
+clean control — through the same pipeline as `run`, then scores each
+findings file against the planted issues. `recall` is the share of planted
+issues found (same file, overlapping lines); `precision` is the share of
+findings that match something planted; `status` is the review checkpoint.
+Each case gets a fresh git workspace and its own findings.jsonl under
+`--out`. Eval calls the model and costs money; it is not part of `make check`.
+
 ## Findings file
 
 The JSONL schema is the product. Renderers turn it into GitHub comments, markdown, or another display. See [schema/findings-v1.md](schema/findings-v1.md).
