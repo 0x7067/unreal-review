@@ -1,0 +1,19 @@
+spec/group.bend
+  s_944e726431c9fb::t_7333e7007565b6 500-503,508,573,578,580,585,800-802,856
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c44be0e72916434eb946cde186300fd59a6e131",
+  "prompts": {},
+  "sessions": {
+    "s_944e726431c9fb": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d4c1-b16b-71a2-9bd7-c9ed929c9ede",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
