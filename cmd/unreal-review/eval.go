@@ -20,14 +20,15 @@ type evalSummary struct {
 }
 
 type evalTotals struct {
-	Cases     int     `json:"cases"`
-	Completed int     `json:"completed"`
-	Matched   int     `json:"matched"`
-	Gold      int     `json:"gold"`
-	Produced  int     `json:"produced"`
-	Extra     int     `json:"extra"`
-	CostUSD   float64 `json:"cost_usd"`
-	Requests  int     `json:"requests"`
+	Cases        int     `json:"cases"`
+	Completed    int     `json:"completed"`
+	Matched      int     `json:"matched"`
+	SeverityHits int     `json:"severity_hits"`
+	Gold         int     `json:"gold"`
+	Produced     int     `json:"produced"`
+	Extra        int     `json:"extra"`
+	CostUSD      float64 `json:"cost_usd"`
+	Requests     int     `json:"requests"`
 }
 
 func cmdEval(args []string) error {
@@ -111,6 +112,7 @@ func totals(scores []eval.Score) evalTotals {
 		}
 		total.Gold += score.Gold
 		total.Matched += score.Matched
+		total.SeverityHits += score.SeverityHits
 		total.Produced += score.Produced
 		total.Extra += score.Extra
 		total.CostUSD += score.CostUSD
@@ -122,19 +124,20 @@ func totals(scores []eval.Score) evalTotals {
 func printScores(scores []eval.Score) {
 	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	defer func() { _ = writer.Flush() }()
-	_, _ = fmt.Fprintln(writer, "case\tstatus\trecall\tprecision\tfound\tgold\textra\tcost\ttime")
+	_, _ = fmt.Fprintln(writer, "case\tstatus\trecall\tprecision\tseverity\tfound\tgold\textra\tcost\ttime")
 	for _, score := range scores {
 		note := ""
 		if score.Err != "" {
 			note = " " + shortErr(score.Err)
 		}
-		_, _ = fmt.Fprintf(writer, "%s\t%s%s\t%.2f\t%.2f\t%d\t%d\t%d\t$%.4f\t%ds\n",
-			score.Name, score.Status, note, score.Recall(), score.Precision(),
+		_, _ = fmt.Fprintf(writer, "%s\t%s%s\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t$%.4f\t%ds\n",
+			score.Name, score.Status, note, score.Recall(), score.Precision(), score.SeverityAgreement(),
 			score.Matched, score.Gold, score.Extra, score.CostUSD, score.DurationMS/1000)
 	}
 	total := totals(scores)
-	_, _ = fmt.Fprintf(writer, "total\t%d/%d complete\t\t\t%d\t%d\t%d\t$%.4f\t\n",
-		total.Completed, total.Cases, total.Matched, total.Gold, total.Extra, total.CostUSD)
+	_, _ = fmt.Fprintf(writer, "total\t%d/%d complete\t\t\t%.2f\t%d\t%d\t%d\t$%.4f\t\n",
+		total.Completed, total.Cases, eval.Agreement(total.SeverityHits, total.Gold),
+		total.Matched, total.Gold, total.Extra, total.CostUSD)
 }
 
 func shortErr(msg string) string {

@@ -69,13 +69,16 @@ unreal-review eval --model openai/gpt-6-luna-pro
 unreal-review eval --json --model openai/gpt-6-luna-pro > eval.json
 ```
 
-`eval` runs a planted-issue corpus — a data race, a nil dereference, and a
-clean control — through the same pipeline as `run`, then scores each
-findings file against the planted issues. `recall` is the share of planted
-issues found (same file, overlapping lines); `precision` is the share of
-findings that match something planted; `status` is the review checkpoint.
-Each case gets a fresh git workspace and its own findings.jsonl under
-`--out`. Eval calls the model and costs money; it is not part of `make check`.
+`eval` runs a planted-issue corpus — a data race, a nil dereference, a
+removed bounds guard, SQL injection, a leaked goroutine, a swallowed
+error, and a clean control — through the same pipeline as `run`, then
+scores each findings file against the planted issues. `recall` is the
+share of planted issues found (same file, overlapping lines);
+`precision` is the share of findings that match something planted;
+`severity` is the share of planted issues found and graded with the
+expected severity; `status` is the review checkpoint. Each case gets a
+fresh git workspace and its own findings.jsonl under `--out`. Eval calls
+the model and costs money; it is not part of `make check`.
 
 ## Findings file
 

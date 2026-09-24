@@ -17,6 +17,7 @@ type Gold struct {
 	Path      string
 	StartLine int
 	EndLine   int
+	Severity  findings.Severity
 }
 
 type Case struct {
@@ -31,6 +32,7 @@ type Score struct {
 	Status       string  `json:"status"`
 	Gold         int     `json:"gold"`
 	Matched      int     `json:"matched"`
+	SeverityHits int     `json:"severity_hits"`
 	Produced     int     `json:"produced"`
 	Extra        int     `json:"extra"`
 	CostUSD      float64 `json:"cost_usd"`
@@ -41,10 +43,7 @@ type Score struct {
 }
 
 func (s Score) Recall() float64 {
-	if s.Gold == 0 {
-		return 1
-	}
-	return float64(s.Matched) / float64(s.Gold)
+	return Agreement(s.Matched, s.Gold)
 }
 
 func (s Score) Precision() float64 {
@@ -54,8 +53,19 @@ func (s Score) Precision() float64 {
 	return float64(s.Produced-s.Extra) / float64(s.Produced)
 }
 
+func (s Score) SeverityAgreement() float64 {
+	return Agreement(s.SeverityHits, s.Gold)
+}
+
 func (s Score) Completed() bool {
 	return s.Status == string(findings.StatusComplete)
+}
+
+func Agreement(hits, total int) float64 {
+	if total == 0 {
+		return 1
+	}
+	return float64(hits) / float64(total)
 }
 
 func ScoreReport(c Case, report findings.Report) Score {
@@ -65,14 +75,20 @@ func ScoreReport(c Case, report findings.Report) Score {
 		score.CostUSD = report.Run.Cost.AmountUSD
 		score.Requests = report.Run.Cost.Requests
 	}
-	score.Matched, score.Extra = Match(c.Gold, report.Findings)
+	score.Matched, score.SeverityHits, score.Extra = Match(c.Gold, report.Findings)
 	return score
 }
 
-func Match(gold []Gold, produced []findings.Finding) (matched, extra int) {
+func Match(gold []Gold, produced []findings.Finding) (matched, severityHits, extra int) {
 	for _, g := range gold {
-		if anyFinding(produced, func(f findings.Finding) bool { return sameRegion(f, g) }) {
-			matched++
+		if !anyFinding(produced, func(f findings.Finding) bool { return sameRegion(f, g) }) {
+			continue
+		}
+		matched++
+		if anyFinding(produced, func(f findings.Finding) bool {
+			return sameRegion(f, g) && f.Severity == g.Severity
+		}) {
+			severityHits++
 		}
 	}
 	for _, f := range produced {
@@ -80,7 +96,7 @@ func Match(gold []Gold, produced []findings.Finding) (matched, extra int) {
 			extra++
 		}
 	}
-	return matched, extra
+	return matched, severityHits, extra
 }
 
 type Options struct {
