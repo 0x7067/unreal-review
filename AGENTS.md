@@ -21,6 +21,6 @@ A new backend, source, or renderer should plug in without changing the findings 
 
 ## Checks
 
-`make check` (fmt, lint, vet, test, prove). `make prove` is `bend PROOF.bend --check-only`.
+`make check` (fmt, lint, vet, test, prove). `make prove` is `bend PROOF.bend --check-only`. `hooks/prove-stop.sh` runs the same gate when a turn ends and blocks the stop while the proof is red. It is registered project-level in `.claude/`, `.cursor/`, `.codex/` and `.grok/`; OpenCode (`.opencode/plugin/`) and Pi (`.pi/`) can only nudge, not block. For a one-shot verdict run `hooks/prove-stop.sh --check`.
 
 Do not add `bunfig.toml`. A new product rule is a `law` in `LAWS.bend` plus a proof in `PROOF.bend` in the same change. Do not edit `LAWS.bend` unless the user changes a product rule.

@@ -1,0 +1,5 @@
+{
+  "extensions": [
+    ".pi/extensions/prove-stop.mjs"
+  ]
+}
