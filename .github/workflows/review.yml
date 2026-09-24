@@ -1,0 +1,40 @@
+name: Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install unreal-review
+        run: |
+          go install github.com/unreallabsai/unreal-agent/cmd/unreal-agent-runner@v0.2.0
+          go install ./cmd/unreal-review
+      - name: Review pull request
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          UNREAL_HARNESS_LLM_MODEL: ${{ vars.UNREAL_HARNESS_LLM_MODEL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          unreal-review run --from "origin/${{ github.base_ref }}" --to HEAD --out findings.jsonl
+          unreal-review render github --pr "${{ github.repository }}#${{ github.event.pull_request.number }}" findings.jsonl

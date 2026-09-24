@@ -60,7 +60,7 @@ unreal-review render github --pr owner/repo#12 findings.jsonl
 
 `--dry-run` prints the GitHub review payload and does not post. The renderer maps `anchor: new` to the right side of the diff and drops findings whose lines are not in the pull request patch.
 
-GitHub Actions is the same two commands. See [examples/github-actions/review.yml](examples/github-actions/review.yml).
+GitHub Actions is the same two commands. This repository reviews its own pull requests with [.github/workflows/review.yml](.github/workflows/review.yml); [examples/github-actions/review.yml](examples/github-actions/review.yml) is the shape to copy into another repository.
 
 ## Findings file
 
