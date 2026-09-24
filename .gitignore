@@ -1,0 +1,4 @@
+/bin/
+/findings.jsonl
+*.exe
+.DS_Store
