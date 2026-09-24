@@ -10,7 +10,7 @@ Present on every `unreal-review run`. `cost` is required.
 {"v":1,"type":"run","id":"…","created_at":"2026-09-23T12:00:00Z","model":"anthropic/claude-sonnet-4.5","status":"complete","source":{"kind":"git","base":"main","head":"","base_sha":"abc","head_sha":"def","diff_sha":"…"},"cost":{"amount_usd":0.0123,"currency":"USD","input_tokens":12000,"output_tokens":800,"reasoning_tokens":400,"cached_input_tokens":1000,"requests":3}}
 ```
 
-`id` is the review id. Resume uses the same `--out` file. An agent backend may use that id for its own continuation; the checkpoint does not.
+`id` is the review id. Resume uses the same `--out` file. An agent backend may use that id for its own continuation; the checkpoint does not. A `run` object may only contain the fields above.
 
 `status` is `running`, `complete`, or `failed`. A file written before this field existed is complete. GitHub posting requires `complete`.
 

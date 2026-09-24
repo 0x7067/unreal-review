@@ -3,9 +3,24 @@ version: "2"
 linters:
   enable:
     - bodyclose
+    - depguard
     - errorlint
     - misspell
     - noctx
+  settings:
+    depguard:
+      rules:
+        findings:
+          files:
+            - "**/internal/findings/**"
+          allow:
+            - $gostd
+        review:
+          files:
+            - "**/internal/review/**"
+          allow:
+            - $gostd
+            - unreal-review/internal/findings
 
 formatters:
   enable:

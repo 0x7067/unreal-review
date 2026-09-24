@@ -153,6 +153,17 @@ type record struct {
 	Status    string          `json:"status,omitempty"`
 }
 
+type runRecord struct {
+	V         int     `json:"v"`
+	Type      Type    `json:"type"`
+	ID        string  `json:"id,omitempty"`
+	CreatedAt string  `json:"created_at,omitempty"`
+	Model     string  `json:"model,omitempty"`
+	Status    string  `json:"status,omitempty"`
+	Source    *Source `json:"source,omitempty"`
+	Cost      *Cost   `json:"cost,omitempty"`
+}
+
 func Parse(r io.Reader) (Report, error) {
 	raw, err := io.ReadAll(r)
 	if err != nil {
@@ -163,11 +174,11 @@ func Parse(r io.Reader) (Report, error) {
 		return Report{}, nil
 	}
 	if raw[0] == '[' {
-		var records []record
+		var records []json.RawMessage
 		if err := json.Unmarshal(raw, &records); err != nil {
 			return Report{}, fmt.Errorf("decode findings array: %w", err)
 		}
-		return reportFromRecords(records)
+		return reportFromRaw(records)
 	}
 	if bundle, ok, err := parseBundle(raw); err != nil {
 		return Report{}, err
@@ -194,13 +205,13 @@ func parseBundle(raw []byte) (Report, bool, error) {
 	if rec.Type != "" && len(rec.Findings) == 0 {
 		return Report{}, false, nil
 	}
-	var nested []record
+	var nested []json.RawMessage
 	if len(rec.Findings) > 0 {
 		if err := json.Unmarshal(rec.Findings, &nested); err != nil {
 			return Report{}, false, fmt.Errorf("decode nested findings: %w", err)
 		}
 	}
-	report, err := reportFromRecords(nested)
+	report, err := reportFromRaw(nested)
 	if err != nil {
 		return Report{}, true, err
 	}
@@ -215,7 +226,7 @@ func parseBundle(raw []byte) (Report, bool, error) {
 func parseJSONL(raw []byte) (Report, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	scanner.Buffer(nil, 4<<20)
-	var records []record
+	var records []json.RawMessage
 	lineNo := 0
 	for scanner.Scan() {
 		lineNo++
@@ -223,21 +234,21 @@ func parseJSONL(raw []byte) (Report, error) {
 		if len(line) == 0 {
 			continue
 		}
-		var rec record
-		if err := json.Unmarshal(line, &rec); err != nil {
-			return Report{}, fmt.Errorf("decode findings line %d: %w", lineNo, err)
-		}
-		records = append(records, rec)
+		records = append(records, append(json.RawMessage(nil), line...))
 	}
 	if err := scanner.Err(); err != nil {
 		return Report{}, fmt.Errorf("read findings jsonl: %w", err)
 	}
-	return reportFromRecords(records)
+	return reportFromRaw(records)
 }
 
-func reportFromRecords(records []record) (Report, error) {
+func reportFromRaw(raws []json.RawMessage) (Report, error) {
 	var report Report
-	for i, rec := range records {
+	for i, raw := range raws {
+		var rec record
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			return Report{}, fmt.Errorf("decode findings record %d: %w", i, err)
+		}
 		if rec.V != 0 && rec.V != SchemaVersion {
 			return Report{}, fmt.Errorf("record %d: unsupported schema version %d", i, rec.V)
 		}
@@ -253,7 +264,7 @@ func reportFromRecords(records []record) (Report, error) {
 		}
 		switch typ {
 		case TypeRun:
-			run, err := parseRun(rec)
+			run, err := parseClosedRun(raw)
 			if err != nil {
 				return Report{}, fmt.Errorf("record %d: %w", i, err)
 			}
@@ -280,7 +291,17 @@ func reportFromRecords(records []record) (Report, error) {
 	return report, nil
 }
 
-func parseRun(rec record) (Run, error) {
+func parseClosedRun(raw []byte) (Run, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var rec runRecord
+	if err := dec.Decode(&rec); err != nil {
+		return Run{}, err
+	}
+	return parseRun(rec)
+}
+
+func parseRun(rec runRecord) (Run, error) {
 	run := Run{
 		ID:     rec.ID,
 		Model:  rec.Model,
@@ -402,7 +423,7 @@ func Write(w io.Writer, report Report) error {
 		if cost.Currency == "" {
 			cost.Currency = "USD"
 		}
-		rec := record{
+		rec := runRecord{
 			V:         SchemaVersion,
 			Type:      TypeRun,
 			ID:        report.Run.ID,

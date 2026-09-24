@@ -4,9 +4,7 @@ unreal-review is a pipeline of replaceable pieces around one product: [schema/fi
 
 ## Product
 
-`findings.jsonl` is the review. It is also the checkpoint: `run.id`, `run.status`, and `run.source` (`base_sha`, `head_sha`, `diff_sha`) bind findings to one diff. Completeness is `status=complete`. This file must not name an agent backend, a harness session, or a renderer.
-
-The selected git range is reviewed in full. Pathspecs and `--exclude` omit files; size does not.
+`findings.jsonl` is the review. It is also the checkpoint: `run.id`, `run.status`, and `run.source` (`base_sha`, `head_sha`, `diff_sha`) bind findings to one diff. Completeness is `status=complete`.
 
 ## Pieces
 
@@ -17,9 +15,9 @@ The selected git range is reviewed in full. Pathspecs and `--exclude` omit files
 | Review | Checkpoint, SHA binding, prompt, status | `internal/review` |
 | Renderer | Display a report | functions on `findings.Report` (markdown, GitHub) |
 
-Wire a replacement at `cmd/unreal-review`. Do not leak a backend's session, log, or wire types into `findings` or the checkpoint. `AgentRequest.ReviewID` is the review id; any continuation mapping stays inside the adapter (`internal/agent` for unreal-agent-runner).
+Wire a replacement at `cmd/unreal-review`. `AgentRequest.ReviewID` is the review id; any continuation mapping stays inside the adapter (`internal/agent` for unreal-agent-runner).
 
-A new backend, source, or renderer should plug in without changing the findings schema. If a change needs a field that only one backend understands, it does not belong on `run`.
+A new backend, source, or renderer should plug in without changing the findings schema.
 
 ## Checks
 
