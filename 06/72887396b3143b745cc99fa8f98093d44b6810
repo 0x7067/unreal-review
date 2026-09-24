@@ -1,0 +1,14 @@
+internal/review/bend_invariants_test.go
+  h_29be57c0addd47 1-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0672887396b3143b745cc99fa8f98093d44b6810",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
