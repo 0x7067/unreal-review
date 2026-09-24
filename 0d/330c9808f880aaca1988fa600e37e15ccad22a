@@ -1,0 +1,28 @@
+AGENTS.md
+  h_29be57c0addd47 13
+README.md
+  h_29be57c0addd47 27,30-35
+cmd/unreal-review/main.go
+  h_29be57c0addd47 39,44-50
+cmd/unreal-review/run.go
+  h_29be57c0addd47 11,24-27,72-75,99-101,111-124
+examples/github-actions/review.yml
+  h_29be57c0addd47 36
+internal/review/git.go
+  h_29be57c0addd47 1-183
+internal/review/review.go
+  h_29be57c0addd47 35-38,46-48,56,66,75,80,86,101,106,112,118,123,125,132,141,145,151,153,158,162,164,167,170,172,176,178,181,184,186,190-191,199-207,209,211,213,230
+schema/findings-v1.md
+  h_29be57c0addd47 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0d330c9808f880aaca1988fa600e37e15ccad22a",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
