@@ -1,0 +1,14 @@
+spec/group.bend
+  h_29be57c0addd47 611-615,618,620,622-634,636,640-645,647-648,943,948-962
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "006f9b59f2177b25dcfc4ef41e0d0a3ceb3aa94d",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
