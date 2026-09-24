@@ -38,29 +38,26 @@ func (g FileGroup) Lines() int {
 }
 
 type GroupResult struct {
+	Spec   Spec
 	From   string
 	To     string
 	Groups []FileGroup
 }
 
-func Groups(ctx context.Context, workspace, from, to string, paths, exclude []string) (GroupResult, error) {
+func Groups(ctx context.Context, workspace string, spec Spec, paths, exclude []string) (GroupResult, error) {
 	workspace, err := filepath.Abs(workspace)
 	if err != nil {
 		return GroupResult{}, fmt.Errorf("workspace: %w", err)
 	}
-	from, to, _, _, err = resolveRevs(ctx, workspace, from, to)
+	r, err := resolveSpec(ctx, workspace, spec)
 	if err != nil {
 		return GroupResult{}, err
 	}
-	raw, err := git(ctx, workspace, gitNumstatArgs(from, to, pathspecScope(paths, exclude))...)
-	if err != nil {
-		return GroupResult{}, fmt.Errorf("git diff: %w", err)
-	}
-	files, err := parseNumstat(raw)
+	files, err := collectNumstat(ctx, workspace, r, pathspecScope(paths, exclude))
 	if err != nil {
 		return GroupResult{}, err
 	}
-	return GroupResult{From: from, To: to, Groups: clusterFiles(files)}, nil
+	return GroupResult{Spec: spec, From: r.base, To: r.head, Groups: clusterFiles(files)}, nil
 }
 
 func parseNumstat(raw string) ([]ChangedFile, error) {

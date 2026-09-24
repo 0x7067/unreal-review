@@ -32,8 +32,7 @@ Prefer lines that appear in the diff. One finding per issue. If nothing material
 
 type Options struct {
 	Workspace string
-	From      string
-	To        string
+	Spec      Spec
 	Paths     []string
 	Exclude   []string
 	Out       string
@@ -52,7 +51,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("workspace: %w", err)
 	}
-	diff, source, err := loadGitDiff(ctx, workspace, opts.From, opts.To, opts.Paths, opts.Exclude)
+	diff, source, err := loadGitDiff(ctx, workspace, opts.Spec, opts.Paths, opts.Exclude)
 	if err != nil {
 		return Result{}, err
 	}

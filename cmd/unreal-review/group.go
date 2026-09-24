@@ -18,8 +18,7 @@ func cmdGroup(args []string) error {
 	fs := flag.NewFlagSet("group", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	workspace := fs.String("workspace", ".", "git repository to inspect")
-	from := fs.String("from", "", "start of the git range: branch, tag, or SHA (default: main or master)")
-	to := fs.String("to", "", "end of the git range: branch, tag, or SHA (default: working tree)")
+	spec := addSpecFlags(fs)
 	var exclude stringList
 	fs.Var(&exclude, "exclude", "git glob to omit from the diff; repeatable")
 	if err := fs.Parse(args); err != nil {
@@ -30,7 +29,7 @@ func cmdGroup(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	result, err := review.Groups(ctx, *workspace, *from, *to, fs.Args(), exclude)
+	result, err := review.Groups(ctx, *workspace, spec.spec(), fs.Args(), exclude)
 	if err != nil {
 		return err
 	}
@@ -47,12 +46,7 @@ func printGroups(w io.Writer, result review.GroupResult, workspace string, exclu
 		files += len(group.Files)
 		lines += group.Lines()
 	}
-	to := result.To
-	if to == "" {
-		to = "working tree"
-	}
-	if _, err := fmt.Fprintf(w, "%s from %s to %s (%s, %s)\n",
-		countWord(len(result.Groups), "group"), result.From, to, countWord(files, "file"), countWord(lines, "line")); err != nil {
+	if _, err := fmt.Fprintf(w, "%s\n", groupHeader(result, files, lines)); err != nil {
 		return err
 	}
 	used := map[string]int{}
@@ -70,31 +64,43 @@ func printGroups(w io.Writer, result review.GroupResult, workspace string, exclu
 			}
 		}
 		out := "findings-" + groupSlug(group.Title, used) + ".jsonl"
-		if _, err := fmt.Fprintf(w, "   %s\n", formatRunCommand(workspace, result.From, result.To, out, exclude, group.Pathspecs)); err != nil {
+		if _, err := fmt.Fprintf(w, "   %s\n", formatRunCommand(workspace, result.Spec, out, exclude, group.Pathspecs)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func formatRunCommand(workspace, from, to, out string, exclude, pathspecs []string) string {
+func groupHeader(result review.GroupResult, files, lines int) string {
+	n := countWord(len(result.Groups), "group")
+	counts := countWord(files, "file") + ", " + countWord(lines, "line")
+	switch {
+	case result.Spec.Commit != "":
+		return fmt.Sprintf("%s in commit %s (%s)", n, result.Spec.Commit, counts)
+	case result.Spec.From == "" && result.Spec.To == "" && result.Spec.Branch == "":
+		return fmt.Sprintf("%s in the working tree (%s)", n, counts)
+	default:
+		to := result.To
+		if to == "" {
+			to = "working tree"
+		}
+		return fmt.Sprintf("%s from %s to %s (%s)", n, result.From, to, counts)
+	}
+}
+
+func formatRunCommand(workspace string, spec review.Spec, out string, exclude, pathspecs []string) string {
 	var b strings.Builder
 	b.WriteString("unreal-review run")
 	if workspace != "" && workspace != "." {
 		fmt.Fprintf(&b, " --workspace %s", workspace)
 	}
-	if from != "" {
-		fmt.Fprintf(&b, " --from %s", from)
-	}
-	if to != "" {
-		fmt.Fprintf(&b, " --to %s", to)
-	}
+	b.WriteString(spec.FlagArgs())
 	for _, pattern := range exclude {
 		fmt.Fprintf(&b, " --exclude %s", pattern)
 	}
 	fmt.Fprintf(&b, " --out %s --", out)
-	for _, spec := range pathspecs {
-		fmt.Fprintf(&b, " %s", spec)
+	for _, pathspec := range pathspecs {
+		fmt.Fprintf(&b, " %s", pathspec)
 	}
 	return b.String()
 }

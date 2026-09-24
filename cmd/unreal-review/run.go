@@ -21,8 +21,7 @@ func cmdRun(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	workspace := fs.String("workspace", ".", "git repository to review")
-	from := fs.String("from", "", "start of the git range: branch, tag, or SHA (default: main or master)")
-	to := fs.String("to", "", "end of the git range: branch, tag, or SHA (default: working tree)")
+	spec := addSpecFlags(fs)
 	var exclude stringList
 	fs.Var(&exclude, "exclude", "git glob to omit from the diff; repeatable")
 	outPath := fs.String("out", "findings.jsonl", "findings JSONL path, or - for stdout")
@@ -69,8 +68,7 @@ func cmdRun(args []string) error {
 	defer stop()
 	result, err := review.Run(ctx, review.Options{
 		Workspace: *workspace,
-		From:      *from,
-		To:        *to,
+		Spec:      spec.spec(),
 		Paths:     fs.Args(),
 		Exclude:   exclude,
 		Out:       *outPath,

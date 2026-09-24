@@ -14,7 +14,7 @@ Present on every `unreal-review run`. `cost` is required.
 
 `status` is `running`, `complete`, or `failed`. A file written before this field existed is complete. GitHub posting requires `complete`.
 
-`source.base` is `--from` and `source.head` is `--to`. Omitted `--from` is `main` or `master`; omitted `--to` is the working tree (`source.head` empty, `source.head_sha` is HEAD). `source.base_sha` and `source.head_sha` are those git objects at review time. `source.diff_sha` is the SHA-256 of the exact unified diff that was reviewed after pathspecs and exclusions, so a dirty working tree cannot resume against a different patch that shares the same HEAD.
+`source.base` and `source.head` name the selected git range. Workspace mode (no `--from`/`--to`/`--commit`/`--branch`) stores `base=HEAD` and an empty `head`, with both SHAs equal to HEAD. `--from`/`--to` store those refs; omitted `--to` is the working tree (`head` empty, `head_sha` is HEAD). `--branch` stores the detected `main` or `master` as `base` and the branch as `head`. `--commit` stores `commit^` as `base` and the commit as `head` (empty `base` for a root commit). `source.base_sha` and `source.head_sha` are those git objects at review time. `source.diff_sha` is the SHA-256 of the exact unified diff that was reviewed after pathspecs and exclusions, so a dirty working tree cannot resume against a different patch that shares the same HEAD.
 
 `cost.amount_usd` is the amount charged for the review. Token fields are additive across model turns and resumes.
 

@@ -5,49 +5,259 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
 	"unreal-review/internal/findings"
 )
 
-func loadGitDiff(ctx context.Context, workspace, from, to string, paths, exclude []string) (string, findings.Source, error) {
-	from, to, fromSHA, toSHA, err := resolveRevs(ctx, workspace, from, to)
+type Spec struct {
+	From   string
+	To     string
+	Commit string
+	Branch string
+}
+
+type specMode int
+
+const (
+	specWorkspace specMode = iota
+	specRange
+	specCommit
+	specBranch
+)
+
+func (s Spec) mode() (specMode, error) {
+	rangeSet := s.From != "" || s.To != ""
+	n := 0
+	if rangeSet {
+		n++
+	}
+	if s.Commit != "" {
+		n++
+	}
+	if s.Branch != "" {
+		n++
+	}
+	if n > 1 {
+		return 0, fmt.Errorf("use only one of --from/--to, --commit, or --branch")
+	}
+	if s.Commit != "" {
+		return specCommit, nil
+	}
+	if s.Branch != "" {
+		return specBranch, nil
+	}
+	if s.To != "" && s.From == "" {
+		return 0, fmt.Errorf("set --from or use --branch")
+	}
+	if s.From != "" {
+		return specRange, nil
+	}
+	return specWorkspace, nil
+}
+
+func (s Spec) FlagArgs() string {
+	mode, err := s.mode()
+	if err != nil {
+		return ""
+	}
+	switch mode {
+	case specCommit:
+		return " --commit " + s.Commit
+	case specBranch:
+		return " --branch " + s.Branch
+	case specRange:
+		var b strings.Builder
+		if s.From != "" {
+			fmt.Fprintf(&b, " --from %s", s.From)
+		}
+		if s.To != "" {
+			fmt.Fprintf(&b, " --to %s", s.To)
+		}
+		return b.String()
+	default:
+		return ""
+	}
+}
+
+type resolved struct {
+	base, head       string
+	baseSHA, headSHA string
+	mergeBase        bool
+	untracked        bool
+}
+
+func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclude []string) (string, findings.Source, error) {
+	r, err := resolveSpec(ctx, workspace, spec)
 	if err != nil {
 		return "", findings.Source{}, err
 	}
-	diff, err := git(ctx, workspace, gitDiffArgs(from, to, pathspecScope(paths, exclude))...)
+	scope := pathspecScope(paths, exclude)
+	diff, err := collectDiff(ctx, workspace, r, scope)
 	if err != nil {
-		return "", findings.Source{}, fmt.Errorf("git diff: %w", err)
+		return "", findings.Source{}, err
 	}
 	source := findings.Source{
 		Kind:    "git",
-		Base:    from,
-		Head:    to,
-		BaseSHA: fromSHA,
-		HeadSHA: toSHA,
+		Base:    r.base,
+		Head:    r.head,
+		BaseSHA: r.baseSHA,
+		HeadSHA: r.headSHA,
 		DiffSHA: diffFingerprint(diff),
 	}
 	return diff, source, nil
 }
 
-func resolveRevs(ctx context.Context, workspace, from, to string) (string, string, string, string, error) {
-	if from == "" {
-		detected, err := detectFrom(ctx, workspace)
-		if err != nil {
-			return "", "", "", "", err
-		}
-		from = detected
+func resolveSpec(ctx context.Context, workspace string, spec Spec) (resolved, error) {
+	mode, err := spec.mode()
+	if err != nil {
+		return resolved{}, err
 	}
+	switch mode {
+	case specWorkspace:
+		sha, err := gitRev(ctx, workspace, "HEAD")
+		if err != nil {
+			return resolved{}, err
+		}
+		return resolved{base: "HEAD", head: "", baseSHA: sha, headSHA: sha, untracked: true}, nil
+	case specRange:
+		return resolveRange(ctx, workspace, spec.From, spec.To)
+	case specBranch:
+		from, err := detectFrom(ctx, workspace)
+		if err != nil {
+			return resolved{}, err
+		}
+		return resolveRange(ctx, workspace, from, spec.Branch)
+	case specCommit:
+		return resolveCommit(ctx, workspace, spec.Commit)
+	default:
+		return resolved{}, fmt.Errorf("unknown git range")
+	}
+}
+
+func resolveRange(ctx context.Context, workspace, from, to string) (resolved, error) {
 	fromSHA, err := gitRev(ctx, workspace, from)
 	if err != nil {
-		return "", "", "", "", err
+		return resolved{}, err
 	}
 	toSHA, err := gitRev(ctx, workspace, headRev(to))
 	if err != nil {
-		return "", "", "", "", err
+		return resolved{}, err
 	}
-	return from, to, fromSHA, toSHA, nil
+	return resolved{base: from, head: to, baseSHA: fromSHA, headSHA: toSHA, mergeBase: true}, nil
+}
+
+func resolveCommit(ctx context.Context, workspace, commit string) (resolved, error) {
+	headSHA, err := gitRev(ctx, workspace, commit)
+	if err != nil {
+		return resolved{}, err
+	}
+	line, err := git(ctx, workspace, "rev-list", "--parents", "-n", "1", commit)
+	if err != nil {
+		return resolved{}, err
+	}
+	fields := strings.Fields(strings.TrimSpace(line))
+	if len(fields) < 2 {
+		return resolved{base: "", head: commit, baseSHA: "", headSHA: headSHA}, nil
+	}
+	return resolved{base: commit + "^", head: commit, baseSHA: fields[1], headSHA: headSHA}, nil
+}
+
+func collectDiff(ctx context.Context, workspace string, r resolved, pathspecs []string) (string, error) {
+	diff, err := git(ctx, workspace, gitDiffArgs(r, pathspecs)...)
+	if err != nil {
+		return "", fmt.Errorf("git diff: %w", err)
+	}
+	if !r.untracked {
+		return diff, nil
+	}
+	extra, err := untrackedDiff(ctx, workspace, pathspecs)
+	if err != nil {
+		return "", err
+	}
+	return diff + extra, nil
+}
+
+func collectNumstat(ctx context.Context, workspace string, r resolved, pathspecs []string) ([]ChangedFile, error) {
+	raw, err := git(ctx, workspace, gitNumstatArgs(r, pathspecs)...)
+	if err != nil {
+		return nil, fmt.Errorf("git diff: %w", err)
+	}
+	files, err := parseNumstat(raw)
+	if err != nil {
+		return nil, err
+	}
+	if !r.untracked {
+		return files, nil
+	}
+	extra, err := untrackedNumstat(ctx, workspace, pathspecs)
+	if err != nil {
+		return nil, err
+	}
+	return append(files, extra...), nil
+}
+
+func untrackedDiff(ctx context.Context, workspace string, pathspecs []string) (string, error) {
+	paths, err := untrackedPaths(ctx, workspace, pathspecs)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	for _, path := range paths {
+		patch, err := gitDiffNoIndex(ctx, workspace, path, "--no-color", "--no-ext-diff")
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(patch)
+		if patch != "" && !strings.HasSuffix(patch, "\n") {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String(), nil
+}
+
+func untrackedNumstat(ctx context.Context, workspace string, pathspecs []string) ([]ChangedFile, error) {
+	paths, err := untrackedPaths(ctx, workspace, pathspecs)
+	if err != nil {
+		return nil, err
+	}
+	var files []ChangedFile
+	for _, path := range paths {
+		raw, err := gitDiffNoIndex(ctx, workspace, path, "--numstat", "--no-color", "--no-ext-diff")
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := parseNumstat(raw)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, parsed...)
+	}
+	return files, nil
+}
+
+func untrackedPaths(ctx context.Context, workspace string, pathspecs []string) ([]string, error) {
+	args := append([]string{"ls-files", "-z", "--others", "--exclude-standard", "--"}, pathspecs...)
+	raw, err := git(ctx, workspace, args...)
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files: %w", err)
+	}
+	var paths []string
+	for _, path := range strings.Split(raw, "\x00") {
+		if path == "" {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
+}
+
+func gitDiffNoIndex(ctx context.Context, workspace, path string, flags ...string) (string, error) {
+	args := append([]string{"diff"}, flags...)
+	args = append(args, "--no-index", "--", os.DevNull, path)
+	return gitAllowExit1(ctx, workspace, args...)
 }
 
 func pathspecScope(paths, exclude []string) []string {
@@ -72,19 +282,29 @@ func excludeSpec(pattern string) string {
 	return ":(exclude)" + pattern
 }
 
-func gitDiffArgs(from, to string, pathspecs []string) []string {
-	return gitDiffFlags(from, to, pathspecs, "--no-color", "--no-ext-diff")
+func gitDiffArgs(r resolved, pathspecs []string) []string {
+	return gitDiffFlags(r, pathspecs, "--no-color", "--no-ext-diff")
 }
 
-func gitNumstatArgs(from, to string, pathspecs []string) []string {
-	return gitDiffFlags(from, to, pathspecs, "--numstat", "--no-color", "--no-ext-diff")
+func gitNumstatArgs(r resolved, pathspecs []string) []string {
+	return gitDiffFlags(r, pathspecs, "--numstat", "--no-color", "--no-ext-diff")
 }
 
-func gitDiffFlags(from, to string, pathspecs []string, flags ...string) []string {
+func gitDiffFlags(r resolved, pathspecs []string, flags ...string) []string {
 	args := append([]string{"diff"}, flags...)
-	args = append(args, "--merge-base", from)
-	if to != "" {
-		args = append(args, to)
+	switch {
+	case r.mergeBase:
+		args = append(args, "--merge-base", r.base)
+		if r.head != "" {
+			args = append(args, r.head)
+		}
+	case r.base == "":
+		args = append(args, "--root", r.head)
+	default:
+		args = append(args, r.base)
+		if r.head != "" {
+			args = append(args, r.head)
+		}
 	}
 	args = append(args, "--")
 	return append(args, pathspecs...)
@@ -96,7 +316,7 @@ func detectFrom(ctx context.Context, workspace string) (string, error) {
 			return name, nil
 		}
 	}
-	return "", fmt.Errorf("set --from; could not find main or master")
+	return "", fmt.Errorf("could not find main or master; set --from")
 }
 
 func gitRev(ctx context.Context, workspace, rev string) (string, error) {
@@ -111,6 +331,22 @@ func git(ctx context.Context, workspace string, args ...string) (string, error) 
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", workspace}, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			return "", err
+		}
+		return "", fmt.Errorf("%s: %w", msg, err)
+	}
+	return string(out), nil
+}
+
+func gitAllowExit1(ctx context.Context, workspace string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", workspace}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 1 {
+			return string(out), nil
+		}
 		msg := strings.TrimSpace(string(out))
 		if msg == "" {
 			return "", err

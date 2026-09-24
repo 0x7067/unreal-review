@@ -65,13 +65,13 @@ For `run`, create a disposable repo first:
 
 That prints `VERIFY_FIXTURE`, `BASE_SHA`, and `HEAD_SHA` and writes `$VERIFY_SCRATCH/fixture.env` (source it). Pass `--workspace "$VERIFY_FIXTURE"`. Do not use the product checkout as `--workspace` unless the recipe is reviewing this repo's own range.
 
-`run` requires `--model` or `UNREAL_HARNESS_LLM_MODEL`, and `OPENROUTER_API_KEY`. Dummy values are enough for paths that never start the agent (empty diff, complete-file refuse, SHA mismatch, missing `--from`, bad revision). A non-empty diff execs `--runner` (default `unreal-agent-runner`). An absolute missing runner fails at `fork/exec`; a relative missing runner fails at `LookPath` with `install github.com/unreallabsai/unreal-agent/cmd/unreal-agent-runner`.
+`run` requires `--model` or `UNREAL_HARNESS_LLM_MODEL`, and `OPENROUTER_API_KEY`. Dummy values are enough for paths that never start the agent (empty diff, complete-file refuse, SHA mismatch, mixed range flags, bad revision). A non-empty diff execs `--runner` (default `unreal-agent-runner`). An absolute missing runner fails at `fork/exec`; a relative missing runner fails at `LookPath` with `install github.com/unreallabsai/unreal-agent/cmd/unreal-agent-runner`.
 
 Live review of a non-empty diff spends OpenRouter credit. Drive it only when the feature file's live sub-feature is in scope and `UNREAL_HARNESS_LLM_MODEL` is set. Otherwise record the unmet precondition and continue.
 
 Do not post a GitHub review unless the user names a disposable pull request. Default GitHub proof is `--dry-run`.
 
-Stable handles: subcommands `run`, `group`, `render markdown`, `render github`; flags `--from`, `--to`, `--exclude`, `--out`, `--fresh`, `--workspace`, `--dry-run`, `--pr`, `--token`; positional pathspecs; `examples/findings.jsonl`.
+Stable handles: subcommands `run`, `group`, `render markdown`, `render github`; flags `--from`, `--to`, `--commit`, `--branch`, `--exclude`, `--out`, `--fresh`, `--workspace`, `--dry-run`, `--pr`, `--token`; positional pathspecs; `examples/findings.jsonl`.
 
 ## Evidence
 

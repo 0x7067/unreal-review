@@ -27,7 +27,7 @@ func TestLoadGitDiffReviewsRangeInFull(t *testing.T) {
 	gitRun(t, dir, "commit", "-q", "-m", "head")
 
 	ctx := context.Background()
-	diff, source, err := loadGitDiff(ctx, dir, "HEAD~1", "HEAD", nil, nil)
+	diff, source, err := loadGitDiff(ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestLoadGitDiffReviewsRangeInFull(t *testing.T) {
 		t.Fatalf("diff_sha %s want %s", source.DiffSHA, hex.EncodeToString(sum[:]))
 	}
 
-	excluded, excludedSource, err := loadGitDiff(ctx, dir, "HEAD~1", "HEAD", nil, []string{"large.txt"})
+	excluded, excludedSource, err := loadGitDiff(ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, []string{"large.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestGroupsSplitsDirectories(t *testing.T) {
 	gitRun(t, dir, "add", ".")
 	gitRun(t, dir, "commit", "-q", "-m", "head")
 
-	result, err := Groups(context.Background(), dir, "HEAD~1", "HEAD", nil, nil)
+	result, err := Groups(context.Background(), dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestGroupsAttachesCrossDirectoryTests(t *testing.T) {
 	gitRun(t, dir, "add", ".")
 	gitRun(t, dir, "commit", "-q", "-m", "head")
 
-	result, err := Groups(context.Background(), dir, "HEAD~1", "HEAD", nil, nil)
+	result, err := Groups(context.Background(), dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func TestGroupsExcludeAndEmpty(t *testing.T) {
 	gitRun(t, dir, "commit", "-q", "-m", "head")
 
 	ctx := context.Background()
-	result, err := Groups(ctx, dir, "HEAD~1", "HEAD", nil, []string{"*.lock"})
+	result, err := Groups(ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, []string{"*.lock"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestGroupsExcludeAndEmpty(t *testing.T) {
 		}
 	}
 
-	empty, err := Groups(ctx, dir, "HEAD", "HEAD", nil, nil)
+	empty, err := Groups(ctx, dir, Spec{From: "HEAD", To: "HEAD"}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,13 +309,190 @@ func TestGroupsExcludeAndEmpty(t *testing.T) {
 		t.Fatalf("empty range: %v", groupPaths(empty.Groups))
 	}
 
-	all, err := Groups(ctx, dir, "HEAD~1", "HEAD", nil, nil)
+	all, err := Groups(ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := groupPaths(all.Groups)
 	if len(got) != 2 || strings.Join(got[0], ",") != "cmd/main.go" || strings.Join(got[1], ",") != "skip.lock" {
 		t.Fatalf("root files should not share a group: %v", got)
+	}
+}
+
+func TestSpecRejectsMixedFlags(t *testing.T) {
+	_, err := Spec{From: "main", Commit: "abc"}.mode()
+	if err == nil || !strings.Contains(err.Error(), "use only one of --from/--to, --commit, or --branch") {
+		t.Fatalf("from+commit: %v", err)
+	}
+	_, err = Spec{Branch: "feature", To: "HEAD"}.mode()
+	if err == nil || !strings.Contains(err.Error(), "use only one of --from/--to, --commit, or --branch") {
+		t.Fatalf("branch+to: %v", err)
+	}
+	_, err = Spec{To: "HEAD"}.mode()
+	if err == nil || !strings.Contains(err.Error(), "set --from or use --branch") {
+		t.Fatalf("to only: %v", err)
+	}
+	mode, err := Spec{}.mode()
+	if err != nil || mode != specWorkspace {
+		t.Fatalf("empty spec: mode=%v err=%v", mode, err)
+	}
+}
+
+func TestWorkspaceDiffIncludesDirtyAndUntracked(t *testing.T) {
+	dir := gitRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "add", "base.txt")
+	gitRun(t, dir, "commit", "-q", "-m", "main")
+	gitRun(t, dir, "checkout", "-q", "-b", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "on-branch.txt"), []byte("branch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "add", "on-branch.txt")
+	gitRun(t, dir, "commit", "-q", "-m", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "base.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "staged.txt"), []byte("staged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "add", "staged.txt")
+	if err := os.WriteFile(filepath.Join(dir, "extra.txt"), []byte("untracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	diff, source, err := loadGitDiff(ctx, dir, Spec{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Base != "HEAD" || source.Head != "" {
+		t.Fatalf("source: %+v", source)
+	}
+	if !strings.Contains(diff, "base.txt") || !strings.Contains(diff, "staged.txt") || !strings.Contains(diff, "extra.txt") {
+		t.Fatalf("workspace omitted a dirty path:\n%s", diff)
+	}
+	if strings.Contains(diff, "on-branch.txt") {
+		t.Fatalf("workspace included committed branch file:\n%s", diff)
+	}
+
+	result, err := Groups(ctx, dir, Spec{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, group := range result.Groups {
+		paths = append(paths, filePaths(group)...)
+	}
+	got := strings.Join(paths, ",")
+	if !strings.Contains(got, "base.txt") || !strings.Contains(got, "staged.txt") || !strings.Contains(got, "extra.txt") {
+		t.Fatalf("workspace groups: %v", got)
+	}
+	if strings.Contains(got, "on-branch.txt") {
+		t.Fatalf("workspace groups included branch file: %v", got)
+	}
+}
+
+func TestCommitDiffIsParentOnly(t *testing.T) {
+	dir := gitRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "add", "a.txt")
+	gitRun(t, dir, "commit", "-q", "-m", "a")
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "add", "b.txt")
+	gitRun(t, dir, "commit", "-q", "-m", "b")
+	secondCmd := exec.CommandContext(t.Context(), "git", "-C", dir, "rev-parse", "HEAD")
+	secondOut, err := secondCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rev-parse: %v\n%s", err, secondOut)
+	}
+	second := strings.TrimSpace(string(secondOut))
+
+	diff, source, err := loadGitDiff(context.Background(), dir, Spec{Commit: second}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Head != second || source.Base != second+"^" {
+		t.Fatalf("source: %+v", source)
+	}
+	if !strings.Contains(diff, "b.txt") {
+		t.Fatalf("commit omitted b.txt:\n%s", diff)
+	}
+	if strings.Contains(diff, "a.txt") {
+		t.Fatalf("commit included parent file:\n%s", diff)
+	}
+}
+
+func TestBranchDiffUsesMergeBase(t *testing.T) {
+	dir := gitRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("shared\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "add", "shared.txt")
+	gitRun(t, dir, "commit", "-q", "-m", "base")
+	gitRun(t, dir, "checkout", "-q", "-b", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "add", "feature.txt")
+	gitRun(t, dir, "commit", "-q", "-m", "feature")
+	gitRun(t, dir, "checkout", "-q", "main")
+	if err := os.WriteFile(filepath.Join(dir, "main-only.txt"), []byte("main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "add", "main-only.txt")
+	gitRun(t, dir, "commit", "-q", "-m", "main later")
+	gitRun(t, dir, "checkout", "-q", "feature")
+
+	ctx := context.Background()
+	diff, source, err := loadGitDiff(ctx, dir, Spec{Branch: "feature"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Base != "main" || source.Head != "feature" {
+		t.Fatalf("source: %+v", source)
+	}
+	if !strings.Contains(diff, "feature.txt") {
+		t.Fatalf("branch omitted feature.txt:\n%s", diff)
+	}
+	if strings.Contains(diff, "main-only.txt") {
+		t.Fatalf("branch included later main file:\n%s", diff)
+	}
+
+	rangeDiff, _, err := loadGitDiff(ctx, dir, Spec{From: "main", To: "feature"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rangeDiff != diff {
+		t.Fatalf("branch and --from/--to diffs differ")
+	}
+}
+
+func TestFromWithoutToDiffsWorkingTree(t *testing.T) {
+	dir := gitRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "keep.txt"), []byte("keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "add", "keep.txt")
+	gitRun(t, dir, "commit", "-q", "-m", "base")
+	if err := os.WriteFile(filepath.Join(dir, "keep.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	diff, source, err := loadGitDiff(context.Background(), dir, Spec{From: "main"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Base != "main" || source.Head != "" {
+		t.Fatalf("source: %+v", source)
+	}
+	if !strings.Contains(diff, "keep.txt") {
+		t.Fatalf("working tree omitted keep.txt:\n%s", diff)
 	}
 }
 

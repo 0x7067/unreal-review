@@ -27,10 +27,12 @@ From a git repository:
 unreal-review run --out findings.jsonl
 ```
 
-Omit `--from` and `--to` to review the working tree against the merge-base of `main` or `master`. `run` takes a git checkout (`--workspace`, default `.`). `--from` and `--to` accept a branch name, tag, or commit SHA when you want a pinned range. Pathspecs limit the range; `--exclude` omits globs. The selected range is sent in full to the agent with cwd at the checkout. It writes [findings.jsonl](schema/findings-v1.md). Every run records cost. Every finding has a severity: `error`, `warning`, or `note`.
+With no range flags, `run` reviews staged, unstaged, and untracked changes against `HEAD`. `run` takes a git checkout (`--workspace`, default `.`). `--from` and `--to` select `git diff --merge-base` of those refs (branch, tag, or SHA); omit `--to` to include the working tree. `--commit` reviews one commit against its first parent. `--branch` reviews a branch since it diverged from `main` or `master`. Pathspecs limit the range; `--exclude` omits globs. The selected range is sent in full to the agent with cwd at the checkout. It writes [findings.jsonl](schema/findings-v1.md). Every run records cost. Every finding has a severity: `error`, `warning`, or `note`.
 
 ```sh
 unreal-review run --from origin/main --to HEAD --out findings.jsonl
+unreal-review run --branch feature --out findings.jsonl
+unreal-review run --commit abc1234 --out findings.jsonl
 unreal-review run --from abc1234 --to def5678 --exclude '*.lock' -- cmd/
 ```
 

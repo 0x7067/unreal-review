@@ -38,16 +38,18 @@ func printUsage(w *os.File) {
 Render that file for GitHub inline comments, markdown, or another host.
 
 Usage:
-  unreal-review run [--from <rev>] [--to <rev>] [--exclude <glob>] [paths...]
-  unreal-review group [--from <rev>] [--to <rev>] [--exclude <glob>] [paths...]
+  unreal-review run [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>] [--exclude <glob>] [paths...]
+  unreal-review group [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>] [--exclude <glob>] [paths...]
   unreal-review render github [flags] [findings.jsonl]
   unreal-review render markdown [flags] [findings.jsonl]
 
 Run writes a findings JSONL document. That file is the review and the
-checkpoint: it records status and the reviewed commit SHAs. Omit --from
-and --to to review the working tree against the merge-base of main or
-master. Pass either flag as a branch, tag, or SHA to pin the range.
-Interrupt to pause; run again with the same --out to continue.
+checkpoint: it records status and the reviewed commit SHAs. With no
+range flags, run reviews staged, unstaged, and untracked changes
+against HEAD. --from/--to is merge-base of those refs; omit --to to
+include the working tree. --commit reviews one commit against its
+parent. --branch reviews a branch since it diverged from main or
+master. Interrupt to pause; run again with the same --out to continue.
 Group prints related files from the same git range so a large change
 can be reviewed in pieces; it does not start the agent. Render
 reads that document and produces a display-specific output. GitHub
