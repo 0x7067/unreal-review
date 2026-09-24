@@ -1,0 +1,41 @@
+.grok/skills/verify-unreal-review/features/group-files.md
+  s_8822cbc7306549::t_31d88cea429daf 1-42
+  s_8822cbc7306549::t_3ce31582003cc6 43
+cmd/unreal-review/group.go
+  s_8822cbc7306549::t_fbbbdb043e788e 1-140
+  s_d5c1756c188b58::t_41e140250464ad 141
+internal/review/group.go
+  s_8822cbc7306549::t_41481dfddc7b82 1-242,244-245
+  s_8822cbc7306549::t_abeef97cd3ab10 243
+  s_8822cbc7306549::t_b3fd994a70eb08 246-248
+.grok/skills/verify-unreal-review/features/README.md
+  s_d5c1756c188b58::t_1b11c83d8d4604 48
+AGENTS.md
+  s_d5c1756c188b58::t_0153dae7f2b400 13
+internal/review/git.go
+  s_d5c1756c188b58::t_5d45c3c3c9dcc8 15-34,38,42-44,46-48,50-51,53,62,76-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "576c1e39fd76a77e6e6c0d352fb167e3f25268e4",
+  "prompts": {},
+  "sessions": {
+    "s_8822cbc7306549": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a0d3df-6674-7e71-9bea-a392b2567da7",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_d5c1756c188b58": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d3da-57f3-75eb-9323-b41eab3d2b00",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
