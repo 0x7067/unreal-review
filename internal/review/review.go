@@ -3,7 +3,6 @@ package review
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"fmt"
 	"io"
 	"os"
@@ -17,13 +16,21 @@ import (
 	"unreal-review/internal/findings"
 )
 
-//go:embed skill.md
-var skillMarkdown string
-
 const (
-	systemPrompt = `You are a code review agent. Follow the pr-review skill. Write findings.jsonl and stop.`
-	userPrompt   = `Use the pr-review skill. The review brief is in brief.md. The repository is in repo/. Write findings.jsonl at the workspace root. Every finding must include severity.`
 	maxBriefDiff = 200_000
+	systemPrompt = `You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
+
+Write findings as JSONL to the path given in the user message. Each line is one JSON object. Schema version v is 1. Every finding must include severity.
+
+A finding:
+{"v":1,"type":"finding","path":"src/foo.go","start_line":12,"end_line":14,"anchor":"new","severity":"warning","body":"This map write races with the reader on line 40."}
+
+path is repository-relative. start_line and end_line are inclusive 1-based. anchor is new (post-change file) or old (deleted lines). severity is error, warning, or note. body is markdown.
+
+A summary:
+{"v":1,"type":"summary","body":"Two races in the cache; the rest looks sound."}
+
+Prefer lines that appear in the diff. One finding per issue. If nothing material, write only a summary.`
 )
 
 type Options struct {
@@ -38,13 +45,11 @@ type Options struct {
 	Timeout       time.Duration
 	AgentLog      io.Writer
 	Stderr        io.Writer
-	KeepWork      bool
 }
 
 type Result struct {
 	Report findings.Report
 	Diff   string
-	Work   string
 }
 
 func Run(ctx context.Context, opts Options) (Result, error) {
@@ -73,16 +78,16 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 			Summary: "No changes to review.",
 		}, Diff: diff}, nil
 	}
-	work, err := os.MkdirTemp("", "unreal-review-")
+	findingsFile, err := os.CreateTemp("", "unreal-review-findings-*.jsonl")
 	if err != nil {
-		return Result{}, fmt.Errorf("create work directory: %w", err)
+		return Result{}, fmt.Errorf("create findings file: %w", err)
 	}
-	if !opts.KeepWork {
-		defer func() { _ = os.RemoveAll(work) }()
+	findingsPath := findingsFile.Name()
+	if err := findingsFile.Close(); err != nil {
+		return Result{}, fmt.Errorf("close findings file: %w", err)
 	}
-	if err := prepareWork(work, workspace, brief(base, opts.Head, diff)); err != nil {
-		return Result{}, err
-	}
+	defer func() { _ = os.Remove(findingsPath) }()
+
 	level, err := agent.SanitizeLevel(opts.ThinkingLevel)
 	if err != nil {
 		return Result{}, err
@@ -96,12 +101,12 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		logWriter = io.MultiWriter(&logBuf, opts.AgentLog)
 	}
 	if err := agent.Run(ctx, agent.Request{
-		Workspace:     work,
+		Workspace:     workspace,
 		Runner:        opts.Runner,
 		Model:         opts.Model,
 		ThinkingLevel: level,
 		SystemPrompt:  systemPrompt,
-		Prompt:        userPrompt,
+		Prompt:        reviewPrompt(base, opts.Head, findingsPath, diff),
 		Provider:      opts.Provider,
 		OpenRouterKey: opts.OpenRouterKey,
 		Log:           logWriter,
@@ -125,7 +130,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("track review cost: agent log had no usage; OpenRouter should return usage.cost on every response")
 	}
 	runMeta.Cost = cost
-	report, err := agent.ReadFindings(filepath.Join(work, "findings.jsonl"))
+	report, err := agent.ReadFindings(findingsPath)
 	if err != nil {
 		return Result{}, err
 	}
@@ -140,7 +145,25 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 			report.Run.Source = runMeta.Source
 		}
 	}
-	return Result{Report: report, Diff: diff, Work: work}, nil
+	return Result{Report: report, Diff: diff}, nil
+}
+
+func reviewPrompt(base, head, findingsPath, diff string) string {
+	target := head
+	if target == "" {
+		target = "working tree"
+	}
+	body := diff
+	if len(body) > maxBriefDiff {
+		body = body[:maxBriefDiff] + "\n\n[diff truncated]\n"
+	}
+	return fmt.Sprintf(
+		"Write findings JSONL to %s\n\nBase: %s\nHead: %s\n\n```diff\n%s\n```\n",
+		findingsPath,
+		base,
+		target,
+		body,
+	)
 }
 
 func newRun(model, base, head, baseSHA, headSHA string) *findings.Run {
@@ -157,35 +180,6 @@ func newRun(model, base, head, baseSHA, headSHA string) *findings.Run {
 		},
 		Cost: findings.Cost{Currency: "USD"},
 	}
-}
-
-func prepareWork(work, repo, briefText string) error {
-	skillDir := filepath.Join(work, ".harness", "skills", "pr-review")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		return fmt.Errorf("create skill directory: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillMarkdown), 0o644); err != nil {
-		return fmt.Errorf("write skill: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(work, "brief.md"), []byte(briefText), 0o644); err != nil {
-		return fmt.Errorf("write brief: %w", err)
-	}
-	if err := os.Symlink(repo, filepath.Join(work, "repo")); err != nil {
-		return fmt.Errorf("link repository: %w", err)
-	}
-	return nil
-}
-
-func brief(base, head, diff string) string {
-	target := head
-	if target == "" {
-		target = "working tree"
-	}
-	body := diff
-	if len(body) > maxBriefDiff {
-		body = body[:maxBriefDiff] + "\n\n[diff truncated]\n"
-	}
-	return fmt.Sprintf("# Review brief\n\nBase: `%s`\nHead: `%s`\n\n## Diff\n\n```diff\n%s\n```\n", base, target, body)
 }
 
 func detectBase(ctx context.Context, workspace string) (string, error) {

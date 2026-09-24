@@ -26,7 +26,6 @@ func cmdRun(args []string) error {
 	provider := fs.String("provider", "", "LLM provider (default openrouter)")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout")
 	agentLog := fs.String("agent-log", "", "optional path for unreal-agent-runner JSONL")
-	keepWork := fs.Bool("keep-work", false, "keep the temporary agent workspace")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -67,7 +66,6 @@ func cmdRun(args []string) error {
 		Timeout:       *timeout,
 		AgentLog:      logWriter,
 		Stderr:        os.Stderr,
-		KeepWork:      *keepWork,
 	})
 	if err != nil {
 		return err
@@ -82,9 +80,6 @@ func cmdRun(args []string) error {
 	}
 	if result.Report.Run != nil {
 		fmt.Fprintf(os.Stderr, "cost: %s\n", result.Report.Run.Cost.Format())
-	}
-	if *keepWork && result.Work != "" {
-		fmt.Fprintf(os.Stderr, "work: %s\n", result.Work)
 	}
 	return nil
 }

@@ -27,7 +27,7 @@ From a git repository:
 unreal-review run --base main --out findings.jsonl
 ```
 
-`run` diffs `--base` against the working tree (or `--head`), starts the agent, and writes [findings.jsonl](schema/findings-v1.md). Every run records cost. Every finding has a severity: `error`, `warning`, or `note`.
+`run` takes a git checkout (`--workspace`, default `.`), diffs `--base` against the working tree (or `--head`), and sends that unified diff to the agent with cwd at the checkout. It writes [findings.jsonl](schema/findings-v1.md). Every run records cost. Every finding has a severity: `error`, `warning`, or `note`.
 
 ```sh
 unreal-review render markdown findings.jsonl
