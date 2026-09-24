@@ -1,0 +1,28 @@
+internal/eval/eval_test.go
+  s_c290e147efbfce::t_1adbbeea0d16ab 10,12-14,19,21,31,33,41-42,45-47,52,57,63-109,112-113,125,136
+cmd/unreal-review/eval.go
+  s_c290e147efbfce::t_1c934b6930100d 23-27,115,127,133-134,138-140
+  s_c290e147efbfce::t_691dc55e704fc0 28-31
+internal/eval/eval.go
+  s_c290e147efbfce::t_0324d8d8c69a18 20,35,46,56-59,64-70,78,82,84-91,99
+internal/eval/corpus.go
+  s_c290e147efbfce::t_3bac15ecd940a0 3-4,122-285,329,335-359
+README.md
+  s_c290e147efbfce::t_df9e2697f1b046 72-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "42227a3148c46baf3636706415dd01840062297b",
+  "prompts": {},
+  "sessions": {
+    "s_c290e147efbfce": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d5a0-ad3b-7135-b216-5c94b1e0dcb6",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
