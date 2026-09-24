@@ -1,0 +1,32 @@
+internal/eval/corpus.go
+  s_c290e147efbfce::t_fb56e596da1af5 1-176
+cmd/unreal-review/main.go
+  s_c290e147efbfce::t_1bdf6e629c413a 25-26,45,57-62
+cmd/unreal-review/eval.go
+  s_c290e147efbfce::t_50f2e372e4c26f 102
+  s_c290e147efbfce::t_0de27904fe391d 1-101,103-124,126-130,132-135,137-145
+  s_c290e147efbfce::t_0ead4199456d80 125,131,136
+internal/eval/eval.go
+  s_c290e147efbfce::t_f09c99e92bdd99 93,114,119
+  s_c290e147efbfce::t_e4a58116110af9 1-92,94-113,115-118,120-180
+internal/eval/eval_test.go
+  s_c290e147efbfce::t_db8c1026be3c5b 1-95
+README.md
+  s_c290e147efbfce::t_78546314730b53 65-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dab3e1ce6bbef7418d0f994e97b3dff20fda0bcb",
+  "prompts": {},
+  "sessions": {
+    "s_c290e147efbfce": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d5a0-ad3b-7135-b216-5c94b1e0dcb6",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
