@@ -96,9 +96,6 @@ func cmdRun(args []string) error {
 			return writeErr
 		}
 	}
-	for _, file := range result.Skipped {
-		fmt.Fprintf(os.Stderr, "skipped: %s (%s)\n", file.Path, file.Reason)
-	}
 	if result.Report.Run != nil {
 		fmt.Fprintf(os.Stderr, "cost: %s\n", result.Report.Run.Cost.Format())
 		if result.Report.Run.Status != "" && result.Report.Run.Status != findings.StatusComplete {

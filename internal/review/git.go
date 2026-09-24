@@ -6,33 +6,25 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os/exec"
-	"strconv"
 	"strings"
 
 	"unreal-review/internal/findings"
 )
 
-const maxFileDiffLines = 4000
-
-type SkippedFile struct {
-	Path   string
-	Reason string
-}
-
-func loadGitDiff(ctx context.Context, workspace, from, to string, paths, exclude []string) (string, findings.Source, []SkippedFile, error) {
+func loadGitDiff(ctx context.Context, workspace, from, to string, paths, exclude []string) (string, findings.Source, error) {
 	if from == "" {
 		detected, err := detectFrom(ctx, workspace)
 		if err != nil {
-			return "", findings.Source{}, nil, err
+			return "", findings.Source{}, err
 		}
 		from = detected
 	}
 	if _, err := gitRev(ctx, workspace, from); err != nil {
-		return "", findings.Source{}, nil, err
+		return "", findings.Source{}, err
 	}
 	if to != "" {
 		if _, err := gitRev(ctx, workspace, to); err != nil {
-			return "", findings.Source{}, nil, err
+			return "", findings.Source{}, err
 		}
 	}
 
@@ -45,21 +37,9 @@ func loadGitDiff(ctx context.Context, workspace, from, to string, paths, exclude
 		scope = append(scope, excludeSpec(pattern))
 	}
 
-	stat, err := git(ctx, workspace, gitDiffArgs(from, to, []string{"--numstat"}, scope)...)
+	diff, err := git(ctx, workspace, gitDiffArgs(from, to, scope)...)
 	if err != nil {
-		return "", findings.Source{}, nil, fmt.Errorf("git diff: %w", err)
-	}
-	eligible, skipped := classifyDiff(stat)
-	var diff string
-	if len(eligible) > 0 {
-		literals := make([]string, len(eligible))
-		for i, path := range eligible {
-			literals[i] = ":(literal)" + path
-		}
-		diff, err = git(ctx, workspace, gitDiffArgs(from, to, nil, literals)...)
-		if err != nil {
-			return "", findings.Source{}, skipped, fmt.Errorf("git diff: %w", err)
-		}
+		return "", findings.Source{}, fmt.Errorf("git diff: %w", err)
 	}
 
 	fromSHA, _ := gitRev(ctx, workspace, from)
@@ -72,51 +52,7 @@ func loadGitDiff(ctx context.Context, workspace, from, to string, paths, exclude
 		HeadSHA: toSHA,
 		DiffSHA: diffFingerprint(diff),
 	}
-	return diff, source, skipped, nil
-}
-
-func classifyDiff(numstat string) (eligible []string, skipped []SkippedFile) {
-	for line := range strings.SplitSeq(strings.TrimSpace(numstat), "\n") {
-		if line == "" {
-			continue
-		}
-		added, deleted, path, binary, ok := parseNumstatLine(line)
-		if !ok || path == "" {
-			continue
-		}
-		switch {
-		case binary:
-			skipped = append(skipped, SkippedFile{Path: path, Reason: "binary"})
-		case added+deleted > maxFileDiffLines:
-			skipped = append(skipped, SkippedFile{Path: path, Reason: "too large"})
-		default:
-			eligible = append(eligible, path)
-		}
-	}
-	return eligible, skipped
-}
-
-func parseNumstatLine(line string) (added, deleted int, path string, binary, ok bool) {
-	addedRaw, rest, found := strings.Cut(line, "\t")
-	if !found {
-		return 0, 0, "", false, false
-	}
-	deletedRaw, path, found := strings.Cut(rest, "\t")
-	if !found {
-		return 0, 0, "", false, false
-	}
-	if addedRaw == "-" || deletedRaw == "-" {
-		return 0, 0, path, true, true
-	}
-	added, err := strconv.Atoi(addedRaw)
-	if err != nil {
-		return 0, 0, "", false, false
-	}
-	deleted, err = strconv.Atoi(deletedRaw)
-	if err != nil {
-		return 0, 0, "", false, false
-	}
-	return added, deleted, path, false, true
+	return diff, source, nil
 }
 
 func excludeSpec(pattern string) string {
@@ -129,10 +65,8 @@ func excludeSpec(pattern string) string {
 	return ":(exclude)" + pattern
 }
 
-func gitDiffArgs(from, to string, extra, pathspecs []string) []string {
-	args := []string{"diff", "--no-color", "--no-ext-diff"}
-	args = append(args, extra...)
-	args = append(args, "--merge-base", from)
+func gitDiffArgs(from, to string, pathspecs []string) []string {
+	args := []string{"diff", "--no-color", "--no-ext-diff", "--merge-base", from}
 	if to != "" {
 		args = append(args, to)
 	}

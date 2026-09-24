@@ -27,7 +27,7 @@ From a git repository:
 unreal-review run --out findings.jsonl
 ```
 
-Omit `--from` and `--to` to review the working tree against the merge-base of `main` or `master`. `run` takes a git checkout (`--workspace`, default `.`). `--from` and `--to` accept a branch name, tag, or commit SHA when you want a pinned range. Pathspecs limit the range; `--exclude` omits globs. Binary files and diffs larger than 4000 lines are skipped. The remaining unified diff is sent to the agent with cwd at the checkout. It writes [findings.jsonl](schema/findings-v1.md). Every run records cost. Every finding has a severity: `error`, `warning`, or `note`.
+Omit `--from` and `--to` to review the working tree against the merge-base of `main` or `master`. `run` takes a git checkout (`--workspace`, default `.`). `--from` and `--to` accept a branch name, tag, or commit SHA when you want a pinned range. Pathspecs limit the range; `--exclude` omits globs. The selected range is sent in full to the agent with cwd at the checkout. It writes [findings.jsonl](schema/findings-v1.md). Every run records cost. Every finding has a severity: `error`, `warning`, or `note`.
 
 ```sh
 unreal-review run --from origin/main --to HEAD --out findings.jsonl

@@ -43,9 +43,8 @@ type Options struct {
 }
 
 type Result struct {
-	Report  findings.Report
-	Diff    string
-	Skipped []SkippedFile
+	Report findings.Report
+	Diff   string
 }
 
 func Run(ctx context.Context, opts Options) (Result, error) {
@@ -53,7 +52,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("workspace: %w", err)
 	}
-	diff, source, skipped, err := loadGitDiff(ctx, workspace, opts.From, opts.To, opts.Paths, opts.Exclude)
+	diff, source, err := loadGitDiff(ctx, workspace, opts.From, opts.To, opts.Paths, opts.Exclude)
 	if err != nil {
 		return Result{}, err
 	}
@@ -63,7 +62,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		result := Result{Report: findings.Report{
 			Run:     runMeta,
 			Summary: "No changes to review.",
-		}, Diff: diff, Skipped: skipped}
+		}, Diff: diff}
 		if err := persist(opts.Out, result.Report); err != nil {
 			return result, err
 		}
@@ -72,18 +71,18 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 
 	checkpoint, err := loadCheckpoint(opts.Out)
 	if err != nil {
-		return Result{Diff: diff, Skipped: skipped}, err
+		return Result{Diff: diff}, err
 	}
 	resuming := false
 	if !opts.Fresh && checkpoint.Run != nil {
 		if checkpoint.Complete() {
-			return Result{Report: checkpoint, Diff: diff, Skipped: skipped}, fmt.Errorf(
+			return Result{Report: checkpoint, Diff: diff}, fmt.Errorf(
 				"%s is a complete review of %s; pass --fresh to start over",
 				opts.Out, formatSource(checkpoint.Run.Source),
 			)
 		}
 		if !checkpoint.Run.Source.SameDiff(source) {
-			return Result{Report: checkpoint, Diff: diff, Skipped: skipped}, fmt.Errorf(
+			return Result{Report: checkpoint, Diff: diff}, fmt.Errorf(
 				"%s is a review of %s; workspace is %s",
 				opts.Out, formatSource(checkpoint.Run.Source), formatSource(source),
 			)
@@ -98,29 +97,29 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	if opts.Agent == nil {
-		return Result{Diff: diff, Skipped: skipped}, fmt.Errorf("agent is required")
+		return Result{Diff: diff}, fmt.Errorf("agent is required")
 	}
 
 	findingsPath, cleanup, err := prepareWork(opts.Out, !resuming)
 	if err != nil {
-		return Result{Diff: diff, Skipped: skipped}, err
+		return Result{Diff: diff}, err
 	}
 	defer cleanup()
 
 	prior, err := readWork(findingsPath)
 	if err != nil {
-		return Result{Diff: diff, Skipped: skipped}, err
+		return Result{Diff: diff}, err
 	}
 	if resuming && len(prior.Findings) == 0 && strings.TrimSpace(prior.Summary) == "" {
 		prior.Findings = checkpoint.Findings
 		prior.Summary = checkpoint.Summary
 		if err := writeWork(findingsPath, prior); err != nil {
-			return Result{Diff: diff, Skipped: skipped}, err
+			return Result{Diff: diff}, err
 		}
 	}
 	runMeta.Status = findings.StatusRunning
 	report := findings.Report{Run: runMeta, Findings: prior.Findings, Summary: prior.Summary}
-	result := Result{Report: report, Diff: diff, Skipped: skipped}
+	result := Result{Report: report, Diff: diff}
 	if err := persist(opts.Out, report); err != nil {
 		return result, err
 	}
@@ -129,7 +128,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Workspace:    workspace,
 		ReviewID:     runMeta.ID,
 		FindingsPath: findingsPath,
-		Prompt:       reviewPrompt(source.Base, source.Head, findingsPath, diff, skipped),
+		Prompt:       reviewPrompt(source.Base, source.Head, findingsPath, diff),
 		SystemPrompt: systemPrompt,
 		Model:        opts.Model,
 	})
@@ -187,7 +186,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 }
 
-func reviewPrompt(from, to, findingsPath, diff string, skipped []SkippedFile) string {
+func reviewPrompt(from, to, findingsPath, diff string) string {
 	target := to
 	if target == "" {
 		target = "working tree"
@@ -196,21 +195,11 @@ func reviewPrompt(from, to, findingsPath, diff string, skipped []SkippedFile) st
 	if len(body) > maxBriefDiff {
 		body = body[:maxBriefDiff] + "\n\n[diff truncated]\n"
 	}
-	var extra string
-	if len(skipped) > 0 {
-		var b strings.Builder
-		b.WriteString("\n\nSkipped:\n")
-		for _, file := range skipped {
-			fmt.Fprintf(&b, "- %s (%s)\n", file.Path, file.Reason)
-		}
-		extra = b.String()
-	}
 	return fmt.Sprintf(
-		"Write findings JSONL to %s\n\nFrom: %s\nTo: %s%s\n\n```diff\n%s\n```\n",
+		"Write findings JSONL to %s\n\nFrom: %s\nTo: %s\n\n```diff\n%s\n```\n",
 		findingsPath,
 		from,
 		target,
-		extra,
 		body,
 	)
 }
