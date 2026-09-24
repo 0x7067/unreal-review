@@ -10,7 +10,7 @@ unreal-review is a pipeline of replaceable pieces around one product: [schema/fi
 
 | Piece | Owns | Seam |
 | --- | --- | --- |
-| Source | The diff under review | git, today, inside `internal/review` |
+| Source | The diff under review | git `--from`/`--to` (branch, tag, or SHA; both optional: working tree vs merge-base of main/master), pathspecs, `--exclude`, file eligibility; inside `internal/review` |
 | Agent | Prompt + workspace → findings JSONL and cost | `review.Agent` |
 | Review | Checkpoint, SHA binding, prompt, status | `internal/review` |
 | Renderer | Display a report | functions on `findings.Report` (markdown, GitHub) |

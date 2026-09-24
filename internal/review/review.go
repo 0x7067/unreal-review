@@ -2,12 +2,9 @@ package review
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -35,8 +32,10 @@ Prefer lines that appear in the diff. One finding per issue. If nothing material
 
 type Options struct {
 	Workspace string
-	Base      string
-	Head      string
+	From      string
+	To        string
+	Paths     []string
+	Exclude   []string
 	Out       string
 	Fresh     bool
 	Model     string
@@ -44,8 +43,9 @@ type Options struct {
 }
 
 type Result struct {
-	Report findings.Report
-	Diff   string
+	Report  findings.Report
+	Diff    string
+	Skipped []SkippedFile
 }
 
 func Run(ctx context.Context, opts Options) (Result, error) {
@@ -53,27 +53,9 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("workspace: %w", err)
 	}
-	base := opts.Base
-	if base == "" {
-		detected, err := detectBase(ctx, workspace)
-		if err != nil {
-			return Result{}, err
-		}
-		base = detected
-	}
-	diff, err := gitDiff(ctx, workspace, base, opts.Head)
+	diff, source, skipped, err := loadGitDiff(ctx, workspace, opts.From, opts.To, opts.Paths, opts.Exclude)
 	if err != nil {
 		return Result{}, err
-	}
-	baseSHA, _ := gitRev(ctx, workspace, base)
-	headSHA, _ := gitRev(ctx, workspace, headRev(opts.Head))
-	source := findings.Source{
-		Kind:    "git",
-		Base:    base,
-		Head:    opts.Head,
-		BaseSHA: baseSHA,
-		HeadSHA: headSHA,
-		DiffSHA: diffFingerprint(diff),
 	}
 	runMeta := newRun(opts.Model, source)
 	if strings.TrimSpace(diff) == "" {
@@ -81,7 +63,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		result := Result{Report: findings.Report{
 			Run:     runMeta,
 			Summary: "No changes to review.",
-		}, Diff: diff}
+		}, Diff: diff, Skipped: skipped}
 		if err := persist(opts.Out, result.Report); err != nil {
 			return result, err
 		}
@@ -90,18 +72,18 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 
 	checkpoint, err := loadCheckpoint(opts.Out)
 	if err != nil {
-		return Result{}, err
+		return Result{Diff: diff, Skipped: skipped}, err
 	}
 	resuming := false
 	if !opts.Fresh && checkpoint.Run != nil {
 		if checkpoint.Complete() {
-			return Result{Report: checkpoint, Diff: diff}, fmt.Errorf(
+			return Result{Report: checkpoint, Diff: diff, Skipped: skipped}, fmt.Errorf(
 				"%s is a complete review of %s; pass --fresh to start over",
 				opts.Out, formatSource(checkpoint.Run.Source),
 			)
 		}
 		if !checkpoint.Run.Source.SameDiff(source) {
-			return Result{Report: checkpoint, Diff: diff}, fmt.Errorf(
+			return Result{Report: checkpoint, Diff: diff, Skipped: skipped}, fmt.Errorf(
 				"%s is a review of %s; workspace is %s",
 				opts.Out, formatSource(checkpoint.Run.Source), formatSource(source),
 			)
@@ -116,37 +98,38 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	if opts.Agent == nil {
-		return Result{}, fmt.Errorf("agent is required")
+		return Result{Diff: diff, Skipped: skipped}, fmt.Errorf("agent is required")
 	}
 
 	findingsPath, cleanup, err := prepareWork(opts.Out, !resuming)
 	if err != nil {
-		return Result{}, err
+		return Result{Diff: diff, Skipped: skipped}, err
 	}
 	defer cleanup()
 
 	prior, err := readWork(findingsPath)
 	if err != nil {
-		return Result{}, err
+		return Result{Diff: diff, Skipped: skipped}, err
 	}
 	if resuming && len(prior.Findings) == 0 && strings.TrimSpace(prior.Summary) == "" {
 		prior.Findings = checkpoint.Findings
 		prior.Summary = checkpoint.Summary
 		if err := writeWork(findingsPath, prior); err != nil {
-			return Result{}, err
+			return Result{Diff: diff, Skipped: skipped}, err
 		}
 	}
 	runMeta.Status = findings.StatusRunning
 	report := findings.Report{Run: runMeta, Findings: prior.Findings, Summary: prior.Summary}
+	result := Result{Report: report, Diff: diff, Skipped: skipped}
 	if err := persist(opts.Out, report); err != nil {
-		return Result{Report: report, Diff: diff}, err
+		return result, err
 	}
 
 	agentResult, agentErr := opts.Agent.Run(ctx, AgentRequest{
 		Workspace:    workspace,
 		ReviewID:     runMeta.ID,
 		FindingsPath: findingsPath,
-		Prompt:       reviewPrompt(base, opts.Head, findingsPath, diff),
+		Prompt:       reviewPrompt(source.Base, source.Head, findingsPath, diff, skipped),
 		SystemPrompt: systemPrompt,
 		Model:        opts.Model,
 	})
@@ -155,53 +138,57 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 
 	work, err := readWork(findingsPath)
 	if err != nil {
-		return Result{Report: report, Diff: diff}, err
+		return result, err
 	}
 	report.Findings = mergeFindings(work.Findings)
 	report.Summary = work.Summary
+	result.Report = report
 
 	switch {
 	case agentErr == nil && strings.TrimSpace(report.Summary) != "" && runMeta.Cost.Recorded():
 		runMeta.Status = findings.StatusComplete
 		report.Run = runMeta
+		result.Report = report
 		if err := persist(opts.Out, report); err != nil {
-			return Result{Report: report, Diff: diff}, err
+			return result, err
 		}
 		if fileOut(opts.Out) {
 			_ = os.Remove(findingsPath)
 		}
-		return Result{Report: report, Diff: diff}, nil
+		return result, nil
 	case interrupted:
 		runMeta.Status = findings.StatusRunning
 		report.Run = runMeta
+		result.Report = report
 		if err := persist(opts.Out, report); err != nil {
-			return Result{Report: report, Diff: diff}, err
+			return result, err
 		}
 		if fileOut(opts.Out) {
-			return Result{Report: report, Diff: diff}, fmt.Errorf("review paused; resume with the same --out %s", opts.Out)
+			return result, fmt.Errorf("review paused; resume with the same --out %s", opts.Out)
 		}
 		if agentErr != nil {
-			return Result{Report: report, Diff: diff}, agentErr
+			return result, agentErr
 		}
-		return Result{Report: report, Diff: diff}, fmt.Errorf("review paused")
+		return result, fmt.Errorf("review paused")
 	default:
 		runMeta.Status = findings.StatusFailed
 		report.Run = runMeta
+		result.Report = report
 		if err := persist(opts.Out, report); err != nil {
-			return Result{Report: report, Diff: diff}, err
+			return result, err
 		}
 		if agentErr != nil {
-			return Result{Report: report, Diff: diff}, agentErr
+			return result, agentErr
 		}
 		if strings.TrimSpace(report.Summary) == "" {
-			return Result{Report: report, Diff: diff}, fmt.Errorf("review did not write a summary")
+			return result, fmt.Errorf("review did not write a summary")
 		}
-		return Result{Report: report, Diff: diff}, fmt.Errorf("review did not record cost")
+		return result, fmt.Errorf("review did not record cost")
 	}
 }
 
-func reviewPrompt(base, head, findingsPath, diff string) string {
-	target := head
+func reviewPrompt(from, to, findingsPath, diff string, skipped []SkippedFile) string {
+	target := to
 	if target == "" {
 		target = "working tree"
 	}
@@ -209,11 +196,21 @@ func reviewPrompt(base, head, findingsPath, diff string) string {
 	if len(body) > maxBriefDiff {
 		body = body[:maxBriefDiff] + "\n\n[diff truncated]\n"
 	}
+	var extra string
+	if len(skipped) > 0 {
+		var b strings.Builder
+		b.WriteString("\n\nSkipped:\n")
+		for _, file := range skipped {
+			fmt.Fprintf(&b, "- %s (%s)\n", file.Path, file.Reason)
+		}
+		extra = b.String()
+	}
 	return fmt.Sprintf(
-		"Write findings JSONL to %s\n\nBase: %s\nHead: %s\n\n```diff\n%s\n```\n",
+		"Write findings JSONL to %s\n\nFrom: %s\nTo: %s%s\n\n```diff\n%s\n```\n",
 		findingsPath,
-		base,
+		from,
 		target,
+		extra,
 		body,
 	)
 }
@@ -229,49 +226,8 @@ func newRun(model string, source findings.Source) *findings.Run {
 	}
 }
 
-func detectBase(ctx context.Context, workspace string) (string, error) {
-	for _, name := range []string{"main", "master", "origin/main", "origin/master"} {
-		if _, err := gitRev(ctx, workspace, name); err == nil {
-			return name, nil
-		}
-	}
-	return "", fmt.Errorf("set --base; could not find main or master")
-}
-
-func gitDiff(ctx context.Context, workspace, base, head string) (string, error) {
-	args := []string{"-C", workspace, "diff", "--no-color", "--no-ext-diff", "--merge-base", base}
-	if head != "" {
-		args = append(args, head)
-	}
-	out, err := exec.CommandContext(ctx, "git", args...).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git diff: %s: %w", strings.TrimSpace(string(out)), err)
-	}
-	return string(out), nil
-}
-
-func gitRev(ctx context.Context, workspace, rev string) (string, error) {
-	out, err := exec.CommandContext(ctx, "git", "-C", workspace, "rev-parse", rev).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git rev-parse %s: %s: %w", rev, strings.TrimSpace(string(out)), err)
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-func headRev(head string) string {
-	if head == "" {
-		return "HEAD"
-	}
-	return head
-}
-
-func diffFingerprint(diff string) string {
-	sum := sha256.Sum256([]byte(diff))
-	return hex.EncodeToString(sum[:])
-}
-
 func formatSource(source findings.Source) string {
-	return fmt.Sprintf("base %s head %s diff %s", shortSHA(source.BaseSHA), shortSHA(source.HeadSHA), shortSHA(source.DiffSHA))
+	return fmt.Sprintf("from %s to %s diff %s", shortSHA(source.BaseSHA), shortSHA(source.HeadSHA), shortSHA(source.DiffSHA))
 }
 
 func shortSHA(sha string) string {

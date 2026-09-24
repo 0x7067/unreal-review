@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,8 +21,10 @@ func cmdRun(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	workspace := fs.String("workspace", ".", "git repository to review")
-	base := fs.String("base", "", "git ref to diff against (default: main or master)")
-	head := fs.String("head", "", "git ref to diff; empty uses the working tree")
+	from := fs.String("from", "", "start of the git range: branch, tag, or SHA (default: main or master)")
+	to := fs.String("to", "", "end of the git range: branch, tag, or SHA (default: working tree)")
+	var exclude stringList
+	fs.Var(&exclude, "exclude", "git glob to omit from the diff; repeatable")
 	outPath := fs.String("out", "findings.jsonl", "findings JSONL path, or - for stdout")
 	fresh := fs.Bool("fresh", false, "start a new review even if --out already exists")
 	runner := fs.String("runner", "unreal-agent-runner", "unreal-agent-runner binary")
@@ -35,9 +38,6 @@ func cmdRun(args []string) error {
 			return nil
 		}
 		return err
-	}
-	if fs.NArg() != 0 {
-		return fmt.Errorf("run takes no positional arguments")
 	}
 	if *model == "" {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")
@@ -69,8 +69,10 @@ func cmdRun(args []string) error {
 	defer stop()
 	result, err := review.Run(ctx, review.Options{
 		Workspace: *workspace,
-		Base:      *base,
-		Head:      *head,
+		From:      *from,
+		To:        *to,
+		Paths:     fs.Args(),
+		Exclude:   exclude,
 		Out:       *outPath,
 		Fresh:     *fresh,
 		Model:     *model,
@@ -94,6 +96,9 @@ func cmdRun(args []string) error {
 			return writeErr
 		}
 	}
+	for _, file := range result.Skipped {
+		fmt.Fprintf(os.Stderr, "skipped: %s (%s)\n", file.Path, file.Reason)
+	}
 	if result.Report.Run != nil {
 		fmt.Fprintf(os.Stderr, "cost: %s\n", result.Report.Run.Cost.Format())
 		if result.Report.Run.Status != "" && result.Report.Run.Status != findings.StatusComplete {
@@ -101,6 +106,20 @@ func cmdRun(args []string) error {
 		}
 	}
 	return err
+}
+
+type stringList []string
+
+func (s *stringList) String() string {
+	return strings.Join(*s, ", ")
+}
+
+func (s *stringList) Set(value string) error {
+	if value == "" {
+		return fmt.Errorf("empty --exclude")
+	}
+	*s = append(*s, value)
+	return nil
 }
 
 func openOut(path string) (io.WriteCloser, error) {

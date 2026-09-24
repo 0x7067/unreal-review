@@ -33,5 +33,5 @@ jobs:
           UNREAL_HARNESS_LLM_MODEL: ${{ vars.UNREAL_HARNESS_LLM_MODEL }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          unreal-review run --base "origin/${{ github.base_ref }}" --head HEAD --out findings.jsonl
+          unreal-review run --from "origin/${{ github.base_ref }}" --to HEAD --out findings.jsonl
           unreal-review render github --pr "${{ github.repository }}#${{ github.event.pull_request.number }}" findings.jsonl
