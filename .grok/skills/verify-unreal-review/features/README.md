@@ -45,7 +45,7 @@ Keep implementation details out of the map. Name only user paths, stable handles
 
 - [CLI usage](./cli-usage.md) covers help, unknown commands, and the env/flag gates on `run`.
 - [Review a git range](./review-git-range.md) covers workspace mode, `--from`/`--to`, `--commit`, `--branch`, empty diffs, pathspecs, `--exclude`, and the skippable live agent path.
-- [Group related files](./group-files.md) covers `group` on the same git range, directory groups, cross-directory tests, workspace grouping, and `--exclude`.
+- [Group related files](./group-files.md) covers `group` on the same git range, directory groups, stem companions, lockfiles, import edges, cross-directory tests, workspace grouping, and `--exclude`.
 - [Checkpoint and resume](./checkpoint.md) covers complete-file refuse, `--fresh`, SHA mismatch, failed resume, and empty-diff overwrite.
 - [Render markdown](./render-markdown.md) covers stdout, `--out`, stdin, empty input, missing files, and incomplete status.
 - [Render GitHub](./render-github.md) covers `--dry-run` payloads, posting gates, PR specs, and what dry-run still fetches.

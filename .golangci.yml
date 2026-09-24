@@ -21,6 +21,7 @@ linters:
           allow:
             - $gostd
             - unreal-review/internal/findings
+            - github.com/odvcencio/gotreesitter
 
 formatters:
   enable:

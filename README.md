@@ -44,7 +44,7 @@ To review a large change in pieces, run `group` on the same git range. It prints
 unreal-review group --from origin/main --to HEAD
 ```
 
-Files in one directory stay together. A test file that names an implementation (`foo_test.go`, `foo.test.ts`, `test_foo.py`) joins that implementation's group when the paths are in different directories. Locale variants (`messages_en.properties` with `messages_zh.properties`, or `locales/en/auth.json` with `locales/zh/auth.json`) share a group. A header and its source (`foo.h` with `foo.c`) do too. A directory group larger than 25 files or 2000 changed lines splits on the next path component. Each `run` writes its own findings file and `diff_sha`.
+Files in one directory stay together. Files that share a stem in the same directory (`Button.tsx` with `Button.module.css`, `foo.go` with `foo_linux.go`) share a group. A test file that names an implementation (`foo_test.go`, `foo.test.ts`, `test_foo.py`, `FooTest.java`) joins that implementation's group when the paths are in different directories. Locale variants (`messages_en.properties` with `messages_zh.properties`, `locales/en/auth.json` with `locales/zh/auth.json`, or `docs/en/guide.md` with `docs/zh/guide.md`) share a group. A header and its source (`foo.h` with `foo.c`) do too. `go.mod` stays with `go.sum`. Files that import each other across directories join when the import matches exactly one changed path (Go, JavaScript/TypeScript, Python, Java, Kotlin, Rust, PHP, C#, Swift, Vue). A directory group larger than 25 files or 2000 changed lines splits on the next path component, then into size-capped chunks. Each `run` writes its own findings file and `diff_sha`.
 
 ```sh
 unreal-review render markdown findings.jsonl

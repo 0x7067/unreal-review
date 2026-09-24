@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"unreal-review/internal/findings"
@@ -163,6 +164,34 @@ func resolveCommit(ctx context.Context, workspace, commit string) (resolved, err
 		return resolved{base: "", head: commit, baseSHA: "", headSHA: headSHA}, nil
 	}
 	return resolved{base: commit + "^", head: commit, baseSHA: fields[1], headSHA: headSHA}, nil
+}
+
+const maxSourceBytes = 1 << 20
+
+func collectSources(ctx context.Context, workspace string, r resolved, files []ChangedFile) map[string][]byte {
+	out := make(map[string][]byte)
+	for _, file := range files {
+		if file.Binary {
+			continue
+		}
+		body, err := readHeadFile(ctx, workspace, r, file.Path)
+		if err != nil || len(body) == 0 || len(body) > maxSourceBytes {
+			continue
+		}
+		out[file.Path] = body
+	}
+	return out
+}
+
+func readHeadFile(ctx context.Context, workspace string, r resolved, path string) ([]byte, error) {
+	if r.head == "" || r.untracked {
+		return os.ReadFile(filepath.Join(workspace, path))
+	}
+	out, err := git(ctx, workspace, "show", r.head+":"+path)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(out), nil
 }
 
 func collectDiff(ctx context.Context, workspace string, r resolved, pathspecs []string) (string, error) {

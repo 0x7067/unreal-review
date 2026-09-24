@@ -57,7 +57,8 @@ func Groups(ctx context.Context, workspace string, spec Spec, paths, exclude []s
 	if err != nil {
 		return GroupResult{}, err
 	}
-	return GroupResult{Spec: spec, From: r.base, To: r.head, Groups: clusterFiles(files)}, nil
+	src := collectSources(ctx, workspace, r, files)
+	return GroupResult{Spec: spec, From: r.base, To: r.head, Groups: clusterFiles(files, src)}, nil
 }
 
 func parseNumstat(raw string) ([]ChangedFile, error) {
@@ -133,7 +134,7 @@ const (
 	maxGroupLines = 2000
 )
 
-func clusterFiles(files []ChangedFile) []FileGroup {
+func clusterFiles(files []ChangedFile, src map[string][]byte) []FileGroup {
 	if len(files) == 0 {
 		return nil
 	}
@@ -150,9 +151,12 @@ func clusterFiles(files []ChangedFile) []FileGroup {
 		}
 		groupKey[i] = dir
 	}
-	attachTests(files, groupKey)
 	mergeFamilies(files, groupKey, localeFamilyKey, 0)
 	mergeFamilies(files, groupKey, headerFamilyKey, 4)
+	mergeFamilies(files, groupKey, stemFamilyKey, 0)
+	mergeFamilies(files, groupKey, lockFamilyKey, 0)
+	attachTests(files, groupKey)
+	attachImports(files, groupKey, src)
 	buckets := make(map[string][]ChangedFile)
 	for i, file := range files {
 		key := groupKey[i]
@@ -193,8 +197,24 @@ func attachTests(files []ChangedFile, groupKey []string) {
 		if !ok || ref.dup {
 			continue
 		}
+		if filepath.ToSlash(filepath.Dir(file.Path)) == filepath.ToSlash(filepath.Dir(files[ref.index].Path)) {
+			continue
+		}
+		if !inTestDir(file.Path) {
+			continue
+		}
 		groupKey[i] = groupKey[ref.index]
 	}
+}
+
+func inTestDir(path string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(filepath.Dir(path)), "/") {
+		switch strings.ToLower(part) {
+		case "tests", "test", "__tests__", "spec":
+			return true
+		}
+	}
+	return false
 }
 
 func mergeFamilies(files []ChangedFile, groupKey []string, keyFn func(string) (string, bool), maxN int) {
@@ -213,8 +233,18 @@ func mergeFamilies(files []ChangedFile, groupKey []string, keyFn func(string) (s
 		if maxN > 0 && len(idxs) > maxN {
 			continue
 		}
-		owner := "family:" + key
+		var take []int
 		for _, i := range idxs {
+			if strings.HasPrefix(groupKey[i], "family:") {
+				continue
+			}
+			take = append(take, i)
+		}
+		if len(take) < 2 {
+			continue
+		}
+		owner := "family:" + key
+		for _, i := range take {
 			groupKey[i] = owner
 		}
 	}
@@ -240,17 +270,57 @@ func splitOversized(groups []FileGroup, all []ChangedFile) []FileGroup {
 			out = append(out, group)
 			continue
 		}
-		parts := splitByNextDir(group.Files)
-		if len(parts) <= 1 {
-			out = append(out, group)
+		if distinctDirs(group.Files) > 1 {
+			out = append(out, packFiles(group.Files, all)...)
 			continue
 		}
-		childBuckets := make(map[string][]ChangedFile, len(parts))
-		for k, files := range parts {
-			childBuckets[k] = files
+		parts := splitByNextDir(group.Files)
+		if len(parts) > 1 {
+			childBuckets := make(map[string][]ChangedFile, len(parts))
+			for k, files := range parts {
+				childBuckets[k] = files
+			}
+			out = append(out, splitOversized(groupsFromBuckets(childBuckets, all), all)...)
+			continue
 		}
-		out = append(out, splitOversized(groupsFromBuckets(childBuckets, all), all)...)
+		out = append(out, packFiles(group.Files, all)...)
 	}
+	return out
+}
+
+func distinctDirs(files []ChangedFile) int {
+	seen := map[string]struct{}{}
+	for _, file := range files {
+		seen[filepath.ToSlash(filepath.Dir(file.Path))] = struct{}{}
+	}
+	return len(seen)
+}
+
+func packFiles(files, all []ChangedFile) []FileGroup {
+	var out []FileGroup
+	var chunk []ChangedFile
+	lines := 0
+	flush := func() {
+		if len(chunk) == 0 {
+			return
+		}
+		specs := groupPathspecs(chunk, all)
+		out = append(out, FileGroup{
+			Title:     groupTitle(chunk, specs),
+			Pathspecs: specs,
+			Files:     chunk,
+		})
+		chunk = nil
+		lines = 0
+	}
+	for _, file := range files {
+		if len(chunk) > 0 && (len(chunk) >= maxGroupFiles || lines+file.Lines() > maxGroupLines) {
+			flush()
+		}
+		chunk = append(chunk, file)
+		lines += file.Lines()
+	}
+	flush()
 	return out
 }
 
@@ -375,8 +445,85 @@ func splitTestName(path string) (stem, ext string, isTest bool) {
 	case strings.HasPrefix(name, "test_"):
 		return strings.TrimPrefix(name, "test_"), ext, true
 	default:
+		if javaTestExt[strings.ToLower(ext)] {
+			if stem, ok := cutJavaTestSuffix(name); ok {
+				return stem, ext, true
+			}
+		}
 		return name, ext, false
 	}
+}
+
+func cutJavaTestSuffix(name string) (string, bool) {
+	for _, suf := range []string{"Tests", "Test", "Spec", "IT"} {
+		if strings.HasSuffix(name, suf) && len(name) > len(suf) {
+			return name[:len(name)-len(suf)], true
+		}
+	}
+	return "", false
+}
+
+func stemFamilyKey(path string) (string, bool) {
+	stem := normalizedStem(filepath.Base(path))
+	if stem == "" {
+		return "", false
+	}
+	dir := filepath.ToSlash(filepath.Dir(path))
+	return "stem\x00" + dir + "\x00" + stem, true
+}
+
+func normalizedStem(base string) string {
+	name, ext := splitCompound(base)
+	if javaTestExt[strings.ToLower(ext)] {
+		if s, ok := cutJavaTestSuffix(name); ok {
+			name = s
+		}
+	}
+	name = strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(name, "_test"):
+		name = strings.TrimSuffix(name, "_test")
+	case strings.HasSuffix(name, ".test"):
+		name = strings.TrimSuffix(name, ".test")
+	case strings.HasSuffix(name, ".spec"):
+		name = strings.TrimSuffix(name, ".spec")
+	case strings.HasPrefix(name, "test_"):
+		name = strings.TrimPrefix(name, "test_")
+	}
+	return stripGoPlatform(name)
+}
+
+func splitCompound(base string) (name, ext string) {
+	lower := strings.ToLower(base)
+	for _, compound := range compoundExts {
+		if strings.HasSuffix(lower, compound) {
+			return base[:len(base)-len(compound)], compound
+		}
+	}
+	ext = filepath.Ext(base)
+	return strings.TrimSuffix(base, ext), ext
+}
+
+func stripGoPlatform(stem string) string {
+	for {
+		i := strings.LastIndex(stem, "_")
+		if i <= 0 {
+			return stem
+		}
+		if !goPlatform[stem[i+1:]] {
+			return stem
+		}
+		stem = stem[:i]
+	}
+}
+
+func lockFamilyKey(path string) (string, bool) {
+	fam, ok := lockFamilies[filepath.Base(path)]
+	if !ok {
+		return "", false
+	}
+	dir := filepath.ToSlash(filepath.Dir(path))
+	return "lock\x00" + dir + "\x00" + fam, true
 }
 
 func localeFamilyKey(path string) (string, bool) {
@@ -398,20 +545,10 @@ func localeFamilyKey(path string) (string, bool) {
 
 func localeDirKey(path string) (string, bool) {
 	parts := strings.Split(filepath.ToSlash(path), "/")
-	if len(parts) < 3 {
+	if len(parts) < 2 {
 		return "", false
 	}
-	i18nAt := -1
-	for i, part := range parts[:len(parts)-1] {
-		if i18nDirs[strings.ToLower(part)] {
-			i18nAt = i
-			break
-		}
-	}
-	if i18nAt < 0 {
-		return "", false
-	}
-	for i := i18nAt + 1; i < len(parts)-1; i++ {
+	for i := 0; i < len(parts)-1; i++ {
 		if !isLocalePathTag(parts[i]) {
 			continue
 		}
@@ -512,6 +649,40 @@ func isAlpha(s string) bool {
 	return true
 }
 
+var javaTestExt = map[string]bool{
+	".java": true,
+	".kt":   true,
+	".kts":  true,
+	".cs":   true,
+}
+
+var compoundExts = []string{
+	".module.css", ".module.scss", ".module.sass", ".module.less",
+	".stories.tsx", ".stories.ts", ".stories.jsx", ".stories.js",
+	".test.tsx", ".test.ts", ".test.jsx", ".test.js",
+	".spec.tsx", ".spec.ts", ".spec.jsx", ".spec.js",
+	".pb.go", ".pb.ts", ".pb.cc", ".pb.h",
+}
+
+var goPlatform = localeSet("aix android darwin dragonfly freebsd hurd illumos ios js linux nacl netbsd openbsd plan9 solaris unix wasip1 windows zos 386 amd64 arm arm64 loong64 mips mips64 mips64le mipsle ppc64 ppc64le riscv64 s390x sparc64 wasm")
+
+var lockFamilies = map[string]string{
+	"go.mod":            "go",
+	"go.sum":            "go",
+	"go.work":           "go",
+	"go.work.sum":       "go",
+	"package.json":      "node",
+	"package-lock.json": "node",
+	"yarn.lock":         "node",
+	"pnpm-lock.yaml":    "node",
+	"Cargo.toml":        "cargo",
+	"Cargo.lock":        "cargo",
+	"Gemfile":           "gem",
+	"Gemfile.lock":      "gem",
+	"pyproject.toml":    "py",
+	"poetry.lock":       "py",
+}
+
 var localeExts = map[string]bool{
 	".properties": true,
 	".json":       true,
@@ -522,20 +693,6 @@ var localeExts = map[string]bool{
 	".xliff":      true,
 	".xlf":        true,
 	".arb":        true,
-}
-
-var i18nDirs = map[string]bool{
-	"locales":      true,
-	"locale":       true,
-	"i18n":         true,
-	"l10n":         true,
-	"lang":         true,
-	"langs":        true,
-	"language":     true,
-	"languages":    true,
-	"translations": true,
-	"translation":  true,
-	"intl":         true,
 }
 
 var localeScripts = map[string]bool{
