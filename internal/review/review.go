@@ -27,7 +27,7 @@ path is repository-relative. start_line and end_line are inclusive 1-based. anch
 A summary:
 {"v":1,"type":"summary","body":"Two races in the cache; the rest looks sound."}
 
-Prefer lines that appear in the diff. One finding per issue. If nothing material, write only a summary.`
+Prefer lines that appear in the diff. One finding per issue. Always end the file with exactly one summary line; if nothing material, write only that summary.`
 )
 
 type Options struct {

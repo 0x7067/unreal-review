@@ -35,6 +35,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           UNREAL_HARNESS_LLM_MODEL: ${{ vars.UNREAL_HARNESS_LLM_MODEL }}
           GH_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          unreal-review run --from "origin/${{ github.base_ref }}" --to HEAD --out findings.jsonl
+          unreal-review run --from "origin/$BASE_REF" --to HEAD --out findings.jsonl
           unreal-review render github --pr "${{ github.repository }}#${{ github.event.pull_request.number }}" findings.jsonl
