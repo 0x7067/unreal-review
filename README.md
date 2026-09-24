@@ -19,6 +19,8 @@ make fmt
 make check
 ```
 
+`make check` includes `make prove` (`bend PROOF.bend --check-only`). Product invariants live in `LAWS.bend`. Install Bend from https://bend-lang.com (`bend version` 2.0.27 is the local toolchain).
+
 ## Review a local change
 
 From a git repository:

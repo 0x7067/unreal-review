@@ -1,0 +1,9 @@
+# Laws Bend reports as relying on @unsafe or foreign code.
+#
+# Bend exits 0 and prints "All terms check, but N defs rely on unsafe or foreign
+# code" in that case, which make check and the stop hook both accept. That is a
+# real proof obligation being waived, so it is recorded here instead of being
+# silent: adding a name to this file silences a law, and should be its own
+# reviewed commit, never a way to turn a red proof green.
+LAWS.cluster_perm
+LAWS.cluster_caps

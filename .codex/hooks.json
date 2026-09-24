@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'r=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; exec \"$r/hooks/prove-stop.sh\"'",
+            "timeout": 300,
+            "statusMessage": "Proving bend laws"
+          }
+        ]
+      }
+    ]
+  }
+}
