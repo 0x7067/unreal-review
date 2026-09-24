@@ -619,40 +619,37 @@ def headKeyEq(+k: GKey, t: List<&2, Bucket>) -> Bool:
     case Bucket{+k2, fs} <> rest:
       keyEq(k, k2)
 
-def collectKeyGo(+k: GKey, t: List<&2, Bucket>, eq: Bool) -> List<&2, ChangedFile>:
-  match t:
+# addTo merges one bucket into an accumulator: into the entry already carrying
+# this key, or as a new entry at the end. Every recursive call shrinks its own
+# argument, so Bend checks the termination itself rather than taking @unsafe's
+# word for it - which is what the old skip-then-recurse could not manage.
+def addTo(acc: List<&2, Bucket>, +k: GKey, fs: List<&2, ChangedFile>, eq: Bool) -> List<&2, Bucket>:
+  match acc:
     case Nil{}:
-      Nil{}
-    case Bucket{+k2, +fs} <> +rest:
+      [Bucket{k, fs}]
+    case Bucket{+k2, +fs2} <> +rest:
       match eq:
         case True{}:
-          List.append(&2, ChangedFile, fs, collectKeyGo(k, rest, headKeyEq(k, rest)))
+          Bucket{k2, List.append(&2, ChangedFile, fs2, fs)} <> rest
         case False{}:
-          collectKeyGo(k, rest, headKeyEq(k, rest))
+          Bucket{k2, fs2} <> addTo(rest, k, fs, headKeyEq(k, rest))
 
-def collectKey(+k: GKey, +t: List<&2, Bucket>) -> List<&2, ChangedFile>:
-  collectKeyGo(k, t, headKeyEq(k, t))
-
-def skipKeyGo(+k: GKey, t: List<&2, Bucket>, eq: Bool) -> List<&2, Bucket>:
-  match t:
+def mergeGo(bs: List<&2, Bucket>, +acc: List<&2, Bucket>) -> List<&2, Bucket>:
+  match bs:
     case Nil{}:
-      Nil{}
-    case Bucket{+k2, +fs} <> +rest:
-      match eq:
-        case True{}:
-          skipKeyGo(k, rest, headKeyEq(k, rest))
-        case False{}:
-          Bucket{k2, fs} <> skipKeyGo(k, rest, headKeyEq(k, rest))
+      acc
+    case Bucket{+k, +fs} <> +rest:
+      mergeGo(rest, addTo(acc, k, fs, headKeyEq(k, acc)))
 
-def skipKey(+k: GKey, +t: List<&2, Bucket>) -> List<&2, Bucket>:
-  skipKeyGo(k, t, headKeyEq(k, t))
-
-@unsafe def mergeBuckets(bs: List<&2, Bucket>) -> List<&2, Group>:
+def groupsOf(bs: List<&2, Bucket>) -> List<&2, Group>:
   match bs:
     case Nil{}:
       Nil{}
-    case Bucket{+k, fs} <> +t:
-      Group{List.append(&2, ChangedFile, fs, collectKey(k, t))} <> mergeBuckets(skipKey(k, t))
+    case Bucket{+k, +fs} <> +t:
+      Group{fs} <> groupsOf(t)
+
+def mergeBuckets(bs: List<&2, Bucket>) -> List<&2, Group>:
+  groupsOf(mergeGo(bs, Nil{}))
 
 def singletons(xs: List<&2, Item>) -> List<&2, Bucket>:
   match xs:
@@ -940,37 +937,49 @@ def singCount(+id: Nat, xs: List<&2, Item>) -> {countIdBuckets(id, singletons(xs
       %Equal.sym(Nat, countIdBuckets(id, singletons(t)), countId(id, filesOf(t)), singCount(id, t)) : {Nat.add(bump(Nat.is_eq(id, fid), 0n), _) == bump(Nat.is_eq(id, fid), countId(id, filesOf(t))) : Nat}
       bumpAdd(Nat.is_eq(id, fid), countId(id, filesOf(t)))
 
-def collectSkipGo(+id: Nat, +k: GKey, t: List<&2, Bucket>, eq: Bool) -> {Nat.add(countId(id, collectKeyGo(k, t, eq)), countIdBuckets(id, skipKeyGo(k, t, eq))) == countIdBuckets(id, t) : Nat}:
-  match t:
-    case Nil{}:
-      {==}
-    case Bucket{+k2, +fs} <> +rest:
-      match eq:
-        case True{}:
-          %Equal.sym(Nat, countId(id, List.append(&2, ChangedFile, fs, collectKeyGo(k, rest, headKeyEq(k, rest)))), Nat.add(countId(id, fs), countId(id, collectKeyGo(k, rest, headKeyEq(k, rest)))), countIdAppend(id, fs, collectKeyGo(k, rest, headKeyEq(k, rest)))) : {Nat.add(_, countIdBuckets(id, skipKeyGo(k, rest, headKeyEq(k, rest)))) == Nat.add(countId(id, fs), countIdBuckets(id, rest)) : Nat}
-          %Equal.sym(Nat, Nat.add(Nat.add(countId(id, fs), countId(id, collectKeyGo(k, rest, headKeyEq(k, rest)))), countIdBuckets(id, skipKeyGo(k, rest, headKeyEq(k, rest)))), Nat.add(countId(id, fs), Nat.add(countId(id, collectKeyGo(k, rest, headKeyEq(k, rest))), countIdBuckets(id, skipKeyGo(k, rest, headKeyEq(k, rest))))), N.addAssoc(countId(id, fs), countId(id, collectKeyGo(k, rest, headKeyEq(k, rest))), countIdBuckets(id, skipKeyGo(k, rest, headKeyEq(k, rest))))) : {_ == Nat.add(countId(id, fs), countIdBuckets(id, rest)) : Nat}
-          %collectSkipGo(id, k, rest, headKeyEq(k, rest)) : {Nat.add(countId(id, fs), Nat.add(countId(id, collectKeyGo(k, rest, headKeyEq(k, rest))), countIdBuckets(id, skipKeyGo(k, rest, headKeyEq(k, rest))))) == Nat.add(countId(id, fs), _) : Nat}
-          {==}
-        case False{}:
-          %N.addAssoc(countId(id, collectKeyGo(k, rest, headKeyEq(k, rest))), countId(id, fs), countIdBuckets(id, skipKeyGo(k, rest, headKeyEq(k, rest)))) : {_ == Nat.add(countId(id, fs), countIdBuckets(id, rest)) : Nat}
-          %Equal.sym(Nat, Nat.add(countId(id, collectKeyGo(k, rest, headKeyEq(k, rest))), countId(id, fs)), Nat.add(countId(id, fs), countId(id, collectKeyGo(k, rest, headKeyEq(k, rest)))), N.addComm(countId(id, collectKeyGo(k, rest, headKeyEq(k, rest))), countId(id, fs))) : {Nat.add(_, countIdBuckets(id, skipKeyGo(k, rest, headKeyEq(k, rest)))) == Nat.add(countId(id, fs), countIdBuckets(id, rest)) : Nat}
-          %Equal.sym(Nat, Nat.add(Nat.add(countId(id, fs), countId(id, collectKeyGo(k, rest, headKeyEq(k, rest)))), countIdBuckets(id, skipKeyGo(k, rest, headKeyEq(k, rest)))), Nat.add(countId(id, fs), Nat.add(countId(id, collectKeyGo(k, rest, headKeyEq(k, rest))), countIdBuckets(id, skipKeyGo(k, rest, headKeyEq(k, rest))))), N.addAssoc(countId(id, fs), countId(id, collectKeyGo(k, rest, headKeyEq(k, rest))), countIdBuckets(id, skipKeyGo(k, rest, headKeyEq(k, rest))))) : {_ == Nat.add(countId(id, fs), countIdBuckets(id, rest)) : Nat}
-          %collectSkipGo(id, k, rest, headKeyEq(k, rest)) : {Nat.add(countId(id, fs), Nat.add(countId(id, collectKeyGo(k, rest, headKeyEq(k, rest))), countIdBuckets(id, skipKeyGo(k, rest, headKeyEq(k, rest))))) == Nat.add(countId(id, fs), _) : Nat}
-          {==}
+# Two reorderings of Nat.add that the merged counts need.
+def addRot(+a: Nat, +b: Nat, +c: Nat) -> {Nat.add(Nat.add(a, b), c) == Nat.add(b, Nat.add(a, c)) : Nat}:
+  Equal.trans(Nat, Nat.add(Nat.add(a, b), c), Nat.add(Nat.add(b, a), c), Nat.add(b, Nat.add(a, c)), Equal.cong(Nat, Nat, x => Nat.add(x, c), Nat.add(a, b), Nat.add(b, a), N.addComm(a, b)), N.addAssoc(b, a, c))
 
-def collectSkip(+id: Nat, +k: GKey, +t: List<&2, Bucket>) -> {Nat.add(countId(id, collectKey(k, t)), countIdBuckets(id, skipKey(k, t))) == countIdBuckets(id, t) : Nat}:
-  collectSkipGo(id, k, t, headKeyEq(k, t))
+def addSwap(+a: Nat, +b: Nat, +c: Nat) -> {Nat.add(a, Nat.add(b, c)) == Nat.add(b, Nat.add(a, c)) : Nat}:
+  Equal.trans(Nat, Nat.add(a, Nat.add(b, c)), Nat.add(Nat.add(a, b), c), Nat.add(b, Nat.add(a, c)), Equal.sym(Nat, Nat.add(Nat.add(a, b), c), Nat.add(a, Nat.add(b, c)), N.addAssoc(a, b, c)), addRot(a, b, c))
 
-@unsafe def mergeCount(+id: Nat, bs: List<&2, Bucket>) -> {countIdGroups(id, mergeBuckets(bs)) == countIdBuckets(id, bs) : Nat}:
+# groupsOf emits one group per bucket, so it carries the count across unchanged.
+def groupsOfCount(+id: Nat, +bs: List<&2, Bucket>) -> {countIdGroups(id, groupsOf(bs)) == countIdBuckets(id, bs) : Nat}:
   match bs:
     case Nil{}:
       {==}
     case Bucket{+k, +fs} <> +t:
-      %Equal.sym(Nat, countId(id, List.append(&2, ChangedFile, fs, collectKey(k, t))), Nat.add(countId(id, fs), countId(id, collectKey(k, t))), countIdAppend(id, fs, collectKey(k, t))) : {Nat.add(_, countIdGroups(id, mergeBuckets(skipKey(k, t)))) == Nat.add(countId(id, fs), countIdBuckets(id, t)) : Nat}
-      %Equal.sym(Nat, countIdGroups(id, mergeBuckets(skipKey(k, t))), countIdBuckets(id, skipKey(k, t)), mergeCount(id, skipKey(k, t))) : {Nat.add(Nat.add(countId(id, fs), countId(id, collectKey(k, t))), _) == Nat.add(countId(id, fs), countIdBuckets(id, t)) : Nat}
-      %Equal.sym(Nat, Nat.add(Nat.add(countId(id, fs), countId(id, collectKey(k, t))), countIdBuckets(id, skipKey(k, t))), Nat.add(countId(id, fs), Nat.add(countId(id, collectKey(k, t)), countIdBuckets(id, skipKey(k, t)))), N.addAssoc(countId(id, fs), countId(id, collectKey(k, t)), countIdBuckets(id, skipKey(k, t)))) : {_ == Nat.add(countId(id, fs), countIdBuckets(id, t)) : Nat}
-      %collectSkip(id, k, t) : {Nat.add(countId(id, fs), Nat.add(countId(id, collectKey(k, t)), countIdBuckets(id, skipKey(k, t)))) == Nat.add(countId(id, fs), _) : Nat}
+      %groupsOfCount(id, t) : {Nat.add(countId(id, fs), countIdGroups(id, groupsOf(t))) == Nat.add(countId(id, fs), _) : Nat}
       {==}
+
+# Merging into the matching entry or starting a new one both keep every file.
+def addToCount(+id: Nat, acc: List<&2, Bucket>, +k: GKey, +fs: List<&2, ChangedFile>, eq: Bool) -> {countIdBuckets(id, addTo(acc, k, fs, eq)) == Nat.add(countId(id, fs), countIdBuckets(id, acc)) : Nat}:
+  match acc:
+    case Nil{}:
+      {==}
+    case Bucket{+k2, +fs2} <> +rest:
+      match eq:
+        case True{}:
+          %Equal.sym(Nat, countId(id, List.append(&2, ChangedFile, fs2, fs)), Nat.add(countId(id, fs2), countId(id, fs)), countIdAppend(id, fs2, fs)) : {Nat.add(_, countIdBuckets(id, rest)) == Nat.add(countId(id, fs), Nat.add(countId(id, fs2), countIdBuckets(id, rest))) : Nat}
+          addRot(countId(id, fs2), countId(id, fs), countIdBuckets(id, rest))
+        case False{}:
+          %Equal.sym(Nat, countIdBuckets(id, addTo(rest, k, fs, headKeyEq(k, rest))), Nat.add(countId(id, fs), countIdBuckets(id, rest)), addToCount(id, rest, k, fs, headKeyEq(k, rest))) : {Nat.add(countId(id, fs2), _) == Nat.add(countId(id, fs), Nat.add(countId(id, fs2), countIdBuckets(id, rest))) : Nat}
+          addSwap(countId(id, fs2), countId(id, fs), countIdBuckets(id, rest))
+
+def mergeGoCount(+id: Nat, bs: List<&2, Bucket>, +acc: List<&2, Bucket>) -> {countIdBuckets(id, mergeGo(bs, acc)) == Nat.add(countIdBuckets(id, acc), countIdBuckets(id, bs)) : Nat}:
+  match bs:
+    case Nil{}:
+      Equal.sym(Nat, Nat.add(countIdBuckets(id, acc), 0n), countIdBuckets(id, acc), N.addZero(countIdBuckets(id, acc)))
+    case Bucket{+k, +fs} <> +rest:
+      %Equal.sym(Nat, countIdBuckets(id, mergeGo(rest, addTo(acc, k, fs, headKeyEq(k, acc)))), Nat.add(countIdBuckets(id, addTo(acc, k, fs, headKeyEq(k, acc))), countIdBuckets(id, rest)), mergeGoCount(id, rest, addTo(acc, k, fs, headKeyEq(k, acc)))) : {_ == Nat.add(countIdBuckets(id, acc), Nat.add(countId(id, fs), countIdBuckets(id, rest))) : Nat}
+      %Equal.sym(Nat, countIdBuckets(id, addTo(acc, k, fs, headKeyEq(k, acc))), Nat.add(countId(id, fs), countIdBuckets(id, acc)), addToCount(id, acc, k, fs, headKeyEq(k, acc))) : {Nat.add(_, countIdBuckets(id, rest)) == Nat.add(countIdBuckets(id, acc), Nat.add(countId(id, fs), countIdBuckets(id, rest))) : Nat}
+      addRot(countId(id, fs), countIdBuckets(id, acc), countIdBuckets(id, rest))
+
+def mergeCount(+id: Nat, +bs: List<&2, Bucket>) -> {countIdGroups(id, mergeBuckets(bs)) == countIdBuckets(id, bs) : Nat}:
+  %Equal.sym(Nat, countIdGroups(id, groupsOf(mergeGo(bs, Nil{}))), countIdBuckets(id, mergeGo(bs, Nil{})), groupsOfCount(id, mergeGo(bs, Nil{}))) : {_ == countIdBuckets(id, bs) : Nat}
+  %Equal.sym(Nat, countIdBuckets(id, mergeGo(bs, Nil{})), Nat.add(countIdBuckets(id, Nil{}), countIdBuckets(id, bs)), mergeGoCount(id, bs, Nil{})) : {_ == countIdBuckets(id, bs) : Nat}
+  {==}
 
 def bucketCount(+id: Nat, +xs: List<&2, Item>) -> {countIdGroups(id, bucket(xs)) == countId(id, filesOf(xs)) : Nat}:
   %Equal.sym(Nat, countIdGroups(id, mergeBuckets(singletons(xs))), countIdBuckets(id, singletons(xs)), mergeCount(id, singletons(xs))) : {_ == countId(id, filesOf(xs)) : Nat}
