@@ -1,0 +1,16 @@
+.opencode/plugin/prove-stop.js
+  h_29be57c0addd47 22-23
+hooks/prove-stop.sh
+  h_29be57c0addd47 43-48,50-54,57,64-65,73-79,81,84,141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c25040449db8db7cd4844438f898bf311f7f3d6",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
