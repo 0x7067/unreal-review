@@ -1,0 +1,56 @@
+.github/workflows/ci.yml
+  h_29be57c0addd47 1-26
+.gitignore
+  h_29be57c0addd47 1-4
+.golangci.yml
+  h_29be57c0addd47 1-19
+LICENSE
+  h_29be57c0addd47 1-21
+Makefile
+  h_29be57c0addd47 1-27
+README.md
+  h_29be57c0addd47 1-48
+cmd/unreal-review/main.go
+  h_29be57c0addd47 1-53
+cmd/unreal-review/render.go
+  h_29be57c0addd47 1-220
+cmd/unreal-review/run.go
+  h_29be57c0addd47 1-107
+examples/findings.jsonl
+  h_29be57c0addd47 1-4
+examples/github-actions/review.yml
+  h_29be57c0addd47 1-37
+go.mod
+  h_29be57c0addd47 1-3
+internal/agent/agent.go
+  h_29be57c0addd47 1-158
+internal/agent/cost.go
+  h_29be57c0addd47 1-183
+internal/diffmap/diffmap.go
+  h_29be57c0addd47 1-177
+internal/findings/findings.go
+  h_29be57c0addd47 1-402
+internal/github/github.go
+  h_29be57c0addd47 1-261
+internal/render/github.go
+  h_29be57c0addd47 1-125
+internal/render/markdown.go
+  h_29be57c0addd47 1-80
+internal/review/review.go
+  h_29be57c0addd47 1-225
+internal/review/skill.md
+  h_29be57c0addd47 1-39
+schema/findings-v1.md
+  h_29be57c0addd47 1-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cbbba15f9d9738f181b4c9e7e486ca042642d617",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
