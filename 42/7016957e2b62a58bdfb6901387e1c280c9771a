@@ -1,0 +1,22 @@
+AGENTS.md
+  h_29be57c0addd47 9-10,15
+README.md
+  h_29be57c0addd47 30
+internal/review/git.go
+  h_29be57c0addd47 14,18,23,27,40,42,55,68-69
+internal/review/review.go
+  h_29be57c0addd47 46-47,55,65,74,79,85,100,105,111,117,122,131,189,199
+schema/findings-v1.md
+  h_29be57c0addd47 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "427016957e2b62a58bdfb6901387e1c280c9771a",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
