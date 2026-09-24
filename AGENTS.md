@@ -4,7 +4,7 @@ unreal-review is a pipeline of replaceable pieces around one product: [schema/fi
 
 ## Product
 
-`findings.jsonl` is the review. It is also the checkpoint: `run.id`, `run.status`, and `run.source` (`base_sha`, `head_sha`, `diff_sha`) bind findings to one diff. Completeness is `status=complete`.
+`findings.jsonl` is the review and the checkpoint. The JSON shape is [schema/findings-v1.md](schema/findings-v1.md). Product invariants are [LAWS.bend](LAWS.bend); [PROOF.bend](PROOF.bend) is the certificate. Do not restate those laws here.
 
 ## Pieces
 
@@ -21,4 +21,6 @@ A new backend, source, or renderer should plug in without changing the findings 
 
 ## Checks
 
-`make check` (fmt, lint, vet, test).
+`make check` (fmt, lint, vet, test, prove). `make prove` is `bend PROOF.bend --check-only`.
+
+Do not add `bunfig.toml`. A new product rule is a `law` in `LAWS.bend` plus a proof in `PROOF.bend` in the same change. Do not edit `LAWS.bend` unless the user changes a product rule.
