@@ -52,6 +52,8 @@ Files in one directory stay together. Files that share a stem in the same direct
 unreal-review render markdown findings.jsonl
 ```
 
+The agent records findings through built-in tools rather than writing the findings file by hand: `unreal-review record` validates and appends one finding or the summary. The review prompt names the binary path and the findings file; the tool definitions live in `internal/review`.
+
 ## Post inline comments on a GitHub pull request
 
 ```sh

@@ -2,6 +2,8 @@ package findings
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -82,5 +84,48 @@ func TestWriteRunRoundTrip(t *testing.T) {
 	}
 	if out.Run == nil || out.Run.ID != "1" || out.Run.Status != StatusComplete || out.Run.Source.DiffSHA != "c" {
 		t.Fatalf("round trip: %+v", out.Run)
+	}
+}
+
+func TestAppendFindingNormalizesLikeParse(t *testing.T) {
+	work := filepath.Join(t.TempDir(), "work.jsonl")
+	finding, err := AppendFinding(work, Finding{Path: " a.go ", StartLine: 2, Severity: SeverityWarning, Body: "  body  "})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if finding.Path != "a.go" || finding.EndLine != 2 || finding.Anchor != AnchorNew || finding.ID == "" {
+		t.Fatalf("normalized: %+v", finding)
+	}
+	parsed, err := ReadFile(work)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(parsed.Findings) != 1 || parsed.Findings[0] != finding {
+		t.Fatalf("round trip: %+v vs %+v", parsed.Findings, finding)
+	}
+}
+
+func TestAppendContinuesFileWithoutTrailingNewline(t *testing.T) {
+	work := filepath.Join(t.TempDir(), "work.jsonl")
+	existing := `{"v":1,"type":"summary","body":"earlier"}`
+	if err := os.WriteFile(work, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AppendFinding(work, Finding{Path: "b.go", StartLine: 1, Severity: SeverityError, Body: "later"}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	parsed, err := ReadFile(work)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if parsed.Summary != "earlier" || len(parsed.Findings) != 1 || parsed.Findings[0].Path != "b.go" {
+		t.Fatalf("merged: %+v", parsed)
+	}
+}
+
+func TestAppendSummaryRequiresBody(t *testing.T) {
+	work := filepath.Join(t.TempDir(), "work.jsonl")
+	if err := AppendSummary(work, "   "); err == nil {
+		t.Fatal("accepted empty summary")
 	}
 }

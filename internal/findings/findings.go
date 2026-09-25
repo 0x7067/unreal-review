@@ -332,10 +332,6 @@ func parseRun(rec runRecord) (Run, error) {
 }
 
 func parseFinding(rec record) (Finding, error) {
-	path := strings.TrimSpace(rec.Path)
-	if path == "" {
-		return Finding{}, fmt.Errorf("path must be set")
-	}
 	start, err := parseLine(rec.StartLine)
 	if err != nil {
 		return Finding{}, fmt.Errorf("start_line: %w", err)
@@ -344,43 +340,50 @@ func parseFinding(rec record) (Finding, error) {
 	if err != nil {
 		return Finding{}, fmt.Errorf("end_line: %w", err)
 	}
-	if end == 0 {
-		end = start
+	return normalize(Finding{
+		ID:        rec.ID,
+		Path:      rec.Path,
+		StartLine: start,
+		EndLine:   end,
+		Anchor:    Anchor(rec.Anchor),
+		Severity:  Severity(rec.Severity),
+		Body:      rec.Body,
+	})
+}
+
+func normalize(finding Finding) (Finding, error) {
+	finding.Path = strings.TrimSpace(finding.Path)
+	if finding.Path == "" {
+		return Finding{}, fmt.Errorf("path must be set")
 	}
-	if start < 1 || end < start {
-		return Finding{}, fmt.Errorf("line range %d-%d is invalid", start, end)
+	if finding.EndLine == 0 {
+		finding.EndLine = finding.StartLine
 	}
-	anchor := Anchor(strings.TrimSpace(rec.Anchor))
-	switch anchor {
+	if finding.StartLine < 1 || finding.EndLine < finding.StartLine {
+		return Finding{}, fmt.Errorf("line range %d-%d is invalid", finding.StartLine, finding.EndLine)
+	}
+	finding.Anchor = Anchor(strings.TrimSpace(string(finding.Anchor)))
+	switch finding.Anchor {
 	case "":
-		anchor = AnchorNew
+		finding.Anchor = AnchorNew
 	case AnchorNew, AnchorOld:
 	default:
 		return Finding{}, fmt.Errorf("anchor must be new or old")
 	}
-	severity := Severity(strings.TrimSpace(rec.Severity))
-	switch severity {
+	finding.Severity = Severity(strings.TrimSpace(string(finding.Severity)))
+	switch finding.Severity {
 	case SeverityError, SeverityWarning, SeverityNote:
 	case "":
 		return Finding{}, fmt.Errorf("severity must be set (error, warning, or note)")
 	default:
 		return Finding{}, fmt.Errorf("severity must be error, warning, or note")
 	}
-	body := strings.TrimSpace(rec.Body)
-	if body == "" {
+	finding.Body = strings.TrimSpace(finding.Body)
+	if finding.Body == "" {
 		return Finding{}, fmt.Errorf("body must be set")
 	}
-	finding := Finding{
-		ID:        rec.ID,
-		Path:      path,
-		StartLine: start,
-		EndLine:   end,
-		Anchor:    anchor,
-		Severity:  severity,
-		Body:      body,
-	}
 	if finding.ID == "" {
-		finding.ID = findingID(finding)
+		finding.ID = Fingerprint(finding)
 	}
 	return finding, nil
 }
@@ -404,7 +407,7 @@ func parseLine(raw json.RawMessage) (int, error) {
 	return n, nil
 }
 
-func findingID(finding Finding) string {
+func Fingerprint(finding Finding) string {
 	sum := sha256.Sum256([]byte(strings.Join([]string{
 		finding.Path,
 		strconv.Itoa(finding.StartLine),
@@ -413,6 +416,73 @@ func findingID(finding Finding) string {
 		finding.Body,
 	}, "\x1f")))
 	return hex.EncodeToString(sum[:8])
+}
+
+func AppendFinding(path string, finding Finding) (Finding, error) {
+	finding, err := normalize(finding)
+	if err != nil {
+		return Finding{}, err
+	}
+	start, err := json.Marshal(finding.StartLine)
+	if err != nil {
+		return Finding{}, fmt.Errorf("encode start_line: %w", err)
+	}
+	end, err := json.Marshal(finding.EndLine)
+	if err != nil {
+		return Finding{}, fmt.Errorf("encode end_line: %w", err)
+	}
+	err = appendLine(path, record{
+		V:         SchemaVersion,
+		Type:      TypeFinding,
+		ID:        finding.ID,
+		Path:      finding.Path,
+		StartLine: start,
+		EndLine:   end,
+		Anchor:    string(finding.Anchor),
+		Severity:  string(finding.Severity),
+		Body:      finding.Body,
+	})
+	if err != nil {
+		return Finding{}, err
+	}
+	return finding, nil
+}
+
+func AppendSummary(path, body string) error {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return fmt.Errorf("body must be set")
+	}
+	return appendLine(path, record{V: SchemaVersion, Type: TypeSummary, Body: body})
+}
+
+func appendLine(path string, rec record) error {
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if info.Size() > 0 {
+		var last [1]byte
+		if _, err := file.ReadAt(last[:], info.Size()-1); err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		if last[0] != '\n' {
+			if _, err := file.WriteString("\n"); err != nil {
+				return fmt.Errorf("write %s: %w", path, err)
+			}
+		}
+	}
+	enc := json.NewEncoder(file)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(rec); err != nil {
+		return fmt.Errorf("encode %s: %w", rec.Type, err)
+	}
+	return nil
 }
 
 func Write(w io.Writer, report Report) error {
@@ -439,7 +509,7 @@ func Write(w io.Writer, report Report) error {
 	}
 	for _, finding := range report.Findings {
 		if finding.ID == "" {
-			finding.ID = findingID(finding)
+			finding.ID = Fingerprint(finding)
 		}
 		start, err := json.Marshal(finding.StartLine)
 		if err != nil {

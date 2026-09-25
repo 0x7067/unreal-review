@@ -14,21 +14,23 @@ import (
 )
 
 const (
-	maxBriefDiff = 200_000
-	systemPrompt = `You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
+	maxBriefDiff     = 200_000
+	systemPromptBase = `You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
 
-Write findings as JSONL to the path given in the user message. Each line is one JSON object. Schema version v is 1. Every finding must include severity.
-
-A finding:
-{"v":1,"type":"finding","path":"src/foo.go","start_line":12,"end_line":14,"anchor":"new","severity":"warning","body":"This map write races with the reader on line 40."}
-
-path is repository-relative. start_line and end_line are inclusive 1-based. anchor is new (post-change file) or old (deleted lines). severity is error, warning, or note. body is markdown.
-
-A summary:
-{"v":1,"type":"summary","body":"Two races in the cache; the rest looks sound."}
-
-Prefer lines that appear in the diff. One finding per issue. Always end the file with exactly one summary line; if nothing material, write only that summary.`
+Prefer lines that appear in the diff. One finding per issue. Record every finding with the record tool below, then end with exactly one summary record; if nothing material, record only the summary.`
 )
+
+func agentSystemPrompt() string {
+	entry, err := os.Executable()
+	if err != nil {
+		entry = os.Args[0]
+	}
+	return systemPromptBase + "\n\n" + promptSection(shellQuote(entry), DefaultTools())
+}
+
+func shellQuote(path string) string {
+	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+}
 
 type Options struct {
 	Workspace string
@@ -128,7 +130,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		ReviewID:     runMeta.ID,
 		FindingsPath: findingsPath,
 		Prompt:       reviewPrompt(source.Base, source.Head, findingsPath, diff),
-		SystemPrompt: systemPrompt,
+		SystemPrompt: agentSystemPrompt(),
 		Model:        opts.Model,
 	})
 	interrupted := agentErr != nil && (errors.Is(agentErr, context.Canceled) || errors.Is(agentErr, context.DeadlineExceeded) || ctx.Err() != nil)

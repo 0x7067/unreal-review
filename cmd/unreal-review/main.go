@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"unreal-review/internal/review"
 )
 
 func main() {
@@ -30,6 +32,9 @@ func run(args []string) error {
 		printUsage(os.Stdout)
 		return nil
 	default:
+		if tool, ok := review.FindTool(review.DefaultTools(), args[0]); ok {
+			return runAgentTool(tool, args[1:])
+		}
 		printUsage(os.Stderr)
 		return fmt.Errorf("unknown command %q", args[0])
 	}
