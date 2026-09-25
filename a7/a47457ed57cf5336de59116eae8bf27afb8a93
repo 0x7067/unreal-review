@@ -1,0 +1,30 @@
+cmd/unreal-review/render.go
+  s_c290e147efbfce::t_04023a650231e1 185-186
+internal/render/github.go
+  s_c290e147efbfce::t_6960602a39b5be 28,32,79-82
+PROOF.bend
+  s_c290e147efbfce::t_6cb3d945e6b8d1 200,208-209
+  s_c290e147efbfce::t_adaf3c5bafa9a4 210
+internal/render/github_test.go
+  s_c290e147efbfce::t_98f2568802bef4 33-39,77
+spec/github.bend
+  s_c290e147efbfce::t_0f4c44ded5595d 68-69,71-73,75-80
+LAWS.bend
+  s_c290e147efbfce::t_016ce1b5bb9cb8 246-247,252,255-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a7a47457ed57cf5336de59116eae8bf27afb8a93",
+  "prompts": {},
+  "sessions": {
+    "s_c290e147efbfce": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d5a0-ad3b-7135-b216-5c94b1e0dcb6",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
