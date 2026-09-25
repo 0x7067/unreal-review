@@ -1,0 +1,35 @@
+.github/workflows/review.yml
+  s_c290e147efbfce::t_e7e6ddfc7d288a 5,19-21,29
+internal/eval/eval.go
+  s_c290e147efbfce::t_9071cff4d7c2c2 85-95,98,100
+cmd/unreal-review/pull.go
+  s_c290e147efbfce::t_19e7eb610581f2 49,51,56
+internal/render/github.go
+  s_c290e147efbfce::t_03bb249724b8bd 82-84
+schema/findings-v1.md
+  s_c290e147efbfce::t_5bf1e05f06bd67 47
+cmd/unreal-review/agenttool.go
+  s_c290e147efbfce::t_260501e97b88b5 13-18
+internal/eval/eval_test.go
+  s_c290e147efbfce::t_340083f0304701 39,46-60,94,100-102
+cmd/unreal-review/render.go
+  s_c290e147efbfce::t_f9261b2b609e29 109-111,141-147,149-160,179
+internal/github/github.go
+  s_c290e147efbfce::t_6e5869271e86e8 474-496
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6addc09ff75f1fffce3262cc7eb7b636800e29e6",
+  "prompts": {},
+  "sessions": {
+    "s_c290e147efbfce": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d5a0-ad3b-7135-b216-5c94b1e0dcb6",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
