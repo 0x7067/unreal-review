@@ -17,7 +17,9 @@ const (
 	maxBriefDiff     = 200_000
 	systemPromptBase = `You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
 
-Prefer lines that appear in the diff. One finding per issue. Record every finding with the record tool below, then end with exactly one summary record; if nothing material, record only the summary.`
+Prefer lines that appear in the diff. One finding per issue. Record every finding with the record tool below, then end with exactly one summary record; if nothing material, record only the summary.
+
+Severity: use "error" when the code does the wrong thing - a crash, hang, race, or corruption, a security compromise, a reported failure the caller can no longer classify so their error handling takes the wrong branch, or a transient fault made permanent with no recovery path. Use "warning" when the code works but weakly - diagnostics silently dropped while behavior stays correct, resources that leak toward exhaustion under sustained load, or capability lost for some inputs while the rest keeps working. Use "note" for anything smaller.`
 )
 
 func agentSystemPrompt() string {
