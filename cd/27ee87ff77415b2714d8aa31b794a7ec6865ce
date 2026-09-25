@@ -1,0 +1,45 @@
+cmd/unreal-review/pull.go
+  s_c290e147efbfce::t_3887fa79f159ca 1-87
+internal/review/git_test.go
+  s_c290e147efbfce::t_8a92bfcc30813b 13-14,32,47,530,532,536,539-542,551-711,739,786,820,831,848,857-864
+  s_c290e147efbfce::t_eb908ed811b6e9 865
+internal/review/review_test.go
+  s_c290e147efbfce::t_3887fa79f159ca 1-63
+internal/render/github.go
+  s_c290e147efbfce::t_8a92bfcc30813b 21,25-31,51,54-57,62,67-69,81-172,189
+internal/github/github_test.go
+  s_c290e147efbfce::t_3887fa79f159ca 1-180
+cmd/unreal-review/run.go
+  s_c290e147efbfce::t_8a92bfcc30813b 25-27,61-69,83,89
+internal/review/git.go
+  s_c290e147efbfce::t_8a92bfcc30813b 21-33,43,58-60,62,70-72,92-93,113-120,123-124,126,131,133-149,152,174-182,188-218,437-445
+  s_c290e147efbfce::t_42fd3df10806d2 446
+cmd/unreal-review/render.go
+  s_c290e147efbfce::t_8a92bfcc30813b 90,98,101,105,107,124,136-159,162-181,186
+internal/github/marker.go
+  s_c290e147efbfce::t_3887fa79f159ca 1-73
+internal/render/github_test.go
+  s_c290e147efbfce::t_3887fa79f159ca 1-192
+internal/github/github.go
+  s_c290e147efbfce::t_8a92bfcc30813b 28-29,41-62,104-108,120-121,127-240,272,276,279-294,296,298,301-303,306,309,311,314-320
+internal/review/group.go
+  s_c290e147efbfce::t_8a92bfcc30813b 52
+internal/review/review.go
+  s_c290e147efbfce::t_687e904660d060 44,57,61,134,192,202,206,211-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd27ee87ff77415b2714d8aa31b794a7ec6865ce",
+  "prompts": {},
+  "sessions": {
+    "s_c290e147efbfce": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d5a0-ad3b-7135-b216-5c94b1e0dcb6",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
