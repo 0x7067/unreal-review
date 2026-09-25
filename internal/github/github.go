@@ -471,3 +471,26 @@ func (c *Client) CreateCheckRun(ctx context.Context, owner, repo, sha, name, tit
 	body.Output.Summary = summary
 	return c.post(ctx, fmt.Sprintf("/repos/%s/%s/check-runs", owner, repo), body, nil)
 }
+
+func (c *Client) HasLGTMReview(ctx context.Context, owner, repo string, number int, sha string) (bool, error) {
+	page := 1
+	for {
+		var raw []struct {
+			CommitID string `json:"commit_id"`
+			Body     string `json:"body"`
+		}
+		path := fmt.Sprintf("/repos/%s/%s/pulls/%d/reviews?per_page=100&page=%d", owner, repo, number, page)
+		if err := c.get(ctx, path, &raw); err != nil {
+			return false, err
+		}
+		for _, item := range raw {
+			if item.CommitID == sha && strings.HasPrefix(strings.TrimSpace(item.Body), "LGTM") {
+				return true, nil
+			}
+		}
+		if len(raw) < 100 {
+			return false, nil
+		}
+		page++
+	}
+}

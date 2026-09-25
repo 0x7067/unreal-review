@@ -36,15 +36,28 @@ func TestMatchRequiresSamePath(t *testing.T) {
 	}
 }
 
-func TestMatchSpanningFindingCoversBothGolds(t *testing.T) {
+func TestMatchSpanningFindingCountsOnce(t *testing.T) {
 	gold := []Gold{
 		{Path: "cache.go", StartLine: 10, EndLine: 12, Severity: findings.SeverityError},
 		{Path: "cache.go", StartLine: 20, EndLine: 22, Severity: findings.SeverityError},
 	}
 	produced := []findings.Finding{{Path: "cache.go", StartLine: 10, EndLine: 22}}
 	matched, severityHits, extra := Match(gold, produced)
-	if matched != 2 || severityHits != 0 || extra != 0 {
-		t.Fatalf("matched=%d severityHits=%d extra=%d, want 2 0 0", matched, severityHits, extra)
+	if matched != 1 || severityHits != 0 || extra != 0 {
+		t.Fatalf("matched=%d severityHits=%d extra=%d, want 1 0 0", matched, severityHits, extra)
+	}
+}
+
+func TestMatchDuplicateFindingsCountAsExtra(t *testing.T) {
+	gold := []Gold{{Path: "cache.go", StartLine: 20, EndLine: 23, Severity: findings.SeverityError}}
+	produced := []findings.Finding{
+		{Path: "cache.go", StartLine: 21, EndLine: 21, Severity: findings.SeverityError},
+		{Path: "cache.go", StartLine: 22, EndLine: 22, Severity: findings.SeverityError},
+		{Path: "cache.go", StartLine: 22, EndLine: 23, Severity: findings.SeverityError},
+	}
+	matched, _, extra := Match(gold, produced)
+	if matched != 1 || extra != 2 {
+		t.Fatalf("matched=%d extra=%d, want 1 2", matched, extra)
 	}
 }
 
@@ -78,15 +91,15 @@ func TestMatchSeverityMissesWhenWeaker(t *testing.T) {
 	}
 }
 
-func TestMatchSeverityHitsAnyOverlappingFinding(t *testing.T) {
+func TestMatchSeverityGradesTheConsumingFinding(t *testing.T) {
 	gold := []Gold{{Path: "server.go", StartLine: 15, EndLine: 19, Severity: findings.SeverityWarning}}
 	produced := []findings.Finding{
 		{Path: "server.go", StartLine: 15, EndLine: 19, Severity: findings.SeverityError},
 		{Path: "server.go", StartLine: 16, EndLine: 16, Severity: findings.SeverityWarning},
 	}
-	_, severityHits, _ := Match(gold, produced)
-	if severityHits != 1 {
-		t.Fatalf("severityHits=%d, want 1", severityHits)
+	matched, severityHits, extra := Match(gold, produced)
+	if matched != 1 || severityHits != 0 || extra != 1 {
+		t.Fatalf("matched=%d severityHits=%d extra=%d, want 1 0 1", matched, severityHits, extra)
 	}
 }
 

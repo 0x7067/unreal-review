@@ -46,17 +46,14 @@ const maxReceiptWalk = 50
 
 func (p pullResolver) reviewedHead(ctx context.Context, owner, repo string, number int, commits []string) (string, error) {
 	walked := 0
-	for _, sha := range commits {
-		if walked == maxReceiptWalk {
-			break
-		}
+	for i := len(commits) - 1; i >= 0 && walked < maxReceiptWalk; i-- {
 		walked++
-		ok, err := p.client.HasSuccessfulCheck(ctx, owner, repo, sha, checkName)
+		ok, err := p.client.HasSuccessfulCheck(ctx, owner, repo, commits[i], checkName)
 		if err != nil {
 			return "", err
 		}
 		if ok {
-			return sha, nil
+			return commits[i], nil
 		}
 	}
 	return "", nil

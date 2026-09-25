@@ -106,6 +106,9 @@ func renderGitHub(args []string) error {
 		if opts.CommitID == "" {
 			opts.CommitID = state.HeadSHA
 		}
+		if report.Run != nil && report.Run.Source.HeadSHA != "" && opts.CommitID != report.Run.Source.HeadSHA {
+			return fmt.Errorf("findings review %s but the pull request head is %s; rerun the review before posting", report.Run.Source.HeadSHA, opts.CommitID)
+		}
 		files, err := client.ListPullFiles(ctx, owner, name, number)
 		if err != nil {
 			return err
@@ -135,16 +138,26 @@ func renderGitHub(args []string) error {
 	}
 	ctx := context.Background()
 	if result.PostReview() {
-		if err := client.CreateReview(ctx, result.Payload); err != nil {
-			return err
+		posted := true
+		if result.LGTM {
+			var err error
+			posted, err = client.HasLGTMReview(ctx, owner, name, number, opts.CommitID)
+			if err != nil {
+				return err
+			}
 		}
-		missing, err := missingComments(ctx, client, owner, name, number, result)
-		if err != nil {
-			return err
-		}
-		if len(missing) > 0 {
-			return fmt.Errorf("%d inline comment(s) did not land on the pull request: %s",
-				len(missing), strings.Join(missing, ", "))
+		if posted {
+			if err := client.CreateReview(ctx, result.Payload); err != nil {
+				return err
+			}
+			missing, err := missingComments(ctx, client, owner, name, number, result)
+			if err != nil {
+				return err
+			}
+			if len(missing) > 0 {
+				return fmt.Errorf("%d inline comment(s) did not land on the pull request: %s",
+					len(missing), strings.Join(missing, ", "))
+			}
 		}
 	}
 	cost := runCost(report)
@@ -163,7 +176,7 @@ func renderGitHub(args []string) error {
 	if err != nil {
 		return err
 	}
-	if !receipted {
+	if !receipted && len(result.Dropped) == 0 {
 		if err := client.CreateCheckRun(ctx, owner, name, opts.CommitID, checkName, "unreal-review", "Review posted."); err != nil {
 			return err
 		}

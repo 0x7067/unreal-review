@@ -79,6 +79,9 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 	if len(report.Findings) == 0 {
 		result.LGTM = true
 		result.Payload.Review.Body = "LGTM"
+		if report.Run != nil && report.Run.Source.BaseSHA != "" && report.Run.Source.HeadSHA != "" {
+			result.Payload.Review.Body = fmt.Sprintf("LGTM - no findings in %s..%s.", shortSHA(report.Run.Source.BaseSHA), shortSHA(report.Run.Source.HeadSHA))
+		}
 	}
 	return result
 }

@@ -82,20 +82,23 @@ func ScoreReport(c Case, report findings.Report) Score {
 }
 
 func Match(gold []Gold, produced []findings.Finding) (matched, severityHits, extra int) {
-	for _, g := range gold {
-		if !anyFinding(produced, func(f findings.Finding) bool { return sameRegion(f, g) }) {
+	consumed := make([]bool, len(gold))
+	for _, f := range produced {
+		hit := -1
+		for i, g := range gold {
+			if !consumed[i] && sameRegion(f, g) {
+				hit = i
+				break
+			}
+		}
+		if hit < 0 {
+			extra++
 			continue
 		}
+		consumed[hit] = true
 		matched++
-		if anyFinding(produced, func(f findings.Finding) bool {
-			return sameRegion(f, g) && f.Severity == g.Severity
-		}) {
+		if f.Severity == gold[hit].Severity {
 			severityHits++
-		}
-	}
-	for _, f := range produced {
-		if !anyGold(gold, func(g Gold) bool { return sameRegion(f, g) }) {
-			extra++
 		}
 	}
 	return matched, severityHits, extra
@@ -177,22 +180,4 @@ func sameRegion(f findings.Finding, g Gold) bool {
 		return false
 	}
 	return f.StartLine <= g.EndLine && g.StartLine <= f.EndLine
-}
-
-func anyFinding(fs []findings.Finding, pred func(findings.Finding) bool) bool {
-	for _, f := range fs {
-		if pred(f) {
-			return true
-		}
-	}
-	return false
-}
-
-func anyGold(gs []Gold, pred func(Gold) bool) bool {
-	for _, g := range gs {
-		if pred(g) {
-			return true
-		}
-	}
-	return false
 }
