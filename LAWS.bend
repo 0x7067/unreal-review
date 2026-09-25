@@ -243,13 +243,16 @@ law cap_is_fifty:
 law cap_bounds_comments:
   {G.underCap(G.cap50()) == True{} : Bool}
 
-law post_new_false_empty:
-  {G.postNew(0n, 0n) == False{} : Bool}
+law post_new_empty_lgtm:
+  {G.postNew(0n, 0n, 0n) == True{} : Bool}
 
 law post_new_true_comment:
   for +n: Nat
   for +d: Nat
-  {G.postNew(1n+n, d) == True{} : Bool}
+  {G.postNew(1n+n, 1n, d) == True{} : Bool}
 
 law post_new_true_dropped:
-  {G.postNew(0n, 1n+0n) == True{} : Bool}
+  {G.postNew(1n, 0n, 1n) == True{} : Bool}
+
+law post_new_false_all_reported:
+  {G.postNew(1n, 0n, 0n) == False{} : Bool}

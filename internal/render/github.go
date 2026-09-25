@@ -25,10 +25,11 @@ type GitHubResult struct {
 	Payload    github.Payload
 	Dropped    []DroppedFinding
 	Duplicates []findings.Finding
+	LGTM       bool
 }
 
 func (r GitHubResult) PostReview() bool {
-	return len(r.Payload.Review.Comments) > 0 || len(r.Dropped) > 0
+	return len(r.Payload.Review.Comments) > 0 || len(r.Dropped) > 0 || r.LGTM
 }
 
 type DroppedFinding struct {
@@ -75,6 +76,10 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 		cost = &c
 	}
 	result.Payload.Review.Body = reviewBody(report.Summary, placed, result.Dropped, cost)
+	if len(report.Findings) == 0 {
+		result.LGTM = true
+		result.Payload.Review.Body = "LGTM"
+	}
 	return result
 }
 

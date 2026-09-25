@@ -30,6 +30,13 @@ func TestGitHubSuppressesFindingsItAlreadyPosted(t *testing.T) {
 	}
 }
 
+func TestGitHubEmptyFindingsPostLGTM(t *testing.T) {
+	result := GitHub(reportOf(), GitHubOptions{})
+	if !result.LGTM || result.Payload.Review.Body != "LGTM" {
+		t.Fatalf("empty findings must post LGTM: lgtm=%v body=%q", result.LGTM, result.Payload.Review.Body)
+	}
+}
+
 func TestGitHubSuppressionDoesNotConsumeTheCommentCap(t *testing.T) {
 	var (
 		already  []findings.Finding
@@ -67,7 +74,7 @@ func TestGitHubPostReview(t *testing.T) {
 	}{
 		{"a new finding", reportOf(fresh), GitHubOptions{}, true},
 		{"only findings already posted", reportOf(already), GitHubOptions{Posted: []github.PostedComment{postedComment(already)}}, false},
-		{"no findings at all", reportOf(), GitHubOptions{}, false},
+		{"no findings at all", reportOf(), GitHubOptions{}, true},
 		{"a finding outside the pull request diff", reportOf(offDiff), GitHubOptions{Lines: lines, HasLines: true}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

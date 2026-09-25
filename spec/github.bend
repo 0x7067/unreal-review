@@ -65,16 +65,20 @@ def comments(flags: List<&2, Flags>) -> Nat:
                 case True{}:
                   Nat.add(1n, comments(t))
 
-def postNew(comments: Nat, dropped: Nat) -> Bool:
-  match comments:
+def postNew(total: Nat, comments: Nat, dropped: Nat) -> Bool:
+  match total:
     case 0n:
-      match dropped:
-        case 0n:
-          False{}
-        case 1n+d:
-          True{}
-    case 1n+c:
       True{}
+    case 1n+t:
+      match comments:
+        case 0n:
+          match dropped:
+            case 0n:
+              False{}
+            case 1n+d:
+              True{}
+        case 1n+c:
+          True{}
 
 def postOk(complete: Bool, dry: Bool) -> Bool:
   match dry:

@@ -182,6 +182,8 @@ func runCost(report findings.Report) findings.Cost {
 func reportPosted(result render.GitHubResult, cost findings.Cost) {
 	if len(result.Payload.Review.Comments) > 0 {
 		fmt.Fprintf(os.Stderr, "posted %d inline comment(s)", len(result.Payload.Review.Comments))
+	} else if result.LGTM {
+		fmt.Fprint(os.Stderr, "posted LGTM")
 	} else {
 		fmt.Fprint(os.Stderr, "posted no review")
 	}

@@ -197,11 +197,14 @@ def Laws.cap_is_fifty():
 def Laws.cap_bounds_comments():
   {==}
 
-def Laws.post_new_false_empty():
+def Laws.post_new_empty_lgtm():
   {==}
 
 def Laws.post_new_true_comment(n, d):
   {==}
 
 def Laws.post_new_true_dropped():
+  {==}
+
+def Laws.post_new_false_all_reported():
   {==}
