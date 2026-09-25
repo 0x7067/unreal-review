@@ -14,21 +14,25 @@ import (
 )
 
 const (
-	maxBriefDiff = 200_000
-	systemPrompt = `You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
+	maxBriefDiff     = 200_000
+	systemPromptBase = `You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
 
-Write findings as JSONL to the path given in the user message. Each line is one JSON object. Schema version v is 1. Every finding must include severity.
+Prefer lines that appear in the diff. One finding per issue. Record every finding with the record tool below, then end with exactly one summary record; if nothing material, record only the summary.
 
-A finding:
-{"v":1,"type":"finding","path":"src/foo.go","start_line":12,"end_line":14,"anchor":"new","severity":"warning","body":"This map write races with the reader on line 40."}
-
-path is repository-relative. start_line and end_line are inclusive 1-based. anchor is new (post-change file) or old (deleted lines). severity is error, warning, or note. body is markdown.
-
-A summary:
-{"v":1,"type":"summary","body":"Two races in the cache; the rest looks sound."}
-
-Prefer lines that appear in the diff. One finding per issue. If nothing material, write only a summary.`
+Severity: use "error" when the code does the wrong thing - a crash, hang, race, or corruption, a security compromise, a reported failure the caller can no longer classify so their error handling takes the wrong branch, or a transient fault made permanent with no recovery path. Use "warning" when the code works but weakly - diagnostics silently dropped while behavior stays correct, resources that leak toward exhaustion under sustained load, or capability lost for some inputs while the rest keeps working. Use "note" for anything smaller.`
 )
+
+func agentSystemPrompt() string {
+	entry, err := os.Executable()
+	if err != nil {
+		entry = os.Args[0]
+	}
+	return systemPromptBase + "\n\n" + promptSection(shellQuote(entry), DefaultTools())
+}
+
+func shellQuote(path string) string {
+	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+}
 
 type Options struct {
 	Workspace string
@@ -39,6 +43,7 @@ type Options struct {
 	Fresh     bool
 	Model     string
 	Agent     Agent
+	Pull      PullResolver
 }
 
 type Result struct {
@@ -51,10 +56,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("workspace: %w", err)
 	}
-	diff, source, err := loadGitDiff(ctx, workspace, opts.Spec, opts.Paths, opts.Exclude)
+	selected, err := loadGitDiff(ctx, workspace, opts.Spec, opts.Paths, opts.Exclude, opts.Pull)
 	if err != nil {
 		return Result{}, err
 	}
+	diff, source := selected.diff, selected.source
 	runMeta := newRun(opts.Model, source)
 	if strings.TrimSpace(diff) == "" {
 		runMeta.Status = findings.StatusComplete
@@ -127,8 +133,8 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Workspace:    workspace,
 		ReviewID:     runMeta.ID,
 		FindingsPath: findingsPath,
-		Prompt:       reviewPrompt(source.Base, source.Head, findingsPath, diff),
-		SystemPrompt: systemPrompt,
+		Prompt:       reviewPrompt(source.Base, source.Head, findingsPath, diff, reportedIn(selected.reported, selected.files)),
+		SystemPrompt: agentSystemPrompt(),
 		Model:        opts.Model,
 	})
 	interrupted := agentErr != nil && (errors.Is(agentErr, context.Canceled) || errors.Is(agentErr, context.DeadlineExceeded) || ctx.Err() != nil)
@@ -185,7 +191,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 }
 
-func reviewPrompt(from, to, findingsPath, diff string) string {
+func reviewPrompt(from, to, findingsPath, diff string, reported []findings.Finding) string {
 	target := to
 	if target == "" {
 		target = "working tree"
@@ -195,12 +201,50 @@ func reviewPrompt(from, to, findingsPath, diff string) string {
 		body = body[:maxBriefDiff] + "\n\n[diff truncated]\n"
 	}
 	return fmt.Sprintf(
-		"Write findings JSONL to %s\n\nFrom: %s\nTo: %s\n\n```diff\n%s\n```\n",
+		"Write findings JSONL to %s\n\nFrom: %s\nTo: %s\n\n%s```diff\n%s\n```\n",
 		findingsPath,
 		from,
 		target,
+		reportedSection(reported),
 		body,
 	)
+}
+
+func reportedIn(reported []findings.Finding, files []ChangedFile) []findings.Finding {
+	if len(reported) == 0 {
+		return nil
+	}
+	touched := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		touched[file.Path] = struct{}{}
+	}
+	out := make([]findings.Finding, 0, len(reported))
+	for _, item := range reported {
+		if _, ok := touched[item.Path]; ok {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func reportedSection(reported []findings.Finding) string {
+	if len(reported) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("Already reported on this pull request:\n")
+	for _, item := range reported {
+		parts := []string{"`" + item.Path + "`"}
+		if item.StartLine > 0 {
+			parts = append(parts, fmt.Sprintf("%d-%d", item.StartLine, item.EndLine))
+		}
+		if item.Severity != "" {
+			parts = append(parts, string(item.Severity))
+		}
+		fmt.Fprintf(&b, "- %s: %s\n", strings.Join(parts, " "), strings.Join(strings.Fields(item.Body), " "))
+	}
+	b.WriteString("\nReport a problem this list does not cover, or a material change in one it does. Do not restate it.\n\n")
+	return b.String()
 }
 
 func newRun(model string, source findings.Source) *findings.Run {

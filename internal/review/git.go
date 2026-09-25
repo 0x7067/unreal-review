@@ -18,6 +18,19 @@ type Spec struct {
 	To     string
 	Commit string
 	Branch string
+	Pull   string
+}
+
+type Pull struct {
+	BaseRef      string
+	BaseSHA      string
+	HeadSHA      string
+	ReviewedHead string
+	Reported     []findings.Finding
+}
+
+type PullResolver interface {
+	ResolvePull(ctx context.Context, spec string) (Pull, error)
 }
 
 type specMode int
@@ -27,6 +40,7 @@ const (
 	specRange
 	specCommit
 	specBranch
+	specPull
 )
 
 func (s Spec) mode() (specMode, error) {
@@ -41,14 +55,20 @@ func (s Spec) mode() (specMode, error) {
 	if s.Branch != "" {
 		n++
 	}
+	if s.Pull != "" {
+		n++
+	}
 	if n > 1 {
-		return 0, fmt.Errorf("use only one of --from/--to, --commit, or --branch")
+		return 0, fmt.Errorf("use only one of --from/--to, --commit, --branch, or --pr")
 	}
 	if s.Commit != "" {
 		return specCommit, nil
 	}
 	if s.Branch != "" {
 		return specBranch, nil
+	}
+	if s.Pull != "" {
+		return specPull, nil
 	}
 	if s.To != "" && s.From == "" {
 		return 0, fmt.Errorf("set --from or use --branch")
@@ -69,6 +89,8 @@ func (s Spec) FlagArgs() string {
 		return " --commit " + s.Commit
 	case specBranch:
 		return " --branch " + s.Branch
+	case specPull:
+		return " --pr " + s.Pull
 	case specRange:
 		var b strings.Builder
 		if s.From != "" {
@@ -88,30 +110,46 @@ type resolved struct {
 	baseSHA, headSHA string
 	mergeBase        bool
 	untracked        bool
+	reported         []findings.Finding
 }
 
-func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclude []string) (string, findings.Source, error) {
-	r, err := resolveSpec(ctx, workspace, spec)
+type selection struct {
+	diff     string
+	source   findings.Source
+	files    []ChangedFile
+	reported []findings.Finding
+}
+
+func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclude []string, pull PullResolver) (selection, error) {
+	r, err := resolveSpec(ctx, workspace, spec, pull)
 	if err != nil {
-		return "", findings.Source{}, err
+		return selection{}, err
 	}
 	scope := pathspecScope(paths, exclude)
 	diff, err := collectDiff(ctx, workspace, r, scope)
 	if err != nil {
-		return "", findings.Source{}, err
+		return selection{}, err
 	}
-	source := findings.Source{
-		Kind:    "git",
-		Base:    r.base,
-		Head:    r.head,
-		BaseSHA: r.baseSHA,
-		HeadSHA: r.headSHA,
-		DiffSHA: diffFingerprint(diff),
+	files, err := collectNumstat(ctx, workspace, r, scope)
+	if err != nil {
+		return selection{}, err
 	}
-	return diff, source, nil
+	return selection{
+		diff: diff,
+		source: findings.Source{
+			Kind:    "git",
+			Base:    r.base,
+			Head:    r.head,
+			BaseSHA: r.baseSHA,
+			HeadSHA: r.headSHA,
+			DiffSHA: diffFingerprint(diff),
+		},
+		files:    files,
+		reported: r.reported,
+	}, nil
 }
 
-func resolveSpec(ctx context.Context, workspace string, spec Spec) (resolved, error) {
+func resolveSpec(ctx context.Context, workspace string, spec Spec, pull PullResolver) (resolved, error) {
 	mode, err := spec.mode()
 	if err != nil {
 		return resolved{}, err
@@ -133,9 +171,49 @@ func resolveSpec(ctx context.Context, workspace string, spec Spec) (resolved, er
 		return resolveRange(ctx, workspace, from, spec.Branch)
 	case specCommit:
 		return resolveCommit(ctx, workspace, spec.Commit)
+	case specPull:
+		if pull == nil {
+			return resolved{}, fmt.Errorf("--pr needs a pull request resolver")
+		}
+		p, err := pull.ResolvePull(ctx, spec.Pull)
+		if err != nil {
+			return resolved{}, err
+		}
+		return resolvePull(ctx, workspace, p)
 	default:
 		return resolved{}, fmt.Errorf("unknown git range")
 	}
+}
+
+func resolvePull(ctx context.Context, workspace string, p Pull) (resolved, error) {
+	if p.HeadSHA == "" {
+		return resolved{}, fmt.Errorf("pull request has no head commit")
+	}
+	from, err := pullFullBase(ctx, workspace, p)
+	if err != nil {
+		return resolved{}, err
+	}
+	if p.ReviewedHead != "" && isAncestor(ctx, workspace, p.ReviewedHead, p.HeadSHA) {
+		from = p.ReviewedHead
+	}
+	r, err := resolveRange(ctx, workspace, from, p.HeadSHA)
+	if err != nil {
+		return resolved{}, err
+	}
+	r.reported = p.Reported
+	return r, nil
+}
+
+func pullFullBase(ctx context.Context, workspace string, p Pull) (string, error) {
+	if p.BaseRef != "" {
+		if ref := "origin/" + p.BaseRef; resolves(ctx, workspace, ref) {
+			return ref, nil
+		}
+	}
+	if p.BaseSHA == "" {
+		return "", fmt.Errorf("pull request has no base commit")
+	}
+	return p.BaseSHA, nil
 }
 
 func resolveRange(ctx context.Context, workspace, from, to string) (resolved, error) {
@@ -354,6 +432,16 @@ func gitRev(ctx context.Context, workspace, rev string) (string, error) {
 		return "", fmt.Errorf("git rev-parse %s: %w", rev, err)
 	}
 	return strings.TrimSpace(out), nil
+}
+
+func resolves(ctx context.Context, workspace, rev string) bool {
+	_, err := gitRev(ctx, workspace, rev)
+	return err == nil
+}
+
+func isAncestor(ctx context.Context, workspace, ancestor, commit string) bool {
+	cmd := exec.CommandContext(ctx, "git", "-C", workspace, "merge-base", "--is-ancestor", ancestor, commit)
+	return cmd.Run() == nil
 }
 
 func git(ctx context.Context, workspace string, args ...string) (string, error) {

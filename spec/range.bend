@@ -27,6 +27,17 @@ def labels(s: Spec) -> Labels:
     case Branch{name}:
       Labels{someNat(0n), Some{name}}
 
+type Receipt is Data:
+  NoReceipt{}
+  Receipt{rev: Nat}
+
+def pullBase(base: Nat, receipt: Receipt) -> Nat:
+  match receipt:
+    case NoReceipt{}:
+      base
+    case Receipt{rev}:
+      rev
+
 def isWorkspace(s: Spec) -> Bool:
   match s:
     case Workspace{}:

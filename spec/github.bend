@@ -45,6 +45,41 @@ def cap50() -> Nat:
 def underCap(n: Nat) -> Bool:
   Nat.is_le(n, cap50())
 
+type Flags is Data:
+  Flags{posted: Bool, commentable: Bool}
+
+def comments(flags: List<&2, Flags>) -> Nat:
+  match flags:
+    case Nil{}:
+      0n
+    case f <> t:
+      match f:
+        case Flags{posted, commentable}:
+          match posted:
+            case True{}:
+              comments(t)
+            case False{}:
+              match commentable:
+                case False{}:
+                  comments(t)
+                case True{}:
+                  Nat.add(1n, comments(t))
+
+def postNew(total: Nat, comments: Nat, dropped: Nat) -> Bool:
+  match total:
+    case 0n:
+      True{}
+    case 1n+t:
+      match comments:
+        case 0n:
+          match dropped:
+            case 0n:
+              False{}
+            case 1n+d:
+              True{}
+        case 1n+c:
+          True{}
+
 def postOk(complete: Bool, dry: Bool) -> Bool:
   match dry:
     case True{}:
