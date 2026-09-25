@@ -1,0 +1,45 @@
+cmd/unreal-review/agenttool.go
+  s_c290e147efbfce::t_2ea9b2e52ff3ee 1-8,10-11,13-23
+  s_c290e147efbfce::t_125852161b28e2 9,12
+README.md
+  s_c290e147efbfce::t_0af58df6802bd4 55
+  s_c290e147efbfce::t_2dd2c0f5ade20f 56
+internal/review/record.go
+  s_c290e147efbfce::t_e68e82fd68d595 1-82
+internal/findings/findings.go
+  s_c290e147efbfce::t_191f34e3c85bb3 460
+  s_c290e147efbfce::t_7196b14ddccb15 348-349,365,373,421,424,434,445-448
+  s_c290e147efbfce::t_556b1eac2c4e8b 428,432
+  s_c290e147efbfce::t_54a9ba92b2ac54 343-347,350-360,362-363,366,368,374,381-382,422-423,425-427,429-431,433,435-444,449-459,461-487
+  s_c290e147efbfce::t_70e55047aebde8 386,410,512
+cmd/unreal-review/main.go
+  s_c290e147efbfce::t_91869c6e3e0bca 6,36-37
+  s_c290e147efbfce::t_268d9a56299e11 7,35
+internal/review/tool.go
+  s_c290e147efbfce::t_15ed47f13919cd 1-36
+internal/review/tool_test.go
+  s_c290e147efbfce::t_fc8325bc494ba8 86-89
+  s_c290e147efbfce::t_90b52619b13c5e 1-85,90-100
+internal/findings/findings_test.go
+  s_c290e147efbfce::t_685ed5f5027cb5 5-6,89-131
+internal/review/review.go
+  s_c290e147efbfce::t_8b9f9e578bcb43 17-18,20-21,23-27,29,31-33
+  s_c290e147efbfce::t_4688a76e96127e 28
+  s_c290e147efbfce::t_63d5106328574c 133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34f791a6b8cb2bae6c9245b8d51d1c25da2500d8",
+  "prompts": {},
+  "sessions": {
+    "s_c290e147efbfce": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d5a0-ad3b-7135-b216-5c94b1e0dcb6",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
