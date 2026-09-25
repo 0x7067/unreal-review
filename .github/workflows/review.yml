@@ -11,7 +11,7 @@ permissions:
   checks: write
 
 concurrency:
-  group: review-${{ github.event.pull_request.number }}
+  group: ${{ (github.event.action == 'edited' && github.event.changes.base == null) && github.run_id || format('review-{0}', github.event.pull_request.number) }}
   cancel-in-progress: true
 
 jobs:
