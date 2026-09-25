@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  issues: write
 
 concurrency:
   group: review-${{ github.event.pull_request.number }}
@@ -32,6 +33,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           UNREAL_HARNESS_LLM_MODEL: ${{ vars.UNREAL_HARNESS_LLM_MODEL }}
           GH_TOKEN: ${{ github.token }}
+          PULL_REQUEST: ${{ github.repository }}#${{ github.event.pull_request.number }}
         run: |
-          unreal-review run --from "origin/${{ github.base_ref }}" --to HEAD --out findings.jsonl
-          unreal-review render github --pr "${{ github.repository }}#${{ github.event.pull_request.number }}" findings.jsonl
+          unreal-review run --pr "$PULL_REQUEST" --out findings.jsonl
+          unreal-review render github --pr "$PULL_REQUEST" findings.jsonl

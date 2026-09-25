@@ -25,8 +25,9 @@
 - `unreal-review run --from <rev> --out findings.jsonl` (working tree vs merge-base of that ref).
 - `unreal-review run --commit <rev> --out findings.jsonl`.
 - `unreal-review run --branch <name> --out findings.jsonl`.
+- `unreal-review run --pr owner/repo#12 --out findings.jsonl` (narrowed to commits since the last posted review; renders with `render github --pr`).
 - `unreal-review run --exclude '*.lock' -- cmd/`.
-- GitHub Actions: `--from origin/${{ github.base_ref }} --to HEAD`.
+- GitHub Actions: `--pr "$PULL_REQUEST"` (commits since the last posted review; falls back to the full base range).
 
 ## Driving it with verify-unreal-review
 
@@ -42,7 +43,7 @@ Preconditions:
 - **Detect default branch.** Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-detect -- run --model x --runner /tmp/no-such-runner --workspace "$VERIFY_FIXTURE" --branch HEAD --out "$VERIFY_SCRATCH/detect.jsonl"`. Exit code `0`. The `run` record has `"base":"main"`, `"head":"HEAD"`, and `diff_sha` equal to `$VERIFY_EMPTY_DIFF_SHA` (HEAD is the tip of main; `--branch` does not include the dirty working tree).
 - **Missing default branch.** Create a second repo on `develop` with no `main`/`master`. Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-missing-from -- run --model x --runner /tmp/no-such-runner --workspace "$VERIFY_SCRATCH/repos/develop" --branch HEAD --out "$VERIFY_SCRATCH/develop.jsonl"`. Exit code `1`. `stderr.txt` contains `could not find main or master; set --from`.
 - **`--to` without `--from`.** Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-to-only -- run --model x --runner /tmp/no-such-runner --workspace "$VERIFY_FIXTURE" --to HEAD --out "$VERIFY_SCRATCH/to-only.jsonl"`. Exit code `1`. `stderr.txt` contains `set --from or use --branch`.
-- **Mixed flags.** Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-mixed -- run --model x --runner /tmp/no-such-runner --workspace "$VERIFY_FIXTURE" --from HEAD --commit HEAD --out "$VERIFY_SCRATCH/mixed.jsonl"`. Exit code `1`. `stderr.txt` contains `use only one of --from/--to, --commit, or --branch`.
+- **Mixed flags.** Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-mixed -- run --model x --runner /tmp/no-such-runner --workspace "$VERIFY_FIXTURE" --from HEAD --commit HEAD --out "$VERIFY_SCRATCH/mixed.jsonl"`. Exit code `1`. `stderr.txt` contains `use only one of --from/--to, --commit, --branch, or --pr`.
 - **Bad revision.** Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-bad-rev -- run --model x --runner /tmp/no-such-runner --workspace "$VERIFY_FIXTURE" --from nosuchrev --to HEAD --out "$VERIFY_SCRATCH/badfrom.jsonl"`. Exit code `1`. `stderr.txt` contains `git rev-parse nosuchrev` and `unknown revision`.
 - **Working tree.** Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-working-tree -- run --model x --runner /tmp/no-such-runner --workspace "$VERIFY_FIXTURE" --from main --out "$VERIFY_SCRATCH/dirty.jsonl"`. Exit code `1` because the dirty `hello.txt` makes a non-empty diff and `/tmp/no-such-runner` does not exist. `stderr.txt` contains `status: failed` and `fork/exec /tmp/no-such-runner`. `dirty.jsonl` has `"status":"failed"`, no `source.head` field, `head_sha` equal to `HEAD_SHA`, and a `diff_sha` other than `$VERIFY_EMPTY_DIFF_SHA`.
 - **Commit.** Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-commit -- run --model x --runner /tmp/no-such-runner --workspace "$VERIFY_FIXTURE" --commit HEAD --out "$VERIFY_SCRATCH/commit.jsonl"`. Exit code `1` (HEAD vs its parent is the fixture's second commit). `commit.jsonl` has `"head":"HEAD"` and `"base":"HEAD^"`.

@@ -215,3 +215,50 @@ law cluster_caps:
   for +fs: List<&2, Gr.ChangedFile>
   for +es: List<&2, Gr.Edge>
   Gr.AllCapped(Gr.cluster(fs, es))
+
+law pull_narrows_when_usable:
+  for +full: Nat
+  for +rev: Nat
+  {R.pullBase(full, R.Since{rev}, True{}) == rev : Nat}
+
+law pull_full_when_unusable:
+  for +full: Nat
+  for +rev: Nat
+  {R.pullBase(full, R.Since{rev}, False{}) == full : Nat}
+
+law pull_full_without_since_true:
+  for +full: Nat
+  {R.pullBase(full, R.NoSince{}, True{}) == full : Nat}
+
+law pull_full_without_since_false:
+  for +full: Nat
+  {R.pullBase(full, R.NoSince{}, False{}) == full : Nat}
+
+law duplicate_suppressed:
+  {G.comments([G.Flags{True{}, True{}}, G.Flags{False{}, True{}}]) == 1n : Nat}
+
+law not_commentable_skipped:
+  {G.comments([G.Flags{False{}, False{}}, G.Flags{False{}, True{}}]) == 1n : Nat}
+
+law unseen_kept:
+  {G.comments([G.Flags{False{}, True{}}]) == 1n : Nat}
+
+law duplicate_does_not_consume_cap:
+  {G.comments([G.Flags{True{}, True{}}, G.Flags{False{}, True{}}]) == G.comments([G.Flags{False{}, True{}}]) : Nat}
+
+law cap_is_fifty:
+  {G.cap50() == 50n : Nat}
+
+law cap_bounds_comments:
+  {G.underCap(G.cap50()) == True{} : Bool}
+
+law post_new_false_empty:
+  {G.postNew(0n, 0n) == False{} : Bool}
+
+law post_new_true_comment:
+  for +n: Nat
+  for +d: Nat
+  {G.postNew(1n+n, d) == True{} : Bool}
+
+law post_new_true_dropped:
+  {G.postNew(0n, 1n+0n) == True{} : Bool}

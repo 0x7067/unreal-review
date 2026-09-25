@@ -45,10 +45,10 @@ func printUsage(w *os.File) {
 Render that file for GitHub inline comments, markdown, or another host.
 
 Usage:
-  unreal-review run [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>] [--exclude <glob>] [paths...]
+  unreal-review run [--from <rev> [--to <rev>] | --commit <rev> | --branch <name> | --pr owner/repo#n] [--exclude <glob>] [paths...]
   unreal-review group [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>] [--exclude <glob>] [paths...]
   unreal-review eval [--model <id>] [--out <dir>] [--json]
-  unreal-review render github [flags] [findings.jsonl]
+  unreal-review render github [--pr owner/repo#n] [--dry-run] [findings.jsonl]
   unreal-review render markdown [flags] [findings.jsonl]
 
 Run writes a findings JSONL document. That file is the review and the
@@ -59,10 +59,14 @@ include the working tree. --commit reviews one commit against its
 parent. --branch reviews a branch since it diverged from main or
 master. Interrupt to pause; run again with the same --out to continue.
 Group prints related files from the same git range so a large change
-can be reviewed in pieces; it does not start the agent. Eval runs a
-planted-issue corpus through the same pipeline as run and scores the
-findings file against the planted issues; it calls the model and
-costs money. Render reads that document and produces a
+can be reviewed in pieces; it does not start the agent. --pr narrows the
+range to the commits pushed since the last posted review of that pull
+request and names findings already posted so the agent does not restate
+them; render github then suppresses duplicates, tags comments with
+markers, and keeps a status comment with the cumulative cost. Eval
+runs a planted-issue corpus through the same pipeline as run and
+scores the findings file against the planted issues; it calls the
+model and costs money. Render reads that document and produces a
 display-specific output. GitHub inline comments are a renderer, not
 the review itself. GitHub posting requires a complete review.
 

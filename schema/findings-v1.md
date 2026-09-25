@@ -42,4 +42,4 @@ Every finding has `severity`. Allowed values: `error`, `warning`, `note`.
 
 ## Renderers
 
-A renderer reads this file and produces a host-specific display. GitHub inline comments map `anchor=new` to `RIGHT` and `anchor=old` to `LEFT`, and drop findings whose lines are not in the pull request diff.
+A renderer reads this file and produces a host-specific display. GitHub inline comments map `anchor=new` to `RIGHT` and `anchor=old` to `LEFT`, and drop findings whose lines are not in the pull request diff. The GitHub renderer tags each posted comment body with a marker derived from the finding `id`, suppresses findings whose `id` already appears on a posted comment, and posts a review only when at least one comment or drop is new. `id` is derived from path, line range, anchor, and body, so an unchanged issue keeps its identity across runs.

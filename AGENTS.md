@@ -10,7 +10,7 @@ unreal-review is a pipeline of replaceable pieces around one product: [schema/fi
 
 | Piece | Owns | Seam |
 | --- | --- | --- |
-| Source | The diff under review | git workspace (staged + unstaged + untracked vs HEAD), `--from`/`--to` (merge-base; omit `--to` for the working tree), `--commit` (parent..commit), `--branch` (merge-base of main/master), pathspecs, `--exclude`; `unreal-review group` prints pathspec groups from that range for separate reviews; inside `internal/review` |
+| Source | The diff under review | git workspace (staged + unstaged + untracked vs HEAD), `--from`/`--to` (merge-base; omit `--to` for the working tree), `--commit` (parent..commit), `--branch` (merge-base of main/master), `--pr` (commits since the last posted review, resolved against the PR base; full range as fallback), pathspecs, `--exclude`; `unreal-review group` prints pathspec groups from that range for separate reviews; inside `internal/review` |
 | Agent | Prompt + workspace → findings JSONL and cost | `review.Agent` |
 | Review | Checkpoint, SHA binding, prompt, status | `internal/review` |
 | Renderer | Display a report | functions on `findings.Report` (markdown, GitHub) |

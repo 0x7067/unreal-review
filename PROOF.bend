@@ -172,3 +172,42 @@ def Laws.cluster_perm(id, fs, es):
 
 def Laws.cluster_caps(fs, es):
   Gr.clusterCaps(fs, es)
+
+def Laws.pull_narrows_when_usable(full, rev):
+  {==}
+
+def Laws.pull_full_when_unusable(full, rev):
+  {==}
+
+def Laws.pull_full_without_since_true(full):
+  {==}
+
+def Laws.pull_full_without_since_false(full):
+  {==}
+
+def Laws.duplicate_suppressed():
+  {==}
+
+def Laws.not_commentable_skipped():
+  {==}
+
+def Laws.unseen_kept():
+  {==}
+
+def Laws.duplicate_does_not_consume_cap():
+  {==}
+
+def Laws.cap_is_fifty():
+  {==}
+
+def Laws.cap_bounds_comments():
+  {==}
+
+def Laws.post_new_false_empty():
+  {==}
+
+def Laws.post_new_true_comment(n, d):
+  {==}
+
+def Laws.post_new_true_dropped():
+  {==}
