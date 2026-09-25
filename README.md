@@ -60,7 +60,7 @@ The agent records findings through built-in tools rather than writing the findin
 unreal-review render github --pr owner/repo#12 findings.jsonl
 ```
 
-`--dry-run` prints the GitHub review payload and does not post. The renderer maps `anchor: new` to the right side of the diff and drops findings whose lines are not in the pull request patch. `run --pr` narrows the range to commits pushed since the last posted review, names already-posted findings in the prompt, and the renderer suppresses duplicates before the 50-comment cap, tags each comment with a marker, and keeps a status comment on the PR holding the run count and cumulative cost. A review is posted only when it says something new; the status comment still updates.
+`--dry-run` prints the GitHub review payload and does not post. The renderer maps `anchor: new` to the right side of the diff and drops findings whose lines are not in the pull request patch. `run --pr` narrows the range to commits pushed since the newest reviewed commit (tracked by check runs), names already-posted findings in the prompt, and the renderer suppresses duplicates before the 50-comment cap, tags each comment with a marker, and keeps a status comment on the PR holding the run count and cumulative cost. A review is posted only when it says something new; the status comment still updates.
 
 GitHub Actions is the same two commands. This repository reviews its own pull requests with [.github/workflows/review.yml](.github/workflows/review.yml); [examples/github-actions/review.yml](examples/github-actions/review.yml) is the shape to copy into another repository.
 

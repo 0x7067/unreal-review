@@ -562,7 +562,7 @@ func TestSpecRejectsMixedFlags(t *testing.T) {
 
 func TestPullRangeNarrowsToSince(t *testing.T) {
 	h := newPullRepo(t)
-	got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, SinceSHA: h.since})
+	got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, ReviewedHead: h.since})
 	if strings.Contains(got.diff, "first.txt") {
 		t.Fatalf("reviewed a commit that was already reported:\n%s", got.diff)
 	}
@@ -589,7 +589,7 @@ func TestPullRangeIgnoresUnusableSince(t *testing.T) {
 		{"rewritten by a force-push", h.divergent},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, SinceSHA: tc.since})
+			got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, ReviewedHead: tc.since})
 			if !strings.Contains(got.diff, "first.txt") || !strings.Contains(got.diff, "second.txt") {
 				t.Fatalf("whole range expected, got:\n%s", got.diff)
 			}
@@ -618,7 +618,7 @@ func TestPullCarriesReportedFindings(t *testing.T) {
 		ID: "a1b2c3d4e5f60708", Path: "second.txt", StartLine: 1, EndLine: 1,
 		Anchor: findings.AnchorNew, Severity: findings.SeverityWarning, Body: "Already said this.",
 	}}
-	got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, SinceSHA: h.since, Reported: reported})
+	got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, ReviewedHead: h.since, Reported: reported})
 	if len(got.reported) != 1 || got.reported[0].ID != "a1b2c3d4e5f60708" {
 		t.Fatalf("reported: %+v", got.reported)
 	}

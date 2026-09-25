@@ -58,6 +58,7 @@ type PullState struct {
 	Status          Status
 	StatusCommentID int64
 	Comments        []PostedComment
+	Commits         []string
 }
 
 type ReviewComment struct {
@@ -145,6 +146,11 @@ func (c *Client) PullState(ctx context.Context, owner, repo string, number int) 
 		return PullState{}, err
 	}
 	state.Comments = comments
+	commits, err := c.ListPullCommits(ctx, owner, repo, number)
+	if err != nil {
+		return PullState{}, err
+	}
+	state.Commits = commits
 	return state, nil
 }
 
@@ -402,4 +408,66 @@ func ParseRemoteURL(remote string) (string, string, error) {
 
 func NewHTTPClient() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
+}
+
+func (c *Client) ListPullCommits(ctx context.Context, owner, repo string, number int) ([]string, error) {
+	var out []string
+	page := 1
+	for {
+		var raw []struct {
+			SHA string `json:"sha"`
+		}
+		path := fmt.Sprintf("/repos/%s/%s/pulls/%d/commits?per_page=100&page=%d", owner, repo, number, page)
+		if err := c.get(ctx, path, &raw); err != nil {
+			return nil, err
+		}
+		for _, item := range raw {
+			out = append(out, item.SHA)
+		}
+		if len(raw) < 100 {
+			return out, nil
+		}
+		page++
+	}
+}
+
+func (c *Client) HasSuccessfulCheck(ctx context.Context, owner, repo, sha, checkName string) (bool, error) {
+	var raw struct {
+		CheckRuns []struct {
+			Name       string `json:"name"`
+			Status     string `json:"status"`
+			Conclusion string `json:"conclusion"`
+		} `json:"check_runs"`
+	}
+	path := fmt.Sprintf("/repos/%s/%s/commits/%s/check-runs?check_name=%s&per_page=100", owner, repo, sha, checkName)
+	if err := c.get(ctx, path, &raw); err != nil {
+		return false, err
+	}
+	for _, run := range raw.CheckRuns {
+		if run.Name == checkName && run.Status == "completed" && run.Conclusion == "success" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (c *Client) CreateCheckRun(ctx context.Context, owner, repo, sha, name, title, summary string) error {
+	body := struct {
+		Name       string `json:"name"`
+		HeadSHA    string `json:"head_sha"`
+		Status     string `json:"status"`
+		Conclusion string `json:"conclusion"`
+		Output     struct {
+			Title   string `json:"title"`
+			Summary string `json:"summary"`
+		} `json:"output"`
+	}{
+		Name:       name,
+		HeadSHA:    sha,
+		Status:     "completed",
+		Conclusion: "success",
+	}
+	body.Output.Title = title
+	body.Output.Summary = summary
+	return c.post(ctx, fmt.Sprintf("/repos/%s/%s/check-runs", owner, repo), body, nil)
 }

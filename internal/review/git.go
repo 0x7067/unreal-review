@@ -22,11 +22,11 @@ type Spec struct {
 }
 
 type Pull struct {
-	BaseRef  string
-	BaseSHA  string
-	HeadSHA  string
-	SinceSHA string
-	Reported []findings.Finding
+	BaseRef      string
+	BaseSHA      string
+	HeadSHA      string
+	ReviewedHead string
+	Reported     []findings.Finding
 }
 
 type PullResolver interface {
@@ -193,8 +193,8 @@ func resolvePull(ctx context.Context, workspace string, p Pull) (resolved, error
 	if err != nil {
 		return resolved{}, err
 	}
-	if p.SinceSHA != "" && isAncestor(ctx, workspace, p.SinceSHA, p.HeadSHA) {
-		from = p.SinceSHA
+	if p.ReviewedHead != "" && isAncestor(ctx, workspace, p.ReviewedHead, p.HeadSHA) {
+		from = p.ReviewedHead
 	}
 	r, err := resolveRange(ctx, workspace, from, p.HeadSHA)
 	if err != nil {

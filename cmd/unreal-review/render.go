@@ -159,6 +159,15 @@ func renderGitHub(args []string) error {
 	if err := client.UpsertStatusComment(ctx, owner, name, number, state.StatusCommentID, status); err != nil {
 		return err
 	}
+	receipted, err := client.HasSuccessfulCheck(ctx, owner, name, opts.CommitID, checkName)
+	if err != nil {
+		return err
+	}
+	if !receipted {
+		if err := client.CreateCheckRun(ctx, owner, name, opts.CommitID, checkName, "unreal-review", "Review posted."); err != nil {
+			return err
+		}
+	}
 	reportPosted(result, cost)
 	return nil
 }

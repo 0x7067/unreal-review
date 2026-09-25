@@ -173,16 +173,10 @@ def Laws.cluster_perm(id, fs, es):
 def Laws.cluster_caps(fs, es):
   Gr.clusterCaps(fs, es)
 
-def Laws.pull_narrows_when_usable(full, rev):
+def Laws.pull_reviewed_narrows(base, rev):
   {==}
 
-def Laws.pull_full_when_unusable(full, rev):
-  {==}
-
-def Laws.pull_full_without_since_true(full):
-  {==}
-
-def Laws.pull_full_without_since_false(full):
+def Laws.pull_full_without_receipt(base):
   {==}
 
 def Laws.duplicate_suppressed():

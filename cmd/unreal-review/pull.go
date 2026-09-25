@@ -12,6 +12,8 @@ import (
 	"unreal-review/internal/review"
 )
 
+const checkName = "unreal-review"
+
 type pullResolver struct {
 	client       *github.Client
 	defaultOwner string
@@ -27,13 +29,37 @@ func (p pullResolver) ResolvePull(ctx context.Context, spec string) (review.Pull
 	if err != nil {
 		return review.Pull{}, err
 	}
+	reviewed, err := p.reviewedHead(ctx, owner, repo, number, state.Commits)
+	if err != nil {
+		return review.Pull{}, err
+	}
 	return review.Pull{
-		BaseRef:  state.BaseRef,
-		BaseSHA:  state.BaseSHA,
-		HeadSHA:  state.HeadSHA,
-		SinceSHA: state.Status.Head,
-		Reported: render.ReportedFindings(state.Comments),
+		BaseRef:      state.BaseRef,
+		BaseSHA:      state.BaseSHA,
+		HeadSHA:      state.HeadSHA,
+		ReviewedHead: reviewed,
+		Reported:     render.ReportedFindings(state.Comments),
 	}, nil
+}
+
+const maxReceiptWalk = 50
+
+func (p pullResolver) reviewedHead(ctx context.Context, owner, repo string, number int, commits []string) (string, error) {
+	walked := 0
+	for _, sha := range commits {
+		if walked == maxReceiptWalk {
+			break
+		}
+		walked++
+		ok, err := p.client.HasSuccessfulCheck(ctx, owner, repo, sha, checkName)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return sha, nil
+		}
+	}
+	return "", nil
 }
 
 func newPullResolver(token, repo string) (review.PullResolver, error) {

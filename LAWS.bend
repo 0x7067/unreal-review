@@ -216,23 +216,14 @@ law cluster_caps:
   for +es: List<&2, Gr.Edge>
   Gr.AllCapped(Gr.cluster(fs, es))
 
-law pull_narrows_when_usable:
-  for +full: Nat
+law pull_reviewed_narrows:
+  for +base: Nat
   for +rev: Nat
-  {R.pullBase(full, R.Since{rev}, True{}) == rev : Nat}
+  {R.pullBase(base, R.Receipt{rev}) == rev : Nat}
 
-law pull_full_when_unusable:
-  for +full: Nat
-  for +rev: Nat
-  {R.pullBase(full, R.Since{rev}, False{}) == full : Nat}
-
-law pull_full_without_since_true:
-  for +full: Nat
-  {R.pullBase(full, R.NoSince{}, True{}) == full : Nat}
-
-law pull_full_without_since_false:
-  for +full: Nat
-  {R.pullBase(full, R.NoSince{}, False{}) == full : Nat}
+law pull_full_without_receipt:
+  for +base: Nat
+  {R.pullBase(base, R.NoReceipt{}) == base : Nat}
 
 law duplicate_suppressed:
   {G.comments([G.Flags{True{}, True{}}, G.Flags{False{}, True{}}]) == 1n : Nat}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -58,6 +59,13 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 			"title":  "Review the repository's own pull requests",
 			"base":   map[string]string{"ref": "main", "sha": "8ad9a39"},
 			"head":   map[string]string{"sha": "42227a3"},
+		})
+	})
+	mux.HandleFunc("/repos/o/r/pulls/3/commits", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, []map[string]any{
+			{"sha": "42227a3"},
+			{"sha": "dab3e1c"},
+			{"sha": "7c81b2c"},
 		})
 	})
 	mux.HandleFunc("/repos/o/r/issues/3/comments", func(w http.ResponseWriter, _ *http.Request) {
@@ -176,5 +184,59 @@ func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCheckRunReceiptRoundTrip(t *testing.T) {
+	type call struct {
+		method string
+		path   string
+		body   string
+	}
+	var calls []call
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/o/r/commits/42227a3/check-runs", func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, call{method: r.Method, path: r.URL.RequestURI()})
+		writeJSON(t, w, map[string]any{
+			"total_count": 1,
+			"check_runs": []map[string]any{
+				{"name": "other-check", "status": "completed", "conclusion": "success"},
+				{"name": "unreal-review", "status": "completed", "conclusion": "failure"},
+			},
+		})
+	})
+	mux.HandleFunc("/repos/o/r/commits/dab3e1c/check-runs", func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, call{method: r.Method, path: r.URL.RequestURI()})
+		writeJSON(t, w, map[string]any{
+			"total_count": 1,
+			"check_runs": []map[string]any{
+				{"name": "unreal-review", "status": "completed", "conclusion": "success"},
+			},
+		})
+	})
+	mux.HandleFunc("/repos/o/r/check-runs", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		calls = append(calls, call{method: r.Method, path: r.URL.RequestURI(), body: string(body)})
+		writeJSON(t, w, map[string]any{"id": 1})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := &Client{Token: "t", BaseURL: server.URL, HTTP: server.Client()}
+	ctx := context.Background()
+	ok, err := client.HasSuccessfulCheck(ctx, "o", "r", "42227a3", "unreal-review")
+	if err != nil || ok {
+		t.Fatalf("failed conclusion must not count: ok=%v err=%v", ok, err)
+	}
+	ok, err = client.HasSuccessfulCheck(ctx, "o", "r", "dab3e1c", "unreal-review")
+	if err != nil || !ok {
+		t.Fatalf("success receipt must count: ok=%v err=%v", ok, err)
+	}
+	if err := client.CreateCheckRun(ctx, "o", "r", "42227a3", "unreal-review", "unreal-review", "Review posted."); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	created := calls[len(calls)-1]
+	if created.method != "POST" || created.body == "" || !strings.Contains(created.body, `"conclusion":"success"`) {
+		t.Fatalf("create call: %+v", created)
 	}
 }

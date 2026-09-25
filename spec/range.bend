@@ -27,20 +27,16 @@ def labels(s: Spec) -> Labels:
     case Branch{name}:
       Labels{someNat(0n), Some{name}}
 
-type Since is Data:
-  NoSince{}
-  Since{rev: Nat}
+type Receipt is Data:
+  NoReceipt{}
+  Receipt{rev: Nat}
 
-def pullBase(full: Nat, since: Since, usable: Bool) -> Nat:
-  match since:
-    case NoSince{}:
-      full
-    case Since{rev}:
-      match usable:
-        case True{}:
-          rev
-        case False{}:
-          full
+def pullBase(base: Nat, receipt: Receipt) -> Nat:
+  match receipt:
+    case NoReceipt{}:
+      base
+    case Receipt{rev}:
+      rev
 
 def isWorkspace(s: Spec) -> Bool:
   match s:
