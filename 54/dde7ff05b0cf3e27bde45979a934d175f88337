@@ -1,0 +1,21 @@
+schema/findings-v1.md
+  s_c290e147efbfce::t_8f8b1014a3d5f9 37-38
+internal/review/review.go
+  s_c290e147efbfce::t_9edcbca3a4c30c 20-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54dde7ff05b0cf3e27bde45979a934d175f88337",
+  "prompts": {},
+  "sessions": {
+    "s_c290e147efbfce": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d5a0-ad3b-7135-b216-5c94b1e0dcb6",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
