@@ -1,0 +1,47 @@
+.github/workflows/review.yml
+  s_c290e147efbfce::t_ac05a2b02bde0a 10,39,41-42
+README.md
+  s_c290e147efbfce::t_84ac082905bc7f 63
+PROOF.bend
+  s_c290e147efbfce::t_63af9262e6ca18 206-208
+  s_c290e147efbfce::t_8e93b41ccd692d 175-187,189-190,192-193,195-196,198-199,201-202,204-205,209-213
+  s_c290e147efbfce::t_0f93269e683a5b 188,191,194,197
+  s_c290e147efbfce::t_180a86d1c10d15 200,203
+examples/github-actions/review.yml
+  s_c290e147efbfce::t_35bb490bdd1350 10,36,38-39
+AGENTS.md
+  s_c290e147efbfce::t_0d6837173f7c19 13
+schema/findings-v1.md
+  s_c290e147efbfce::t_6220e7ea79e8e3 45
+cmd/unreal-review/main.go
+  s_c290e147efbfce::t_8451f20b59b322 66-69
+  s_c290e147efbfce::t_2d0d3f639d3bd5 48,51,62-65
+.grok/skills/verify-unreal-review/features/review-git-range.md
+  s_c290e147efbfce::t_1232f11fc597df 28,30,46
+LAWS.bend
+  s_c290e147efbfce::t_359423a8bbd42a 218-237,239-240,242-243,245-246,248,254-264
+  s_c290e147efbfce::t_f49d8303527a14 238,241,244,247
+  s_c290e147efbfce::t_14bb001aa55b43 249-253
+spec/range.bend
+  s_c290e147efbfce::t_26fcdb610754ae 30-44
+spec/github.bend
+  s_c290e147efbfce::t_14bb001aa55b43 51,56-66
+  s_c290e147efbfce::t_f344908352f385 48-50,52-55,67,69-78
+  s_c290e147efbfce::t_889170a8e44922 68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "24f524366bd515ddbbc778aafb8ca838e2d94b71",
+  "prompts": {},
+  "sessions": {
+    "s_c290e147efbfce": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d5a0-ad3b-7135-b216-5c94b1e0dcb6",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
