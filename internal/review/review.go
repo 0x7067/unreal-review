@@ -41,6 +41,7 @@ type Options struct {
 	Fresh     bool
 	Model     string
 	Agent     Agent
+	Pull      PullResolver
 }
 
 type Result struct {
@@ -53,10 +54,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("workspace: %w", err)
 	}
-	diff, source, err := loadGitDiff(ctx, workspace, opts.Spec, opts.Paths, opts.Exclude)
+	selected, err := loadGitDiff(ctx, workspace, opts.Spec, opts.Paths, opts.Exclude, opts.Pull)
 	if err != nil {
 		return Result{}, err
 	}
+	diff, source := selected.diff, selected.source
 	runMeta := newRun(opts.Model, source)
 	if strings.TrimSpace(diff) == "" {
 		runMeta.Status = findings.StatusComplete
@@ -129,7 +131,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Workspace:    workspace,
 		ReviewID:     runMeta.ID,
 		FindingsPath: findingsPath,
-		Prompt:       reviewPrompt(source.Base, source.Head, findingsPath, diff),
+		Prompt:       reviewPrompt(source.Base, source.Head, findingsPath, diff, reportedIn(selected.reported, selected.files)),
 		SystemPrompt: agentSystemPrompt(),
 		Model:        opts.Model,
 	})
@@ -187,7 +189,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 }
 
-func reviewPrompt(from, to, findingsPath, diff string) string {
+func reviewPrompt(from, to, findingsPath, diff string, reported []findings.Finding) string {
 	target := to
 	if target == "" {
 		target = "working tree"
@@ -197,12 +199,50 @@ func reviewPrompt(from, to, findingsPath, diff string) string {
 		body = body[:maxBriefDiff] + "\n\n[diff truncated]\n"
 	}
 	return fmt.Sprintf(
-		"Write findings JSONL to %s\n\nFrom: %s\nTo: %s\n\n```diff\n%s\n```\n",
+		"Write findings JSONL to %s\n\nFrom: %s\nTo: %s\n\n%s```diff\n%s\n```\n",
 		findingsPath,
 		from,
 		target,
+		reportedSection(reported),
 		body,
 	)
+}
+
+func reportedIn(reported []findings.Finding, files []ChangedFile) []findings.Finding {
+	if len(reported) == 0 {
+		return nil
+	}
+	touched := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		touched[file.Path] = struct{}{}
+	}
+	out := make([]findings.Finding, 0, len(reported))
+	for _, item := range reported {
+		if _, ok := touched[item.Path]; ok {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func reportedSection(reported []findings.Finding) string {
+	if len(reported) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("Already reported on this pull request:\n")
+	for _, item := range reported {
+		parts := []string{"`" + item.Path + "`"}
+		if item.StartLine > 0 {
+			parts = append(parts, fmt.Sprintf("%d-%d", item.StartLine, item.EndLine))
+		}
+		if item.Severity != "" {
+			parts = append(parts, string(item.Severity))
+		}
+		fmt.Fprintf(&b, "- %s: %s\n", strings.Join(parts, " "), strings.Join(strings.Fields(item.Body), " "))
+	}
+	b.WriteString("\nReport a problem this list does not cover, or a material change in one it does. Do not restate it.\n\n")
+	return b.String()
 }
 
 func newRun(model string, source findings.Source) *findings.Run {

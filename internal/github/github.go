@@ -25,6 +25,8 @@ type PullRequest struct {
 	Number  int
 	Owner   string
 	Repo    string
+	BaseRef string
+	BaseSHA string
 	HeadSHA string
 	Title   string
 }
@@ -34,6 +36,28 @@ type PullFile struct {
 	Patch    string
 	Status   string
 	PrevPath string
+}
+
+type PostedComment struct {
+	Path      string
+	StartLine int
+	EndLine   int
+	Side      string
+	Body      string
+}
+
+type IssueComment struct {
+	ID   int64
+	Body string
+}
+
+type PullState struct {
+	BaseRef         string
+	BaseSHA         string
+	HeadSHA         string
+	Status          Status
+	StatusCommentID int64
+	Comments        []PostedComment
 }
 
 type ReviewComment struct {
@@ -77,7 +101,11 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 	var raw struct {
 		Number int    `json:"number"`
 		Title  string `json:"title"`
-		Head   struct {
+		Base   struct {
+			Ref string `json:"ref"`
+			SHA string `json:"sha"`
+		} `json:"base"`
+		Head struct {
 			SHA string `json:"sha"`
 		} `json:"head"`
 	}
@@ -89,9 +117,125 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 		Number:  raw.Number,
 		Owner:   owner,
 		Repo:    repo,
+		BaseRef: raw.Base.Ref,
+		BaseSHA: raw.Base.SHA,
 		HeadSHA: raw.Head.SHA,
 		Title:   raw.Title,
 	}, nil
+}
+
+func (c *Client) PullState(ctx context.Context, owner, repo string, number int) (PullState, error) {
+	pull, err := c.GetPullRequest(ctx, owner, repo, number)
+	if err != nil {
+		return PullState{}, err
+	}
+	state := PullState{BaseRef: pull.BaseRef, BaseSHA: pull.BaseSHA, HeadSHA: pull.HeadSHA}
+	issue, err := c.ListIssueComments(ctx, owner, repo, number)
+	if err != nil {
+		return PullState{}, err
+	}
+	for _, comment := range issue {
+		if status, ok := ParseStatus(comment.Body); ok {
+			state.Status = status
+			state.StatusCommentID = comment.ID
+		}
+	}
+	comments, err := c.ListReviewComments(ctx, owner, repo, number)
+	if err != nil {
+		return PullState{}, err
+	}
+	state.Comments = comments
+	return state, nil
+}
+
+func (c *Client) UpsertStatusComment(ctx context.Context, owner, repo string, number int, id int64, body string) error {
+	if id != 0 {
+		return c.patch(ctx, fmt.Sprintf("/repos/%s/%s/issues/comments/%d", owner, repo, id), commentBody{Body: body})
+	}
+	return c.post(ctx, fmt.Sprintf("/repos/%s/%s/issues/%d/comments", owner, repo, number), commentBody{Body: body}, nil)
+}
+
+type commentBody struct {
+	Body string `json:"body"`
+}
+
+func (c *Client) ListIssueComments(ctx context.Context, owner, repo string, number int) ([]IssueComment, error) {
+	var out []IssueComment
+	page := 1
+	for {
+		var raw []struct {
+			ID   int64  `json:"id"`
+			Body string `json:"body"`
+		}
+		path := fmt.Sprintf("/repos/%s/%s/issues/%d/comments?per_page=100&page=%d", owner, repo, number, page)
+		if err := c.get(ctx, path, &raw); err != nil {
+			return nil, err
+		}
+		for _, item := range raw {
+			out = append(out, IssueComment{ID: item.ID, Body: item.Body})
+		}
+		if len(raw) < 100 {
+			return out, nil
+		}
+		page++
+	}
+}
+
+func (c *Client) ListReviewComments(ctx context.Context, owner, repo string, number int) ([]PostedComment, error) {
+	var out []PostedComment
+	page := 1
+	for {
+		var raw []struct {
+			Path              string  `json:"path"`
+			Body              string  `json:"body"`
+			Side              *string `json:"side"`
+			OriginalSide      *string `json:"original_side"`
+			Line              *int    `json:"line"`
+			OriginalLine      *int    `json:"original_line"`
+			StartLine         *int    `json:"start_line"`
+			OriginalStartLine *int    `json:"original_start_line"`
+		}
+		path := fmt.Sprintf("/repos/%s/%s/pulls/%d/comments?per_page=100&page=%d", owner, repo, number, page)
+		if err := c.get(ctx, path, &raw); err != nil {
+			return nil, err
+		}
+		for _, item := range raw {
+			end := firstInt(item.Line, item.OriginalLine)
+			start := firstInt(item.StartLine, item.OriginalStartLine)
+			if start == 0 {
+				start = end
+			}
+			out = append(out, PostedComment{
+				Path:      item.Path,
+				StartLine: start,
+				EndLine:   end,
+				Side:      firstString(item.Side, item.OriginalSide),
+				Body:      item.Body,
+			})
+		}
+		if len(raw) < 100 {
+			return out, nil
+		}
+		page++
+	}
+}
+
+func firstInt(values ...*int) int {
+	for _, value := range values {
+		if value != nil && *value != 0 {
+			return *value
+		}
+	}
+	return 0
+}
+
+func firstString(values ...*string) string {
+	for _, value := range values {
+		if value != nil && *value != "" {
+			return *value
+		}
+	}
+	return ""
 }
 
 func (c *Client) ListPullFiles(ctx context.Context, owner, repo string, number int) ([]PullFile, error) {
@@ -125,55 +269,55 @@ func (c *Client) ListPullFiles(ctx context.Context, owner, repo string, number i
 
 func (c *Client) CreateReview(ctx context.Context, payload Payload) error {
 	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/reviews", payload.Owner, payload.Repo, payload.PullNumber)
-	return c.post(ctx, path, payload.Review)
+	return c.post(ctx, path, payload.Review, nil)
 }
 
 func (c *Client) get(ctx context.Context, path string, dest any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base()+path, nil)
-	if err != nil {
-		return fmt.Errorf("github GET %s: %w", path, err)
-	}
-	c.headers(req)
-	resp, err := c.http().Do(req)
-	if err != nil {
-		return fmt.Errorf("github GET %s: %w", path, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("github GET %s: read body: %w", path, err)
-	}
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("github GET %s: %s: %s", path, resp.Status, truncate(body))
-	}
-	if err := json.Unmarshal(body, dest); err != nil {
-		return fmt.Errorf("github GET %s: decode: %w", path, err)
-	}
-	return nil
+	return c.do(ctx, http.MethodGet, path, nil, dest)
 }
 
-func (c *Client) post(ctx context.Context, path string, payload any) error {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("github POST %s: encode: %w", path, err)
+func (c *Client) post(ctx context.Context, path string, payload, dest any) error {
+	return c.do(ctx, http.MethodPost, path, payload, dest)
+}
+
+func (c *Client) patch(ctx context.Context, path string, payload any) error {
+	return c.do(ctx, http.MethodPatch, path, payload, nil)
+}
+
+func (c *Client) do(ctx context.Context, method, path string, payload, dest any) error {
+	var body io.Reader
+	if payload != nil {
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("github %s %s: encode: %w", method, path, err)
+		}
+		body = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base()+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, method, c.base()+path, body)
 	if err != nil {
-		return fmt.Errorf("github POST %s: %w", path, err)
+		return fmt.Errorf("github %s %s: %w", method, path, err)
 	}
 	c.headers(req)
-	req.Header.Set("Content-Type", "application/json")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.http().Do(req)
 	if err != nil {
-		return fmt.Errorf("github POST %s: %w", path, err)
+		return fmt.Errorf("github %s %s: %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("github POST %s: read body: %w", path, err)
+		return fmt.Errorf("github %s %s: read body: %w", method, path, err)
 	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("github POST %s: %s: %s", path, resp.Status, truncate(body))
+		return fmt.Errorf("github %s %s: %s: %s", method, path, resp.Status, truncate(raw))
+	}
+	if dest == nil || len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(raw, dest); err != nil {
+		return fmt.Errorf("github %s %s: decode: %w", method, path, err)
 	}
 	return nil
 }

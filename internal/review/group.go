@@ -49,7 +49,7 @@ func Groups(ctx context.Context, workspace string, spec Spec, paths, exclude []s
 	if err != nil {
 		return GroupResult{}, fmt.Errorf("workspace: %w", err)
 	}
-	r, err := resolveSpec(ctx, workspace, spec)
+	r, err := resolveSpec(ctx, workspace, spec, nil)
 	if err != nil {
 		return GroupResult{}, err
 	}

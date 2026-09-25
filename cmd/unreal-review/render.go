@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 
 	"unreal-review/internal/diffmap"
@@ -88,12 +87,7 @@ func renderGitHub(args []string) error {
 	if err != nil {
 		return err
 	}
-	token := firstNonEmpty(*tokenFlag, os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"))
-	if token == "" && !*dryRun {
-		if out, authErr := exec.CommandContext(context.Background(), "gh", "auth", "token").Output(); authErr == nil {
-			token = strings.TrimSpace(string(out))
-		}
-	}
+	token := resolveToken(*tokenFlag, !*dryRun)
 	client := &github.Client{Token: token, HTTP: github.NewHTTPClient()}
 	opts := render.GitHubOptions{
 		Owner:      owner,
@@ -101,14 +95,16 @@ func renderGitHub(args []string) error {
 		PullNumber: number,
 		CommitID:   *commit,
 	}
+	var state github.PullState
 	if token != "" {
 		ctx := context.Background()
-		pr, err := client.GetPullRequest(ctx, owner, name, number)
+		pullState, err := client.PullState(ctx, owner, name, number)
 		if err != nil {
 			return err
 		}
+		state = pullState
 		if opts.CommitID == "" {
-			opts.CommitID = pr.HeadSHA
+			opts.CommitID = state.HeadSHA
 		}
 		files, err := client.ListPullFiles(ctx, owner, name, number)
 		if err != nil {
@@ -125,6 +121,7 @@ func renderGitHub(args []string) error {
 		}
 		opts.Lines = lines
 		opts.HasLines = true
+		opts.Posted = state.Comments
 	}
 	result := render.GitHub(report, opts)
 	if *dryRun {
@@ -136,18 +133,57 @@ func renderGitHub(args []string) error {
 	if token == "" {
 		return fmt.Errorf("set GH_TOKEN, GITHUB_TOKEN, or --token to post a review")
 	}
-	if err := client.CreateReview(context.Background(), result.Payload); err != nil {
+	ctx := context.Background()
+	if result.PostReview() {
+		if err := client.CreateReview(ctx, result.Payload); err != nil {
+			return err
+		}
+		missing, err := missingComments(ctx, client, owner, name, number, result)
+		if err != nil {
+			return err
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf("%d inline comment(s) did not land on the pull request: %s",
+				len(missing), strings.Join(missing, ", "))
+		}
+	}
+	cost := runCost(report)
+	status := render.StatusBody(render.RunSummary{
+		HeadSHA: opts.CommitID,
+		Runs:    state.Status.Runs + 1,
+		Cost:    cost,
+		Total:   state.Status.CostUSD + cost.AmountUSD,
+		Result:  result,
+		Summary: report.Summary,
+	})
+	if err := client.UpsertStatusComment(ctx, owner, name, number, state.StatusCommentID, status); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "posted %d inline comment(s)", len(result.Payload.Review.Comments))
+	reportPosted(result, cost)
+	return nil
+}
+
+func runCost(report findings.Report) findings.Cost {
+	if report.Run == nil {
+		return findings.Cost{Currency: "USD"}
+	}
+	return report.Run.Cost
+}
+
+func reportPosted(result render.GitHubResult, cost findings.Cost) {
+	if len(result.Payload.Review.Comments) > 0 {
+		fmt.Fprintf(os.Stderr, "posted %d inline comment(s)", len(result.Payload.Review.Comments))
+	} else {
+		fmt.Fprint(os.Stderr, "posted no review")
+	}
+	if len(result.Duplicates) > 0 {
+		fmt.Fprintf(os.Stderr, ", %d already reported", len(result.Duplicates))
+	}
 	if len(result.Dropped) > 0 {
 		fmt.Fprintf(os.Stderr, ", dropped %d", len(result.Dropped))
 	}
 	fmt.Fprintln(os.Stderr)
-	if report.Run != nil {
-		fmt.Fprintf(os.Stderr, "cost: %s\n", report.Run.Cost.Format())
-	}
-	return nil
+	fmt.Fprintf(os.Stderr, "cost: %s\n", cost.Format())
 }
 
 func loadReport(path string) (findings.Report, error) {

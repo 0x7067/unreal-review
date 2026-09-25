@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"unreal-review/internal/findings"
 )
 
 func TestLoadGitDiffReviewsRangeInFull(t *testing.T) {
@@ -27,10 +29,7 @@ func TestLoadGitDiffReviewsRangeInFull(t *testing.T) {
 	gitRun(t, dir, "commit", "-q", "-m", "head")
 
 	ctx := context.Background()
-	diff, source, err := loadGitDiff(ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	diff, source := loadRange(t, ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
 	if !strings.Contains(diff, "large.txt") {
 		t.Fatalf("large file omitted from diff:\n%s", diff)
 	}
@@ -45,10 +44,7 @@ func TestLoadGitDiffReviewsRangeInFull(t *testing.T) {
 		t.Fatalf("diff_sha %s want %s", source.DiffSHA, hex.EncodeToString(sum[:]))
 	}
 
-	excluded, excludedSource, err := loadGitDiff(ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, []string{"large.txt"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	excluded, excludedSource := loadRange(t, ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, []string{"large.txt"})
 	if strings.Contains(excluded, "large.txt") {
 		t.Fatalf("--exclude left large.txt in the diff:\n%s", excluded)
 	}
@@ -531,13 +527,18 @@ func TestGroupsExcludeAndEmpty(t *testing.T) {
 }
 
 func TestSpecRejectsMixedFlags(t *testing.T) {
+	const mixed = "use only one of --from/--to, --commit, --branch, or --pr"
 	_, err := Spec{From: "main", Commit: "abc"}.mode()
-	if err == nil || !strings.Contains(err.Error(), "use only one of --from/--to, --commit, or --branch") {
+	if err == nil || !strings.Contains(err.Error(), mixed) {
 		t.Fatalf("from+commit: %v", err)
 	}
 	_, err = Spec{Branch: "feature", To: "HEAD"}.mode()
-	if err == nil || !strings.Contains(err.Error(), "use only one of --from/--to, --commit, or --branch") {
+	if err == nil || !strings.Contains(err.Error(), mixed) {
 		t.Fatalf("branch+to: %v", err)
+	}
+	_, err = Spec{Pull: "o/r#1", From: "main"}.mode()
+	if err == nil || !strings.Contains(err.Error(), mixed) {
+		t.Fatalf("pr+from: %v", err)
 	}
 	_, err = Spec{To: "HEAD"}.mode()
 	if err == nil || !strings.Contains(err.Error(), "set --from or use --branch") {
@@ -547,6 +548,167 @@ func TestSpecRejectsMixedFlags(t *testing.T) {
 	if err != nil || mode != specWorkspace {
 		t.Fatalf("empty spec: mode=%v err=%v", mode, err)
 	}
+	mode, err = Spec{Pull: "o/r#1"}.mode()
+	if err != nil || mode != specPull {
+		t.Fatalf("pr spec: mode=%v err=%v", mode, err)
+	}
+	if got := (Spec{Pull: "o/r#1"}).FlagArgs(); got != " --pr o/r#1" {
+		t.Fatalf("flag args = %q", got)
+	}
+	if _, err := resolveSpec(context.Background(), t.TempDir(), Spec{Pull: "o/r#1"}, nil); err == nil {
+		t.Fatal("a pull spec without a resolver should not resolve")
+	}
+}
+
+func TestPullRangeNarrowsToSince(t *testing.T) {
+	h := newPullRepo(t)
+	got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, SinceSHA: h.since})
+	if strings.Contains(got.diff, "first.txt") {
+		t.Fatalf("reviewed a commit that was already reported:\n%s", got.diff)
+	}
+	if !strings.Contains(got.diff, "second.txt") {
+		t.Fatalf("new commit missing from the diff:\n%s", got.diff)
+	}
+	if got.source.Base != h.since || got.source.Head != h.head {
+		t.Fatalf("source: %+v", got.source)
+	}
+	if got.source.BaseSHA != h.since || got.source.HeadSHA != h.head {
+		t.Fatalf("source shas: %+v", got.source)
+	}
+}
+
+func TestPullRangeIgnoresUnusableSince(t *testing.T) {
+	h := newPullRepo(t)
+	for _, tc := range []struct {
+		name  string
+		since string
+	}{
+		{"none recorded", ""},
+		{"null sha", "0000000000000000000000000000000000000000"},
+		{"unknown to this clone", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"},
+		{"rewritten by a force-push", h.divergent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, SinceSHA: tc.since})
+			if !strings.Contains(got.diff, "first.txt") || !strings.Contains(got.diff, "second.txt") {
+				t.Fatalf("whole range expected, got:\n%s", got.diff)
+			}
+			if got.source.BaseSHA != h.base {
+				t.Fatalf("base_sha = %s, want %s", got.source.BaseSHA, h.base)
+			}
+		})
+	}
+}
+
+func TestPullBasePrefersTheBaseBranchRef(t *testing.T) {
+	h := newPullRepo(t)
+	gitRun(t, h.dir, "update-ref", "refs/remotes/origin/main", h.base)
+	got := loadPull(t, h.dir, Pull{BaseRef: "main", BaseSHA: h.base, HeadSHA: h.head})
+	if got.source.Base != "origin/main" {
+		t.Fatalf("base = %q, want origin/main", got.source.Base)
+	}
+	if got.source.BaseSHA != h.base {
+		t.Fatalf("base_sha = %s, want %s", got.source.BaseSHA, h.base)
+	}
+}
+
+func TestPullCarriesReportedFindings(t *testing.T) {
+	h := newPullRepo(t)
+	reported := []findings.Finding{{
+		ID: "a1b2c3d4e5f60708", Path: "second.txt", StartLine: 1, EndLine: 1,
+		Anchor: findings.AnchorNew, Severity: findings.SeverityWarning, Body: "Already said this.",
+	}}
+	got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, SinceSHA: h.since, Reported: reported})
+	if len(got.reported) != 1 || got.reported[0].ID != "a1b2c3d4e5f60708" {
+		t.Fatalf("reported: %+v", got.reported)
+	}
+}
+
+func TestPullRejectsMissingCommits(t *testing.T) {
+	h := newPullRepo(t)
+	stub := &stubPull{pull: Pull{BaseSHA: h.base}}
+	if _, err := loadGitDiff(context.Background(), h.dir, Spec{Pull: "o/r#1"}, nil, nil, stub); err == nil {
+		t.Fatal("a pull request without a head commit should not resolve")
+	}
+	stub = &stubPull{pull: Pull{HeadSHA: h.head}}
+	if _, err := loadGitDiff(context.Background(), h.dir, Spec{Pull: "o/r#1"}, nil, nil, stub); err == nil {
+		t.Fatal("a pull request without a base commit should not resolve")
+	}
+}
+
+type pullHistory struct {
+	dir       string
+	base      string
+	since     string
+	head      string
+	divergent string
+}
+
+func newPullRepo(t *testing.T) pullHistory {
+	t.Helper()
+	dir := gitRepo(t)
+	writeFile(t, dir, "base.txt", "base\n")
+	commitAll(t, dir, "base")
+	h := pullHistory{dir: dir, base: revParse(t, dir, "HEAD")}
+	gitRun(t, dir, "checkout", "-q", "-b", "feature")
+	writeFile(t, dir, "first.txt", "first\n")
+	commitAll(t, dir, "first")
+	h.since = revParse(t, dir, "HEAD")
+	writeFile(t, dir, "second.txt", "second\n")
+	commitAll(t, dir, "second")
+	h.head = revParse(t, dir, "HEAD")
+	gitRun(t, dir, "checkout", "-q", "-b", "rewritten", h.base)
+	writeFile(t, dir, "divergent.txt", "divergent\n")
+	commitAll(t, dir, "divergent")
+	h.divergent = revParse(t, dir, "HEAD")
+	gitRun(t, dir, "checkout", "-q", "feature")
+	return h
+}
+
+type stubPull struct {
+	pull Pull
+	spec string
+}
+
+func (s *stubPull) ResolvePull(_ context.Context, spec string) (Pull, error) {
+	s.spec = spec
+	return s.pull, nil
+}
+
+func loadPull(t *testing.T, dir string, pull Pull) selection {
+	t.Helper()
+	stub := &stubPull{pull: pull}
+	got, err := loadGitDiff(context.Background(), dir, Spec{Pull: "o/r#1"}, nil, nil, stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stub.spec != "o/r#1" {
+		t.Fatalf("resolver was asked for %q", stub.spec)
+	}
+	return got
+}
+
+func writeFile(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func commitAll(t *testing.T, dir, message string) {
+	t.Helper()
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", message)
+}
+
+func revParse(t *testing.T, dir, rev string) string {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", "-C", dir, "rev-parse", rev)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse %s: %v\n%s", rev, err, out)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func TestWorkspaceDiffIncludesDirtyAndUntracked(t *testing.T) {
@@ -574,10 +736,7 @@ func TestWorkspaceDiffIncludesDirtyAndUntracked(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	diff, source, err := loadGitDiff(ctx, dir, Spec{}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	diff, source := loadRange(t, ctx, dir, Spec{}, nil, nil)
 	if source.Base != "HEAD" || source.Head != "" {
 		t.Fatalf("source: %+v", source)
 	}
@@ -624,10 +783,7 @@ func TestCommitDiffIsParentOnly(t *testing.T) {
 	}
 	second := strings.TrimSpace(string(secondOut))
 
-	diff, source, err := loadGitDiff(context.Background(), dir, Spec{Commit: second}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	diff, source := loadRange(t, context.Background(), dir, Spec{Commit: second}, nil, nil)
 	if source.Head != second || source.Base != second+"^" {
 		t.Fatalf("source: %+v", source)
 	}
@@ -661,10 +817,7 @@ func TestBranchDiffUsesMergeBase(t *testing.T) {
 	gitRun(t, dir, "checkout", "-q", "feature")
 
 	ctx := context.Background()
-	diff, source, err := loadGitDiff(ctx, dir, Spec{Branch: "feature"}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	diff, source := loadRange(t, ctx, dir, Spec{Branch: "feature"}, nil, nil)
 	if source.Base != "main" || source.Head != "feature" {
 		t.Fatalf("source: %+v", source)
 	}
@@ -675,10 +828,7 @@ func TestBranchDiffUsesMergeBase(t *testing.T) {
 		t.Fatalf("branch included later main file:\n%s", diff)
 	}
 
-	rangeDiff, _, err := loadGitDiff(ctx, dir, Spec{From: "main", To: "feature"}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rangeDiff, _ := loadRange(t, ctx, dir, Spec{From: "main", To: "feature"}, nil, nil)
 	if rangeDiff != diff {
 		t.Fatalf("branch and --from/--to diffs differ")
 	}
@@ -695,16 +845,22 @@ func TestFromWithoutToDiffsWorkingTree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	diff, source, err := loadGitDiff(context.Background(), dir, Spec{From: "main"}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	diff, source := loadRange(t, context.Background(), dir, Spec{From: "main"}, nil, nil)
 	if source.Base != "main" || source.Head != "" {
 		t.Fatalf("source: %+v", source)
 	}
 	if !strings.Contains(diff, "keep.txt") {
 		t.Fatalf("working tree omitted keep.txt:\n%s", diff)
 	}
+}
+
+func loadRange(t *testing.T, ctx context.Context, dir string, spec Spec, paths, exclude []string) (string, findings.Source) {
+	t.Helper()
+	selected, err := loadGitDiff(ctx, dir, spec, paths, exclude, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return selected.diff, selected.source
 }
 
 func groupPaths(groups []FileGroup) [][]string {

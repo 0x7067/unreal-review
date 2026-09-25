@@ -22,6 +22,9 @@ func cmdRun(args []string) error {
 	fs.SetOutput(os.Stderr)
 	workspace := fs.String("workspace", ".", "git repository to review")
 	spec := addSpecFlags(fs)
+	pr := fs.String("pr", "", "pull request to review: owner/repo#n, a URL, or a number")
+	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repo when --pr is a number")
+	tokenFlag := fs.String("token", "", "GitHub token for --pr (default GH_TOKEN or GITHUB_TOKEN)")
 	var exclude stringList
 	fs.Var(&exclude, "exclude", "git glob to omit from the diff; repeatable")
 	outPath := fs.String("out", "findings.jsonl", "findings JSONL path, or - for stdout")
@@ -55,6 +58,15 @@ func cmdRun(args []string) error {
 	if _, err := agent.LookPath(*runner); err != nil {
 		return err
 	}
+	selected := spec.spec()
+	selected.Pull = *pr
+	var resolver review.PullResolver
+	if *pr != "" {
+		resolver, err = newPullResolver(resolveToken(*tokenFlag, true), *repo)
+		if err != nil {
+			return err
+		}
+	}
 	var logWriter io.Writer
 	if *agentLog != "" {
 		file, err := os.Create(*agentLog)
@@ -68,12 +80,13 @@ func cmdRun(args []string) error {
 	defer stop()
 	result, err := review.Run(ctx, review.Options{
 		Workspace: *workspace,
-		Spec:      spec.spec(),
+		Spec:      selected,
 		Paths:     fs.Args(),
 		Exclude:   exclude,
 		Out:       *outPath,
 		Fresh:     *fresh,
 		Model:     *model,
+		Pull:      resolver,
 		Agent: agent.Runner{
 			Bin:           *runner,
 			ThinkingLevel: level,
