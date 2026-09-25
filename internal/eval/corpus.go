@@ -66,6 +66,76 @@ func (c *Cache) Len() int {
 }
 `
 
+const ledgerBase = `package evalledger
+
+import "sync"
+
+type Ledger struct {
+	mu      sync.Mutex
+	entries map[string]int
+}
+
+func NewLedger() *Ledger {
+	return &Ledger{entries: make(map[string]int)}
+}
+
+func (l *Ledger) Record(key string, amount int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.entries[key] += amount
+}
+
+func (l *Ledger) Total() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.sumLocked()
+}
+
+func (l *Ledger) sumLocked() int {
+	total := 0
+	for _, v := range l.entries {
+		total += v
+	}
+	return total
+}
+`
+
+const ledgerChange = `package evalledger
+
+import "sync"
+
+type Ledger struct {
+	mu      sync.Mutex
+	entries map[string]int
+}
+
+func NewLedger() *Ledger {
+	return &Ledger{entries: make(map[string]int)}
+}
+
+func (l *Ledger) Record(key string, amount int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.entries[key] += amount
+}
+
+func (l *Ledger) Total() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.Sum()
+}
+
+func (l *Ledger) Sum() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	total := 0
+	for _, v := range l.entries {
+		total += v
+	}
+	return total
+}
+`
+
 const configBase = `package evalconfig
 
 import (
@@ -116,6 +186,118 @@ func Load(r *http.Request) (*Config, error) {
 func ServerName(r *http.Request) string {
 	config, _ := Load(r)
 	return config.Server
+}
+`
+
+const configsBase = `package evalconfigs
+
+import "fmt"
+
+type Config struct {
+	Name string
+}
+
+func Load(path string) (*Config, error) {
+	if path == "" {
+		return nil, fmt.Errorf("empty path")
+	}
+	return &Config{Name: path}, nil
+}
+
+func LoadAll(paths []string) ([]*Config, error) {
+	configs := make([]*Config, 0, len(paths))
+	for _, path := range paths {
+		config, err := Load(path)
+		if err != nil {
+			return nil, fmt.Errorf("load %s: %w", path, err)
+		}
+		configs = append(configs, config)
+	}
+	return configs, nil
+}
+`
+
+const configsChange = `package evalconfigs
+
+import "fmt"
+
+type Config struct {
+	Name string
+}
+
+func Load(path string) (*Config, error) {
+	if path == "" {
+		return nil, fmt.Errorf("empty path")
+	}
+	return &Config{Name: path}, nil
+}
+
+func LoadAll(paths []string) ([]*Config, error) {
+	configs := make([]*Config, 0, len(paths))
+	for _, path := range paths {
+		config, err := Load(path)
+		if err != nil {
+			continue
+		}
+		configs = append(configs, config)
+	}
+	return configs, nil
+}
+`
+
+const usersBase = `package evalusers
+
+import (
+	"errors"
+	"fmt"
+)
+
+var ErrUnknownUser = errors.New("unknown user")
+
+func Lookup(id string) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("lookup %q: %w", id, ErrUnknownUser)
+	}
+	return id + "@example.com", nil
+}
+
+func DisplayName(id string) string {
+	name, err := Lookup(id)
+	if errors.Is(err, ErrUnknownUser) {
+		return "guest"
+	}
+	if err != nil {
+		return "unknown"
+	}
+	return name
+}
+`
+
+const usersChange = `package evalusers
+
+import (
+	"errors"
+	"fmt"
+)
+
+var ErrUnknownUser = errors.New("unknown user")
+
+func Lookup(id string) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("lookup %q: %v", id, ErrUnknownUser)
+	}
+	return id + "@example.com", nil
+}
+
+func DisplayName(id string) string {
+	name, err := Lookup(id)
+	if errors.Is(err, ErrUnknownUser) {
+		return "guest"
+	}
+	if err != nil {
+		return "unknown"
+	}
+	return name
 }
 `
 
@@ -227,59 +409,110 @@ func (s *Server) Handle(entry string) {
 }
 `
 
-const configsBase = `package evalconfigs
+const fetchBase = `package evalfetch
 
-import "fmt"
+import (
+	"io"
+	"net/http"
+)
 
-type Config struct {
-	Name string
-}
-
-func Load(path string) (*Config, error) {
-	if path == "" {
-		return nil, fmt.Errorf("empty path")
+func Head(url string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
 	}
-	return &Config{Name: path}, nil
-}
-
-func LoadAll(paths []string) ([]*Config, error) {
-	configs := make([]*Config, 0, len(paths))
-	for _, path := range paths {
-		config, err := Load(path)
-		if err != nil {
-			return nil, fmt.Errorf("load %s: %w", path, err)
-		}
-		configs = append(configs, config)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
 	}
-	return configs, nil
+	return string(body), nil
 }
 `
 
-const configsChange = `package evalconfigs
+const fetchChange = `package evalfetch
 
-import "fmt"
+import (
+	"io"
+	"net/http"
+)
 
-type Config struct {
-	Name string
+func Head(url string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+`
+
+const poolBase = `package evalpool
+
+import (
+	"net"
+	"time"
+)
+
+func Dial(addr string) (*Conn, error) {
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	return &Conn{conn: conn}, nil
 }
 
-func Load(path string) (*Config, error) {
-	if path == "" {
-		return nil, fmt.Errorf("empty path")
-	}
-	return &Config{Name: path}, nil
+type Conn struct {
+	conn net.Conn
 }
 
-func LoadAll(paths []string) ([]*Config, error) {
-	configs := make([]*Config, 0, len(paths))
-	for _, path := range paths {
-		config, err := Load(path)
-		if err != nil {
-			continue
-		}
-		configs = append(configs, config)
+func (c *Conn) Close() error {
+	return c.conn.Close()
+}
+
+func Shared(addr string) (*Conn, error) {
+	return Dial(addr)
+}
+`
+
+const poolChange = `package evalpool
+
+import (
+	"net"
+	"sync"
+	"time"
+)
+
+func Dial(addr string) (*Conn, error) {
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	return configs, nil
+	return &Conn{conn: conn}, nil
+}
+
+type Conn struct {
+	conn net.Conn
+}
+
+func (c *Conn) Close() error {
+	return c.conn.Close()
+}
+
+var (
+	shared     *Conn
+	sharedErr  error
+	sharedOnce sync.Once
+)
+
+func Shared(addr string) (*Conn, error) {
+	sharedOnce.Do(func() {
+		shared, sharedErr = Dial(addr)
+	})
+	return shared, sharedErr
 }
 `
 
@@ -324,42 +557,77 @@ func Average(values []int) int {
 var Corpus = []Case{
 	{
 		Name:   "race",
+		Class:  "concurrency",
 		Base:   map[string]string{"cache.go": cacheBase},
 		Change: map[string]string{"cache.go": cacheChange},
 		Gold:   []Gold{{Path: "cache.go", StartLine: 20, EndLine: 23, Severity: findings.SeverityError}},
 	},
 	{
+		Name:   "deadlock",
+		Class:  "concurrency",
+		Base:   map[string]string{"ledger.go": ledgerBase},
+		Change: map[string]string{"ledger.go": ledgerChange},
+		Gold:   []Gold{{Path: "ledger.go", StartLine: 20, EndLine: 34, Severity: findings.SeverityError}},
+	},
+	{
 		Name:   "nil-deref",
+		Class:  "error-handling",
 		Base:   map[string]string{"config.go": configBase},
 		Change: map[string]string{"config.go": configChange},
 		Gold:   []Gold{{Path: "config.go", StartLine: 20, EndLine: 23, Severity: findings.SeverityError}},
 	},
 	{
+		Name:   "swallowed-error",
+		Class:  "error-handling",
+		Base:   map[string]string{"configs.go": configsBase},
+		Change: map[string]string{"configs.go": configsChange},
+		Gold:   []Gold{{Path: "configs.go", StartLine: 16, EndLine: 26, Severity: findings.SeverityWarning}},
+	},
+	{
+		Name:   "wrap-break",
+		Class:  "error-handling",
+		Base:   map[string]string{"users.go": usersBase},
+		Change: map[string]string{"users.go": usersChange},
+		Gold:   []Gold{{Path: "users.go", StartLine: 8, EndLine: 26, Severity: findings.SeverityError}},
+	},
+	{
 		Name:   "bounds",
+		Class:  "memory-safety",
 		Base:   map[string]string{"stats.go": statsBase},
 		Change: map[string]string{"stats.go": statsChange},
 		Gold:   []Gold{{Path: "stats.go", StartLine: 6, EndLine: 10, Severity: findings.SeverityError}},
 	},
 	{
 		Name:   "sql-injection",
+		Class:  "security",
 		Base:   map[string]string{"store.go": storeBase},
 		Change: map[string]string{"store.go": storeChange},
 		Gold:   []Gold{{Path: "store.go", StartLine: 10, EndLine: 17, Severity: findings.SeverityError}},
 	},
 	{
 		Name:   "channel-leak",
+		Class:  "resources",
 		Base:   map[string]string{"server.go": serverBase},
 		Change: map[string]string{"server.go": serverChange},
 		Gold:   []Gold{{Path: "server.go", StartLine: 15, EndLine: 19, Severity: findings.SeverityWarning}},
 	},
 	{
-		Name:   "swallowed-error",
-		Base:   map[string]string{"configs.go": configsBase},
-		Change: map[string]string{"configs.go": configsChange},
-		Gold:   []Gold{{Path: "configs.go", StartLine: 16, EndLine: 26, Severity: findings.SeverityWarning}},
+		Name:   "body-leak",
+		Class:  "api-contract",
+		Base:   map[string]string{"fetch.go": fetchBase},
+		Change: map[string]string{"fetch.go": fetchChange},
+		Gold:   []Gold{{Path: "fetch.go", StartLine: 8, EndLine: 18, Severity: findings.SeverityWarning}},
+	},
+	{
+		Name:   "once-failure",
+		Class:  "api-contract",
+		Base:   map[string]string{"pool.go": poolBase},
+		Change: map[string]string{"pool.go": poolChange},
+		Gold:   []Gold{{Path: "pool.go", StartLine: 25, EndLine: 36, Severity: findings.SeverityError}},
 	},
 	{
 		Name:   "clean",
+		Class:  "control",
 		Base:   map[string]string{"math.go": mathBase},
 		Change: map[string]string{"math.go": mathChange},
 	},

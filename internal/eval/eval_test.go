@@ -122,7 +122,7 @@ func TestPrecisionIsOneWithoutFindings(t *testing.T) {
 }
 
 func TestScoreReportReadsRunStatus(t *testing.T) {
-	c := Case{Name: "race", Gold: []Gold{{Path: "cache.go", StartLine: 20, EndLine: 23, Severity: findings.SeverityError}}}
+	c := Case{Name: "race", Class: "concurrency", Gold: []Gold{{Path: "cache.go", StartLine: 20, EndLine: 23, Severity: findings.SeverityError}}}
 	report := findings.Report{
 		Run: &findings.Run{Status: findings.StatusComplete, Cost: findings.Cost{AmountUSD: 0.5, Requests: 2}},
 		Findings: []findings.Finding{
@@ -132,6 +132,9 @@ func TestScoreReportReadsRunStatus(t *testing.T) {
 	score := ScoreReport(c, report)
 	if !score.Completed() {
 		t.Fatal("want completed")
+	}
+	if score.Class != "concurrency" {
+		t.Fatalf("class=%q", score.Class)
 	}
 	if score.Matched != 1 || score.SeverityHits != 1 || score.Produced != 1 || score.Requests != 2 || score.CostUSD != 0.5 {
 		t.Fatalf("score=%+v", score)

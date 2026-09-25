@@ -69,9 +69,11 @@ unreal-review eval --model openai/gpt-6-luna-pro
 unreal-review eval --json --model openai/gpt-6-luna-pro > eval.json
 ```
 
-`eval` runs a planted-issue corpus — a data race, a nil dereference, a
-removed bounds guard, SQL injection, a leaked goroutine, a swallowed
-error, and a clean control — through the same pipeline as `run`, then
+`eval` runs a planted-issue corpus of eleven cases — races and a
+self-deadlock, nil dereferences and swallowed errors and a broken
+error chain, a removed bounds guard, SQL injection, a leaked
+goroutine, an unclosed response body, a poisoned `sync.Once`, and a
+clean control — through the same pipeline as `run`, then
 scores each findings file against the planted issues. `recall` is the
 share of planted issues found (same file, overlapping lines);
 `precision` is the share of findings that match something planted;

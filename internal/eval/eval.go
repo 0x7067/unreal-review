@@ -22,6 +22,7 @@ type Gold struct {
 
 type Case struct {
 	Name   string
+	Class  string
 	Base   map[string]string
 	Change map[string]string
 	Gold   []Gold
@@ -29,6 +30,7 @@ type Case struct {
 
 type Score struct {
 	Name         string  `json:"name"`
+	Class        string  `json:"class"`
 	Status       string  `json:"status"`
 	Gold         int     `json:"gold"`
 	Matched      int     `json:"matched"`
@@ -69,7 +71,7 @@ func Agreement(hits, total int) float64 {
 }
 
 func ScoreReport(c Case, report findings.Report) Score {
-	score := Score{Name: c.Name, Gold: len(c.Gold), Produced: len(report.Findings)}
+	score := Score{Name: c.Name, Class: c.Class, Gold: len(c.Gold), Produced: len(report.Findings)}
 	if report.Run != nil {
 		score.Status = string(report.Run.Status)
 		score.CostUSD = report.Run.Cost.AmountUSD
