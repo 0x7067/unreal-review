@@ -1,0 +1,57 @@
+internal/review/git.go
+  s_c290e147efbfce::t_f142b07d467ba4 28,196-197
+  s_c290e147efbfce::t_e8134d7927f17c 25-27,29
+AGENTS.md
+  s_c290e147efbfce::t_f9330bdbfbce02 13
+cmd/unreal-review/pull.go
+  s_c290e147efbfce::t_dbfd8e976bf635 15-16
+  s_c290e147efbfce::t_548fa0db25c7d0 32-35,37-41,45-62
+  s_c290e147efbfce::t_0ab098e3c5c3cb 63-64
+cmd/unreal-review/render.go
+  s_c290e147efbfce::t_fd44c620c9e0e6 162-170
+cmd/unreal-review/main.go
+  s_c290e147efbfce::t_0c839efbac13f4 63-65
+spec/range.bend
+  s_c290e147efbfce::t_e47100bf0e7e16 30-39
+internal/github/github.go
+  s_c290e147efbfce::t_f42ffc07e68fe0 61,149-153,431,441,445,450,469
+  s_c290e147efbfce::t_e40e555aeefd02 428-430
+  s_c290e147efbfce::t_5c2b9c2ca8746d 432-434,438-440
+  s_c290e147efbfce::t_f0b2159ccaadac 442-444
+  s_c290e147efbfce::t_5709d812e5a2ba 446-449
+  s_c290e147efbfce::t_38d1f4ff8f21a6 451-453,466-468
+  s_c290e147efbfce::t_827a681d812e37 470-472
+  s_c290e147efbfce::t_ccaa2e22c62c8d 412-427,435-437,454-465,473
+internal/review/git_test.go
+  s_c290e147efbfce::t_e47100bf0e7e16 565,592,621
+LAWS.bend
+  s_c290e147efbfce::t_e47100bf0e7e16 219-220,222,224-226
+PROOF.bend
+  s_c290e147efbfce::t_e47100bf0e7e16 176,179
+.github/workflows/review.yml
+  s_c290e147efbfce::t_4ac8c0bbe0a4e2 11
+README.md
+  s_c290e147efbfce::t_2b81a673c60254 63
+internal/github/github_test.go
+  s_c290e147efbfce::t_f6a3bcd2cf72fb 64-70
+  s_c290e147efbfce::t_acc6ae8d9801ec 189-242
+  s_c290e147efbfce::t_c5781205b365a3 9
+examples/github-actions/review.yml
+  s_c290e147efbfce::t_e0b0db15d22e3c 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bfe7994ccbd730d13bfd01cb2168df553c66da8b",
+  "prompts": {},
+  "sessions": {
+    "s_c290e147efbfce": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d5a0-ad3b-7135-b216-5c94b1e0dcb6",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
