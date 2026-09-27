@@ -17,7 +17,7 @@ const RecordFindingTool = "record_finding"
 
 const maxBriefDiff = 200_000
 
-var systemPrompt = fmt.Sprintf(`You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
+var systemPrompt = fmt.Sprintf(`You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Every claim in a finding must rest on code you have read or command output you have seen in this repository, never on what the diff suggests or on how similar systems usually behave. Before recording a finding, verify its premise: when the impact depends on anything outside the diff hunks - callers, configuration, build or CI wiring, process startup, environment - read the code that establishes it and confirm it there. If you cannot confirm the premise, drop the finding or record it as a note instead. Do not edit files. Do not call git hosting APIs. Do not post comments.
 
 Prefer lines that appear in the diff. One finding per issue. Record every finding with the %[1]s tool. If nothing is material, record none.
 
