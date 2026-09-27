@@ -1,0 +1,4 @@
+{
+  "name": "unreal-review",
+  "install": "sh tools/install-bend.sh && make install-lint"
+}
