@@ -43,7 +43,6 @@ type Options struct {
 
 type Result struct {
 	Report findings.Report
-	Diff   string
 }
 
 func Run(ctx context.Context, opts Options) (Result, error) {
@@ -62,7 +61,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		result := Result{Report: findings.Report{
 			Run:     runMeta,
 			Summary: findings.CleanVerdict + ": the selected range has no changes.",
-		}, Diff: diff}
+		}}
 		if err := persist(opts.Out, result.Report); err != nil {
 			return result, err
 		}
@@ -71,18 +70,18 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 
 	checkpoint, err := loadCheckpoint(opts.Out)
 	if err != nil {
-		return Result{Diff: diff}, err
+		return Result{}, err
 	}
 	resuming := false
 	if !opts.Fresh && checkpoint.Run != nil {
 		if checkpoint.Complete() {
-			return Result{Report: checkpoint, Diff: diff}, fmt.Errorf(
+			return Result{Report: checkpoint}, fmt.Errorf(
 				"%s is a complete review of %s; pass --fresh to start over",
 				opts.Out, formatSource(checkpoint.Run.Source),
 			)
 		}
 		if !checkpoint.Run.Source.SameDiff(source) {
-			return Result{Report: checkpoint, Diff: diff}, fmt.Errorf(
+			return Result{Report: checkpoint}, fmt.Errorf(
 				"%s is a review of %s; workspace is %s",
 				opts.Out, formatSource(checkpoint.Run.Source), formatSource(source),
 			)
@@ -97,29 +96,29 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	if opts.Agent == nil {
-		return Result{Diff: diff}, fmt.Errorf("agent is required")
+		return Result{}, fmt.Errorf("agent is required")
 	}
 
 	findingsPath, cleanup, err := prepareWork(opts.Out, !resuming)
 	if err != nil {
-		return Result{Diff: diff}, err
+		return Result{}, err
 	}
 	defer cleanup()
 
 	prior, err := readWork(findingsPath)
 	if err != nil {
-		return Result{Diff: diff}, err
+		return Result{}, err
 	}
 	if resuming && len(prior.Findings) == 0 && strings.TrimSpace(prior.Summary) == "" {
 		prior.Findings = checkpoint.Findings
 		prior.Summary = checkpoint.Summary
 		if err := writeWork(findingsPath, prior); err != nil {
-			return Result{Diff: diff}, err
+			return Result{}, err
 		}
 	}
 	runMeta.Status = findings.StatusRunning
 	report := findings.Report{Run: runMeta, Findings: prior.Findings, Summary: prior.Summary}
-	result := Result{Report: report, Diff: diff}
+	result := Result{Report: report}
 	if err := persist(opts.Out, report); err != nil {
 		return result, err
 	}
