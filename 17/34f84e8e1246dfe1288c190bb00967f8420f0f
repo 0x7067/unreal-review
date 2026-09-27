@@ -1,0 +1,27 @@
+.grok/skills/verify-unreal-review/features/render-github.md
+  s_668f6a102d1610::t_5f51d18c756e32 35
+internal/agent/agent.go
+  s_668f6a102d1610::t_5f51d18c756e32 126
+internal/agent/observer.go
+  s_668f6a102d1610::t_2bbd26b9c4d2d7 26-29,74-75,77-78
+.grok/skills/verify-unreal-review/features/render-markdown.md
+  s_668f6a102d1610::t_5f51d18c756e32 34
+examples/findings.jsonl
+  s_668f6a102d1610::t_5f51d18c756e32 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1734f84e8e1246dfe1288c190bb00967f8420f0f",
+  "prompts": {},
+  "sessions": {
+    "s_668f6a102d1610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49952c2f-3c45-48ce-8ca1-bc72004d357c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
