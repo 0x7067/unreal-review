@@ -26,7 +26,11 @@ jobs:
         with:
           go-version: '1.27'
       - name: Install tools
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
+          git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
+          cd "$RUNNER_TEMP/base"
           go install ./cmd/unreal-review
       - name: Review
         env:

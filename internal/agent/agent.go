@@ -58,7 +58,10 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 		return review.AgentResult{}, fmt.Errorf("create openrouter client: %w", err)
 	}
 	defer func() { _ = client.Close() }()
+	return h.run(ctx, client, req)
+}
 
+func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentRequest) (review.AgentResult, error) {
 	storeDirectory, err := sessionDirectory()
 	if err != nil {
 		return review.AgentResult{}, fmt.Errorf("resolve session directory: %w", err)
@@ -92,7 +95,7 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 	s := harnessSession{
 		id:           sessionID,
 		store:        store,
-		llm:          client,
+		llm:          adapter,
 		registry:     registry,
 		model:        llm.Model{ID: req.Model, ReasoningEffort: llm.ReasoningEffort(h.ThinkingLevel)},
 		systemPrompt: req.SystemPrompt,
