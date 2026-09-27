@@ -34,7 +34,7 @@ const (
 	maxSummaryCorrections = 2
 	openRouterBaseURL     = "https://openrouter.ai/api/v1"
 	toolHeartbeatInterval = 10 * time.Minute
-	sessionDirectoryName  = "unreal-agent/sessions"
+	sessionDirectoryName  = ".local/state/unreal-agent/sessions"
 )
 
 type Harness struct {
@@ -80,12 +80,8 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 	if err := os.MkdirAll(operationDirectory, 0o700); err != nil {
 		return review.AgentResult{}, fmt.Errorf("create operation directory: %w", err)
 	}
-	shell := strings.TrimSpace(os.Getenv("SHELL"))
-	if shell == "" {
-		shell = "/bin/sh"
-	}
 	registry := newRecordRegistry(tool.NewRegistry(tool.StaticTranslators{
-		Bash:      bash.New(bash.Config{Shell: shell, Directory: req.Workspace, BaseDirectory: operationDirectory}),
+		Bash:      bash.New(bash.Config{Shell: "/bin/sh", Directory: req.Workspace, BaseDirectory: operationDirectory}),
 		ViewImage: viewimage.New(viewimage.Config{Directory: req.Workspace}),
 	}, tool.BashName, tool.ViewImageName))
 
@@ -220,15 +216,11 @@ func openSession(ctx context.Context, store *localfile.Store, id session.ID) (se
 }
 
 func sessionDirectory() (string, error) {
-	stateHome := os.Getenv("XDG_STATE_HOME")
-	if !filepath.IsAbs(stateHome) {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("find home directory: %w", err)
-		}
-		stateHome = filepath.Join(home, ".local", "state")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("find home directory: %w", err)
 	}
-	return filepath.Join(stateHome, sessionDirectoryName), nil
+	return filepath.Join(home, sessionDirectoryName), nil
 }
 
 func SanitizeLevel(level string) (string, error) {

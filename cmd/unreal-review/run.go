@@ -44,9 +44,6 @@ func cmdRun(args []string) error {
 	}
 	key := os.Getenv("OPENROUTER_API_KEY")
 	if key == "" {
-		key = os.Getenv("UNREAL_HARNESS_LLM_API_KEY")
-	}
-	if key == "" {
 		return fmt.Errorf("set OPENROUTER_API_KEY")
 	}
 	level, err := agent.SanitizeLevel(*thinking)

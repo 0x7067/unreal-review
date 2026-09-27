@@ -545,9 +545,6 @@ func Write(w io.Writer, report Report) error {
 		}
 	}
 	for _, finding := range report.Findings {
-		if finding.ID == "" {
-			finding.ID = Fingerprint(finding)
-		}
 		start, err := json.Marshal(finding.StartLine)
 		if err != nil {
 			return fmt.Errorf("encode start_line: %w", err)

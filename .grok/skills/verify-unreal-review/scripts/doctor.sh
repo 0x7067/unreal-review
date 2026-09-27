@@ -52,7 +52,7 @@ else
 	fail=1
 fi
 
-if [ -n "${OPENROUTER_API_KEY:-}${UNREAL_HARNESS_LLM_API_KEY:-}" ]; then
+if [ -n "${OPENROUTER_API_KEY:-}" ]; then
 	note "ok  OPENROUTER_API_KEY is set"
 else
 	note "info OPENROUTER_API_KEY unset (required for run)"
