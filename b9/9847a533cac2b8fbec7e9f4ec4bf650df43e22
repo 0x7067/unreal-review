@@ -1,0 +1,36 @@
+.grok/skills/verify-unreal-review/SKILL.md
+  s_668f6a102d1610::t_74c11892e503b3 44,58,74,88
+cmd/unreal-review/render.go
+  s_668f6a102d1610::t_74c11892e503b3 89,136
+cmd/unreal-review/run.go
+  s_668f6a102d1610::t_74c11892e503b3 56
+.grok/skills/verify-unreal-review/features/README.md
+  s_668f6a102d1610::t_74c11892e503b3 21
+cmd/unreal-review/pull.go
+  s_668f6a102d1610::t_74c11892e503b3 63,80-81
+.grok/skills/verify-unreal-review/scripts/doctor.sh
+  s_668f6a102d1610::t_74c11892e503b3 70,72
+FOLLOWUP.md
+  s_668f6a102d1610::t_74c11892e503b3 56
+.grok/skills/verify-unreal-review/features/render-github.md
+  s_668f6a102d1610::t_74c11892e503b3 15,21,42-43,49-50
+cmd/unreal-review/secrets.go
+  s_668f6a102d1610::t_74c11892e503b3 15-18,66-67
+  s_668f6a102d1610::t_106c5995cdc465 68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b99847a533cac2b8fbec7e9f4ec4bf650df43e22",
+  "prompts": {},
+  "sessions": {
+    "s_668f6a102d1610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49952c2f-3c45-48ce-8ca1-bc72004d357c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
