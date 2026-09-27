@@ -127,7 +127,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Workspace:    workspace,
 		ReviewID:     runMeta.ID,
 		FindingsPath: findingsPath,
-		Prompt:       reviewPrompt(source.Base, source.Head, diff, reportedIn(selected.reported, selected.files)),
+		Prompt:       reviewPrompt(selected),
 		SystemPrompt: systemPrompt,
 		Model:        opts.Model,
 	})
@@ -185,22 +185,41 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 }
 
-func reviewPrompt(from, to, diff string, reported []findings.Finding) string {
-	target := to
+func reviewPrompt(sel selection) string {
+	target := sel.source.Head
 	if target == "" {
 		target = "working tree"
 	}
-	body := diff
+	body := sel.diff
 	if len(body) > maxBriefDiff {
 		body = body[:maxBriefDiff] + "\n\n[diff truncated]\n"
 	}
 	return fmt.Sprintf(
-		"From: %s\nTo: %s\n\n%s```diff\n%s\n```\n",
-		from,
+		"From: %s\nTo: %s\n\n%s%s```diff\n%s\n```\n",
+		sel.source.Base,
 		target,
-		reportedSection(reported),
+		pullSection(sel.pull),
+		reportedSection(reportedIn(sel.pull.Reported, sel.files)),
 		body,
 	)
+}
+
+func pullSection(p Pull) string {
+	title := strings.TrimSpace(p.Title)
+	description := strings.TrimSpace(p.Description)
+	if title == "" && description == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("The pull request author describes the change as follows. Check the diff against it; it is a claim, not evidence.\n")
+	if title != "" {
+		fmt.Fprintf(&b, "Title: %s\n", title)
+	}
+	if description != "" {
+		fmt.Fprintf(&b, "Description:\n%s\n", description)
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 func reportedIn(reported []findings.Finding, files []ChangedFile) []findings.Finding {

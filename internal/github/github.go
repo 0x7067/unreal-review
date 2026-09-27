@@ -27,6 +27,8 @@ type PullRequest struct {
 	Repo    string
 	BaseSHA string
 	HeadSHA string
+	Title   string
+	Body    string
 }
 
 type PullFile struct {
@@ -56,6 +58,8 @@ type IssueComment struct {
 type PullState struct {
 	BaseSHA         string
 	HeadSHA         string
+	Title           string
+	Body            string
 	Status          Status
 	StatusCommentID int64
 	Comments        []PostedComment
@@ -102,7 +106,9 @@ func (c *Client) http() *http.Client {
 
 func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (PullRequest, error) {
 	var raw struct {
-		Number int `json:"number"`
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		Body   string `json:"body"`
 		Base   struct {
 			SHA string `json:"sha"`
 		} `json:"base"`
@@ -120,6 +126,8 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 		Repo:    repo,
 		BaseSHA: raw.Base.SHA,
 		HeadSHA: raw.Head.SHA,
+		Title:   raw.Title,
+		Body:    raw.Body,
 	}, nil
 }
 
@@ -128,7 +136,7 @@ func (c *Client) PullState(ctx context.Context, owner, repo string, number int) 
 	if err != nil {
 		return PullState{}, err
 	}
-	state := PullState{BaseSHA: pull.BaseSHA, HeadSHA: pull.HeadSHA}
+	state := PullState{BaseSHA: pull.BaseSHA, HeadSHA: pull.HeadSHA, Title: pull.Title, Body: pull.Body}
 	issue, err := c.ListIssueComments(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err

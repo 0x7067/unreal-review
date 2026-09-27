@@ -39,8 +39,13 @@ func TestReportedSectionListsEachFindingOnce(t *testing.T) {
 }
 
 func TestReviewPromptCarriesTheReportedList(t *testing.T) {
-	prompt := reviewPrompt("abc123", "def456", "diff --git a/x b/x\n", []findings.Finding{
-		{Path: "x", StartLine: 1, EndLine: 1, Severity: findings.SeverityError, Body: "Boom."},
+	prompt := reviewPrompt(selection{
+		diff:   "diff --git a/x b/x\n",
+		source: findings.Source{Base: "abc123", Head: "def456"},
+		files:  []ChangedFile{{Path: "x"}},
+		pull: Pull{Reported: []findings.Finding{
+			{Path: "x", StartLine: 1, EndLine: 1, Severity: findings.SeverityError, Body: "Boom."},
+		}},
 	})
 	if !strings.Contains(prompt, "From: abc123\nTo: def456\n") {
 		t.Fatalf("prompt:\n%s", prompt)
@@ -53,11 +58,25 @@ func TestReviewPromptCarriesTheReportedList(t *testing.T) {
 }
 
 func TestReviewPromptWithoutReportedFindings(t *testing.T) {
-	prompt := reviewPrompt("main", "", "diff --git a/x b/x\n", nil)
-	if strings.Contains(prompt, "Already reported") {
+	prompt := reviewPrompt(selection{diff: "diff --git a/x b/x\n", source: findings.Source{Base: "main"}})
+	if strings.Contains(prompt, "Already reported") || strings.Contains(prompt, "pull request author") {
 		t.Fatalf("prompt:\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "To: working tree\n") {
 		t.Fatalf("prompt:\n%s", prompt)
+	}
+}
+
+func TestReviewPromptCarriesThePullRequestIntentBeforeTheDiff(t *testing.T) {
+	prompt := reviewPrompt(selection{
+		diff:   "diff --git a/x b/x\n",
+		source: findings.Source{Base: "abc123", Head: "def456"},
+		pull:   Pull{Title: "Cache user lookups", Description: "Adds an LRU in front of the user store."},
+	})
+	title := strings.Index(prompt, "Title: Cache user lookups\n")
+	description := strings.Index(prompt, "Description:\nAdds an LRU in front of the user store.\n")
+	diff := strings.Index(prompt, "```diff")
+	if title < 0 || description < title || diff < description {
+		t.Fatalf("the title and description should come before the diff:\n%s", prompt)
 	}
 }

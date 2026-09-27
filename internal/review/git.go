@@ -26,6 +26,8 @@ type Pull struct {
 	BaseSHA      string
 	HeadSHA      string
 	ReviewedHead string
+	Title        string
+	Description  string
 	Reported     []findings.Finding
 }
 
@@ -110,14 +112,14 @@ type resolved struct {
 	baseSHA, headSHA string
 	mergeBase        bool
 	untracked        bool
-	reported         []findings.Finding
+	pull             Pull
 }
 
 type selection struct {
-	diff     string
-	source   findings.Source
-	files    []ChangedFile
-	reported []findings.Finding
+	diff   string
+	source findings.Source
+	files  []ChangedFile
+	pull   Pull
 }
 
 func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclude []string, pull PullResolver) (selection, error) {
@@ -144,8 +146,8 @@ func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclud
 			HeadSHA: r.headSHA,
 			DiffSHA: diffFingerprint(diff),
 		},
-		files:    files,
-		reported: r.reported,
+		files: files,
+		pull:  r.pull,
 	}, nil
 }
 
@@ -200,7 +202,7 @@ func resolvePull(ctx context.Context, workspace string, p Pull) (resolved, error
 	if err != nil {
 		return resolved{}, err
 	}
-	r.reported = p.Reported
+	r.pull = p
 	return r, nil
 }
 
