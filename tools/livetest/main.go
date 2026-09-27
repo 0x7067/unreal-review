@@ -7,6 +7,7 @@ import (
 )
 
 func lastN(items []string, n int) []string {
+	n = max(0, min(n, len(items)))
 	return items[len(items)-n:]
 }
 
