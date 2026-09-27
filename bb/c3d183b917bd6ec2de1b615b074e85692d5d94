@@ -1,0 +1,32 @@
+go.mod
+  s_668f6a102d1610::t_1c470f63c8bef8 8
+cmd/unreal-review/secrets.go
+  s_668f6a102d1610::t_393a18931fbabc 1-14,16-72,75-80,82-89
+  s_668f6a102d1610::t_1c470f63c8bef8 15,73-74,81
+cmd/unreal-review/eval.go
+  s_668f6a102d1610::t_1c470f63c8bef8 51
+cmd/unreal-review/pull.go
+  s_668f6a102d1610::t_1c470f63c8bef8 81
+cmd/unreal-review/run.go
+  s_668f6a102d1610::t_1c470f63c8bef8 45
+cmd/unreal-review/main.go
+  s_668f6a102d1610::t_1c470f63c8bef8 9-12
+schema/findings-v1.md
+  s_668f6a102d1610::t_813da8e2d712a4 45,47-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bbc3d183b917bd6ec2de1b615b074e85692d5d94",
+  "prompts": {},
+  "sessions": {
+    "s_668f6a102d1610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49952c2f-3c45-48ce-8ca1-bc72004d357c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
