@@ -1,0 +1,26 @@
+.grok/skills/verify-unreal-review/scripts/doctor.sh
+  s_668f6a102d1610::t_9b8d095c31653e 55
+.grok/skills/verify-unreal-review/features/cli-usage.md
+  s_668f6a102d1610::t_9b8d095c31653e 35
+internal/agent/agent.go
+  s_668f6a102d1610::t_c7643f8a33b186 37,219-221,223
+  s_668f6a102d1610::t_dd9d968b2cc817 84
+internal/render/github.go
+  s_668f6a102d1610::t_dd9d968b2cc817 56,190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c678059dbb6d8e8e44e7bee378caf5847aa59044",
+  "prompts": {},
+  "sessions": {
+    "s_668f6a102d1610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49952c2f-3c45-48ce-8ca1-bc72004d357c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
