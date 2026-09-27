@@ -1,0 +1,23 @@
+hooks/prove-stop.sh
+  s_2469fd92ef607c::t_d9c388f4f0d060 4-17,26,29,52,79,81,128,138,141
+spec/group.bend
+  s_2469fd92ef607c::t_7b4878936f8a12 1164
+spec/nat.bend
+  s_2469fd92ef607c::t_7b4878936f8a12 64,76,81,95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7e571de9532e21353e6f9543286e1f6460543fe1",
+  "prompts": {},
+  "sessions": {
+    "s_2469fd92ef607c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f18303d9-c8bb-4d3b-9973-64924ba62fd3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
