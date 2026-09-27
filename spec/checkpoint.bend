@@ -56,6 +56,13 @@ def outcomeStatus(d: Decision) -> F.Status:
 def canComplete(summary: Bool, rec: Bool) -> Bool:
   Bool.and(summary, rec)
 
+def summaryFits(clean: Bool, findings: Nat) -> Bool:
+  match findings:
+    case 0n:
+      clean
+    case 1n+p:
+      Bool.not(clean)
+
 def finishFail(interrupted: Bool) -> F.Status:
   match interrupted:
     case True{}:

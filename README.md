@@ -51,7 +51,7 @@ Files in one directory stay together. Files that share a stem in the same direct
 unreal-review render markdown findings.jsonl
 ```
 
-The agent records findings through two tools built into the embedded harness rather than writing the findings file by hand: `record_finding` validates and appends one finding, `record_summary` appends the summary. The tool names live in `internal/review`; `internal/agent` wires them into the harness and appends each validated record to the findings file as the agent calls them.
+The agent records each finding with the `record_finding` tool built into the embedded harness rather than writing the findings file by hand; `internal/agent` validates it and appends it to the findings file. The agent's final message is the summary. It must follow the summary contract in [schema/findings-v1.md](schema/findings-v1.md#summary): one line, a verdict that matches the findings, and no restated list. A summary that breaks it goes back to the agent for correction.
 
 ## Post inline comments on a GitHub pull request
 

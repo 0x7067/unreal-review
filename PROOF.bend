@@ -76,6 +76,18 @@ def Laws.complete_needs_cost():
 def Laws.complete_when_both():
   {==}
 
+def Laws.clean_summary_without_findings():
+  {==}
+
+def Laws.clean_summary_with_findings_rejected(n):
+  {==}
+
+def Laws.verdict_summary_with_findings(n):
+  {==}
+
+def Laws.verdict_summary_without_findings_rejected():
+  {==}
+
 def Laws.empty_ids_keep_both(sp, ex, an, sv, sp2, ex2, an2, sv2):
   {==}
 

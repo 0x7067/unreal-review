@@ -448,6 +448,43 @@ func AppendFinding(path string, finding Finding) (Finding, error) {
 	return finding, nil
 }
 
+const (
+	CleanVerdict     = "No material issues"
+	MaxSummaryLength = 300
+)
+
+func CheckSummary(body string, findingCount int) (string, error) {
+	body = strings.TrimSpace(body)
+	switch {
+	case body == "":
+		return "", fmt.Errorf("summary must be set")
+	case strings.ContainsAny(body, "\r\n"):
+		return "", fmt.Errorf("summary must be one line")
+	case len([]rune(body)) > MaxSummaryLength:
+		return "", fmt.Errorf("summary must be at most %d characters", MaxSummaryLength)
+	case strings.Contains(body, "```") || blockMarkdown(body):
+		return "", fmt.Errorf("summary must be plain prose, without headings, lists, quotes, or code blocks")
+	}
+	clean := strings.HasPrefix(body, CleanVerdict)
+	if findingCount == 0 && !clean {
+		return "", fmt.Errorf("summary of a review with no findings must start with %q", CleanVerdict)
+	}
+	if findingCount > 0 && clean {
+		return "", fmt.Errorf("summary of a review with %d finding(s) must name the most severe one, not start with %q", findingCount, CleanVerdict)
+	}
+	return body, nil
+}
+
+func blockMarkdown(body string) bool {
+	for _, prefix := range []string{"#", "- ", "* ", "+ ", "> ", "|"} {
+		if strings.HasPrefix(body, prefix) {
+			return true
+		}
+	}
+	digits := strings.TrimLeft(body, "0123456789")
+	return len(digits) < len(body) && (strings.HasPrefix(digits, ". ") || strings.HasPrefix(digits, ") "))
+}
+
 func AppendSummary(path, body string) error {
 	body = strings.TrimSpace(body)
 	if body == "" {

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"encoding/json/jsontext"
 	"fmt"
-	"strings"
 
 	"github.com/unreallabsai/unreal-agent/harness/llm"
 	"github.com/unreallabsai/unreal-agent/harness/operation"
@@ -24,15 +23,13 @@ func newRecordRegistry(inner tool.Registry) tool.Registry {
 
 func (r recordRegistry) StaticDefinitions() []tool.Definition {
 	defs := r.Registry.StaticDefinitions()
-	return append(defs, recordFindingDefinition(), recordSummaryDefinition())
+	return append(defs, recordFindingDefinition())
 }
 
 func (r recordRegistry) Resolve(name string) (tool.Translator, bool) {
 	switch name {
 	case review.RecordFindingTool:
 		return recordFindingTranslator{}, true
-	case review.RecordSummaryTool:
-		return recordSummaryTranslator{}, true
 	default:
 		return r.Registry.Resolve(name)
 	}
@@ -42,7 +39,7 @@ func recordFindingDefinition() tool.Definition {
 	return tool.Definition{Tool: llm.Tool{
 		Type:        llm.ToolFunction,
 		Name:        review.RecordFindingTool,
-		Description: "Record one finding about the reviewed diff. Call once per issue, then finish with " + review.RecordSummaryTool + ".",
+		Description: "Record one finding about the reviewed diff. Call once per issue.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -80,24 +77,6 @@ func recordFindingDefinition() tool.Definition {
 	}}
 }
 
-func recordSummaryDefinition() tool.Definition {
-	return tool.Definition{Tool: llm.Tool{
-		Type:        llm.ToolFunction,
-		Name:        review.RecordSummaryTool,
-		Description: "Record the review summary. Call exactly once, after every " + review.RecordFindingTool + " call.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"body": map[string]any{
-					"type":        "string",
-					"description": "Markdown summary body.",
-				},
-			},
-			"required": []any{"body"},
-		},
-	}}
-}
-
 type recordFindingArgs struct {
 	Path      string `json:"path"`
 	StartLine int    `json:"start_line"`
@@ -105,15 +84,6 @@ type recordFindingArgs struct {
 	Anchor    string `json:"anchor"`
 	Severity  string `json:"severity"`
 	Body      string `json:"body"`
-}
-
-type recordSummaryArgs struct {
-	Body string `json:"body"`
-}
-
-type recordValue struct {
-	Finding *findings.Finding `json:"finding,omitempty"`
-	Summary string            `json:"summary,omitempty"`
 }
 
 type recordFindingTranslator struct{}
@@ -134,28 +104,10 @@ func (recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) to
 	if err != nil {
 		return tool.ErrorStatus(err.Error(), 0)
 	}
-	return submitRecord(ctx, recordValue{Finding: &finding})
+	return submitRecord(ctx, finding)
 }
 
 func (recordFindingTranslator) TranslateResult(callID string, status tool.CallStatus, _ []operation.Operation) (llm.ToolResult, error) {
-	return recordResult(callID, status), nil
-}
-
-type recordSummaryTranslator struct{}
-
-func (recordSummaryTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
-	var args recordSummaryArgs
-	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
-		return tool.ErrorStatus(fmt.Sprintf("decode arguments: %v", err), 0)
-	}
-	body := strings.TrimSpace(args.Body)
-	if body == "" {
-		return tool.ErrorStatus("body must be set", 0)
-	}
-	return submitRecord(ctx, recordValue{Summary: body})
-}
-
-func (recordSummaryTranslator) TranslateResult(callID string, status tool.CallStatus, _ []operation.Operation) (llm.ToolResult, error) {
 	return recordResult(callID, status), nil
 }
 
@@ -167,8 +119,8 @@ func recordResult(callID string, status tool.CallStatus) llm.ToolResult {
 	return llm.ToolResult{CallID: callID, Output: []llm.ToolResultOutput{{Kind: llm.ToolResultText, Value: text}}}
 }
 
-func submitRecord(ctx tool.Context, value recordValue) tool.CallStatus {
-	encoded, err := json.Marshal(value)
+func submitRecord(ctx tool.Context, finding findings.Finding) tool.CallStatus {
+	encoded, err := json.Marshal(finding)
 	if err != nil {
 		return tool.ErrorStatus(fmt.Sprintf("encode record: %v", err), 0)
 	}

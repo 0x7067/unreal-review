@@ -13,19 +13,21 @@ import (
 	"unreal-review/internal/findings"
 )
 
-const (
-	RecordFindingTool = "record_finding"
-	RecordSummaryTool = "record_summary"
-)
+const RecordFindingTool = "record_finding"
 
-const (
-	maxBriefDiff = 200_000
-	systemPrompt = `You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
+const maxBriefDiff = 200_000
 
-Prefer lines that appear in the diff. One finding per issue. Record every finding with the ` + RecordFindingTool + ` tool, then end with exactly one ` + RecordSummaryTool + ` call; if nothing material, record only the summary.
+var systemPrompt = fmt.Sprintf(`You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
 
-Severity: use "error" when the code does the wrong thing - a crash, hang, race, or corruption, a security compromise, a reported failure the caller can no longer classify so their error handling takes the wrong branch, or a transient fault made permanent with no recovery path. Use "warning" when the code works but weakly - diagnostics silently dropped while behavior stays correct, resources that leak toward exhaustion under sustained load, or capability lost for some inputs while the rest keeps working. Use "note" for anything smaller.`
-)
+Prefer lines that appear in the diff. One finding per issue. Record every finding with the %[1]s tool. If nothing is material, record none.
+
+Severity: use "error" when the code does the wrong thing - a crash, hang, race, or corruption, a security compromise, a reported failure the caller can no longer classify so their error handling takes the wrong branch, or a transient fault made permanent with no recovery path. Use "warning" when the code works but weakly - diagnostics silently dropped while behavior stays correct, resources that leak toward exhaustion under sustained load, or capability lost for some inputs while the rest keeps working. Use "note" for anything smaller.
+
+When you are done, your final message is the review summary and nothing else. The summary contract:
+- One line of plain prose, one to three sentences, at most %[2]d characters. Inline code is fine; no line breaks, headings, lists, quotes, tables, or code blocks.
+- If you recorded no findings, start with "%[3]s", then say what you checked.
+- If you recorded findings, start with the most severe one and what it breaks. Do not start with "%[3]s".
+- Do not count or list the findings; they are shown separately.`, RecordFindingTool, findings.MaxSummaryLength, findings.CleanVerdict)
 
 type Options struct {
 	Workspace string
@@ -59,7 +61,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		runMeta.Status = findings.StatusComplete
 		result := Result{Report: findings.Report{
 			Run:     runMeta,
-			Summary: "No changes to review.",
+			Summary: findings.CleanVerdict + ": the selected range has no changes.",
 		}, Diff: diff}
 		if err := persist(opts.Out, result.Report); err != nil {
 			return result, err

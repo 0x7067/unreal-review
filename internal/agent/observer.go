@@ -6,6 +6,7 @@ import (
 	jsonv2 "encoding/json/v2"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/unreallabsai/unreal-agent/harness/llm"
@@ -26,6 +27,7 @@ type sessionObserver struct {
 	err         error
 	cost        findings.Cost
 	responseIDs []string
+	finalText   string
 }
 
 func newSessionObserver(sessionID session.ID, findingsPath string, log io.Writer, cancel context.CancelFunc) *sessionObserver {
@@ -81,6 +83,11 @@ func (o *sessionObserver) observeModelResponse(response llm.Response) {
 	if response.ID != "" {
 		o.responseIDs = append(o.responseIDs, response.ID)
 	}
+	for _, item := range response.Output {
+		if message, ok := item.Data.(llm.Message); ok && message.Role == llm.RoleAssistant && strings.TrimSpace(message.Text) != "" {
+			o.finalText = message.Text
+		}
+	}
 	o.mu.Unlock()
 }
 
@@ -92,18 +99,12 @@ func (o *sessionObserver) observeToolCallStatus(status sessionstore.ToolCallStat
 	if err != nil {
 		return
 	}
-	var record recordValue
-	if err := json.Unmarshal(encoded, &record); err != nil {
+	var finding findings.Finding
+	if err := json.Unmarshal(encoded, &finding); err != nil {
 		o.fail(fmt.Errorf("decode record: %w", err))
 		return
 	}
-	switch {
-	case record.Finding != nil:
-		_, err = findings.AppendFinding(o.findingsPath, *record.Finding)
-	case record.Summary != "":
-		err = findings.AppendSummary(o.findingsPath, record.Summary)
-	}
-	if err != nil {
+	if _, err := findings.AppendFinding(o.findingsPath, finding); err != nil {
 		o.fail(fmt.Errorf("write findings: %w", err))
 	}
 }
@@ -121,6 +122,14 @@ func (o *sessionObserver) Err() error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.err
+}
+
+func (o *sessionObserver) takeFinalText() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	text := o.finalText
+	o.finalText = ""
+	return text
 }
 
 func (o *sessionObserver) Cost() findings.Cost {
