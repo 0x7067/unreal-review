@@ -23,11 +23,10 @@ type sessionObserver struct {
 	log          io.Writer
 	cancel       context.CancelFunc
 
-	mu          sync.Mutex
-	err         error
-	cost        findings.Cost
-	responseIDs []string
-	finalText   string
+	mu        sync.Mutex
+	err       error
+	cost      findings.Cost
+	finalText string
 }
 
 func newSessionObserver(sessionID session.ID, findingsPath string, log io.Writer, cancel context.CancelFunc) *sessionObserver {
@@ -72,16 +71,11 @@ func (o *sessionObserver) observeModelResponse(response llm.Response) {
 	o.cost.OutputTokens += response.Usage.OutputTokens
 	o.cost.ReasoningTokens += response.Usage.ReasoningTokens
 	o.cost.CachedInputTokens += response.Usage.CachedInputTokens
-	if len(response.Usage.Raw) > 0 {
-		var raw map[string]any
-		if err := json.Unmarshal([]byte(response.Usage.Raw), &raw); err == nil {
-			if amount, ok := floatVal(raw, "cost", "total_cost"); ok {
-				o.cost.AmountUSD += amount
-			}
-		}
+	var usage struct {
+		Cost float64 `json:"cost"`
 	}
-	if response.ID != "" {
-		o.responseIDs = append(o.responseIDs, response.ID)
+	if json.Unmarshal(response.Usage.Raw, &usage) == nil {
+		o.cost.AmountUSD += usage.Cost
 	}
 	for _, item := range response.Output {
 		if message, ok := item.Data.(llm.Message); ok && message.Role == llm.RoleAssistant && strings.TrimSpace(message.Text) != "" {
@@ -136,14 +130,6 @@ func (o *sessionObserver) Cost() findings.Cost {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.cost
-}
-
-func (o *sessionObserver) ResponseIDs() []string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	out := make([]string, len(o.responseIDs))
-	copy(out, o.responseIDs)
-	return out
 }
 
 func writeSessionItem(output io.Writer, item sessionstore.Item) error {

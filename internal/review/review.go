@@ -339,10 +339,6 @@ func mergeFindings(items []findings.Finding) []findings.Finding {
 	seen := make(map[string]int, len(items))
 	out := make([]findings.Finding, 0, len(items))
 	for _, item := range items {
-		if item.ID == "" {
-			out = append(out, item)
-			continue
-		}
 		if i, ok := seen[item.ID]; ok {
 			out[i] = item
 			continue

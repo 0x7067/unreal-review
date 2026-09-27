@@ -123,21 +123,7 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 		coordinatorErr = observerErr
 	}
 
-	cost := observer.Cost()
-	if cost.AmountUSD == 0 {
-		if responseIDs := observer.ResponseIDs(); len(responseIDs) > 0 {
-			interrupted := coordinatorErr != nil &&
-				(errors.Is(coordinatorErr, context.Canceled) || errors.Is(coordinatorErr, context.DeadlineExceeded) || ctx.Err() != nil)
-			fetched, fetchErr := FetchOpenRouterCost(ctx, h.APIKey, responseIDs)
-			if fetchErr != nil && !interrupted && ctx.Err() == nil {
-				return review.AgentResult{Cost: cost}, errors.Join(coordinatorErr, fmt.Errorf("track review cost: %w", fetchErr))
-			}
-			if fetchErr == nil {
-				cost.AmountUSD = fetched.AmountUSD
-			}
-		}
-	}
-	return review.AgentResult{Cost: cost}, coordinatorErr
+	return review.AgentResult{Cost: observer.Cost()}, coordinatorErr
 }
 
 type harnessSession struct {

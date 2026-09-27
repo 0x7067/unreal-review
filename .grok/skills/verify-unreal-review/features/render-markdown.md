@@ -31,7 +31,7 @@ Preconditions:
 ```
 Cost: USD 0.004200 (1280 input, 320 output, 2 requests)
 
-One data race and one unit mismatch in the cache.
+Concurrent writes to the shared cache map can corrupt it or crash the process; the TTL check also mixes milliseconds and seconds.
 
 ## `internal/cache/cache.go`
 
