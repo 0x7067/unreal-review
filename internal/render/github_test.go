@@ -85,6 +85,50 @@ func TestGitHubPostReview(t *testing.T) {
 	}
 }
 
+func TestGitHubOutsideDiffDropIsPostedOnceAndKeepsTheReceipt(t *testing.T) {
+	lines := diffLines(t, "src/foo.go", "@@ -1,2 +1,3 @@\n keep\n+added\n keep\n")
+	offDiff := newFinding("src/foo.go", 90, 90, "A finding on a line the pull request does not touch.")
+	report := reportOf(offDiff)
+
+	first := GitHub(report, GitHubOptions{Lines: lines, HasLines: true})
+	if len(first.Dropped) != 1 || !first.PostReview() || !first.Receipt() {
+		t.Fatalf("first render: dropped=%d post=%v receipt=%v", len(first.Dropped), first.PostReview(), first.Receipt())
+	}
+
+	posted := []github.PostedReview{{CommitID: "head", Body: first.Payload.Review.Body}}
+	second := GitHub(report, GitHubOptions{Lines: lines, HasLines: true, Reviews: posted})
+	if len(second.Dropped) != 0 || len(second.Duplicates) != 1 {
+		t.Fatalf("second render: dropped=%d duplicates=%d", len(second.Dropped), len(second.Duplicates))
+	}
+	if second.PostReview() || !second.Receipt() {
+		t.Fatalf("second render: post=%v receipt=%v", second.PostReview(), second.Receipt())
+	}
+}
+
+func TestGitHubCapDropBlocksTheReceiptUntilPosted(t *testing.T) {
+	var items []findings.Finding
+	for i := range maxInlineComments + 1 {
+		items = append(items, newFinding("src/foo.go", i+1, i+1, fmt.Sprintf("Problem %d.", i)))
+	}
+	report := reportOf(items...)
+
+	first := GitHub(report, GitHubOptions{})
+	if len(first.Dropped) != 1 || first.Receipt() {
+		t.Fatalf("first render: dropped=%d receipt=%v", len(first.Dropped), first.Receipt())
+	}
+
+	var comments []github.PostedComment
+	for _, item := range items[:maxInlineComments] {
+		comments = append(comments, postedComment(item))
+	}
+	posted := []github.PostedReview{{CommitID: "head", Body: first.Payload.Review.Body}}
+	second := GitHub(report, GitHubOptions{Posted: comments, Reviews: posted})
+	if len(second.Payload.Review.Comments) != 1 || len(second.Dropped) != 0 || !second.Receipt() {
+		t.Fatalf("second render: comments=%d dropped=%d receipt=%v",
+			len(second.Payload.Review.Comments), len(second.Dropped), second.Receipt())
+	}
+}
+
 func TestGitHubCommentCarriesItsFingerprint(t *testing.T) {
 	item := newFinding("src/foo.go", 12, 14, "This map write races with the reader.")
 	comment := githubComment(item)

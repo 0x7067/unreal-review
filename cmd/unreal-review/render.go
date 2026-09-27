@@ -124,6 +124,7 @@ func renderGitHub(args []string) error {
 		opts.Lines = lines
 		opts.HasLines = true
 		opts.Posted = state.Comments
+		opts.Reviews = state.Reviews
 	}
 	result := render.GitHub(report, opts)
 	if *dryRun {
@@ -137,15 +138,7 @@ func renderGitHub(args []string) error {
 	}
 	ctx := context.Background()
 	if result.PostReview() {
-		posted := true
-		if result.LGTM {
-			var err error
-			posted, err = client.HasLGTMReview(ctx, owner, name, number, opts.CommitID)
-			if err != nil {
-				return err
-			}
-		}
-		if posted {
+		if !result.LGTM || !hasLGTM(state.Reviews, opts.CommitID) {
 			if err := client.CreateReview(ctx, result.Payload); err != nil {
 				return err
 			}
@@ -175,13 +168,22 @@ func renderGitHub(args []string) error {
 	if err != nil {
 		return err
 	}
-	if !receipted && len(result.Dropped) == 0 {
+	if !receipted && result.Receipt() {
 		if err := client.CreateCheckRun(ctx, owner, name, opts.CommitID, checkName, "unreal-review", "Review posted."); err != nil {
 			return err
 		}
 	}
 	reportPosted(result, cost)
 	return nil
+}
+
+func hasLGTM(reviews []github.PostedReview, sha string) bool {
+	for _, review := range reviews {
+		if review.CommitID == sha && strings.HasPrefix(strings.TrimSpace(review.Body), "LGTM") {
+			return true
+		}
+	}
+	return false
 }
 
 func runCost(report findings.Report) findings.Cost {

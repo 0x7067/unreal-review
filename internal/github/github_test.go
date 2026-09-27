@@ -51,6 +51,21 @@ func TestFindingMarkerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestParseFindingsReadsEveryMarkerInABody(t *testing.T) {
+	body := "2 finding(s) were not posted as inline comments:\n" +
+		"- `a.go` line 9: outside " + FindingMarker("aaaa1111") + "\n" +
+		"- `b.go` line 4: over cap\n" +
+		StatusMarker(Status{Head: "abc123", Runs: 1}) + "\n" +
+		"- `c.go` line 2: outside " + FindingMarker("cccc3333") + "\n"
+	got := ParseFindings(body)
+	if len(got) != 2 || got[0] != "aaaa1111" || got[1] != "cccc3333" {
+		t.Fatalf("ParseFindings = %q", got)
+	}
+	if got := ParseFindings("LGTM"); len(got) != 0 {
+		t.Fatalf("ParseFindings(LGTM) = %q", got)
+	}
+}
+
 func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repos/o/r/pulls/3", func(w http.ResponseWriter, _ *http.Request) {
@@ -96,6 +111,11 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 			},
 		})
 	})
+	mux.HandleFunc("/repos/o/r/pulls/3/reviews", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, []map[string]any{
+			{"commit_id": "42227a3", "body": "Summary.\n\n- `a.go` line 9: outside " + FindingMarker("cccc3333")},
+		})
+	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
@@ -128,6 +148,12 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	}
 	if _, ok := ParseFinding(human.Body); ok {
 		t.Fatal("a human comment must not parse as one of ours")
+	}
+	if len(state.Reviews) != 1 || state.Reviews[0].CommitID != "42227a3" {
+		t.Fatalf("reviews: %+v", state.Reviews)
+	}
+	if ids := ParseFindings(state.Reviews[0].Body); len(ids) != 1 || ids[0] != "cccc3333" {
+		t.Fatalf("review body markers: %q", ids)
 	}
 }
 

@@ -19,6 +19,7 @@ type GitHubOptions struct {
 	Lines      diffmap.Map
 	HasLines   bool
 	Posted     []github.PostedComment
+	Reviews    []github.PostedReview
 }
 
 type GitHubResult struct {
@@ -32,9 +33,32 @@ func (r GitHubResult) PostReview() bool {
 	return len(r.Payload.Review.Comments) > 0 || len(r.Dropped) > 0 || r.LGTM
 }
 
+func (r GitHubResult) Receipt() bool {
+	for _, item := range r.Dropped {
+		if item.Reason == OverCap {
+			return false
+		}
+	}
+	return true
+}
+
+type DropReason int
+
+const (
+	OutsideDiff DropReason = iota
+	OverCap
+)
+
+func (r DropReason) String() string {
+	if r == OverCap {
+		return fmt.Sprintf("review already has %d inline comments", maxInlineComments)
+	}
+	return "line is not in the pull request diff"
+}
+
 type DroppedFinding struct {
 	Finding findings.Finding
-	Reason  string
+	Reason  DropReason
 }
 
 func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
@@ -49,22 +73,16 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 			},
 		},
 	}
-	posted := postedFingerprints(opts.Posted)
+	posted := postedFingerprints(opts.Posted, opts.Reviews)
 	var placed []findings.Finding
 	for _, finding := range report.Findings {
 		switch {
 		case posted[finding.ID]:
 			result.Duplicates = append(result.Duplicates, finding)
 		case opts.HasLines && !commentable(opts.Lines, finding):
-			result.Dropped = append(result.Dropped, DroppedFinding{
-				Finding: finding,
-				Reason:  "line is not in the pull request diff",
-			})
+			result.Dropped = append(result.Dropped, DroppedFinding{Finding: finding, Reason: OutsideDiff})
 		case len(result.Payload.Review.Comments) >= maxInlineComments:
-			result.Dropped = append(result.Dropped, DroppedFinding{
-				Finding: finding,
-				Reason:  fmt.Sprintf("review already has %d inline comments", maxInlineComments),
-			})
+			result.Dropped = append(result.Dropped, DroppedFinding{Finding: finding, Reason: OverCap})
 		default:
 			result.Payload.Review.Comments = append(result.Payload.Review.Comments, githubComment(finding))
 			placed = append(placed, finding)
@@ -86,10 +104,15 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 	return result
 }
 
-func postedFingerprints(comments []github.PostedComment) map[string]bool {
+func postedFingerprints(comments []github.PostedComment, reviews []github.PostedReview) map[string]bool {
 	out := make(map[string]bool, len(comments))
 	for _, comment := range comments {
 		if id, ok := github.ParseFinding(comment.Body); ok {
+			out[id] = true
+		}
+	}
+	for _, review := range reviews {
+		for _, id := range github.ParseFindings(review.Body) {
 			out[id] = true
 		}
 	}
@@ -220,7 +243,11 @@ func reviewBody(summary string, placed []findings.Finding, dropped []DroppedFind
 	}
 	fmt.Fprintf(&b, "%d finding(s) were not posted as inline comments:\n", len(dropped))
 	for _, item := range dropped {
-		fmt.Fprintf(&b, "- `%s` %s: %s\n", item.Finding.Path, formatLines(item.Finding.StartLine, item.Finding.EndLine), item.Reason)
+		fmt.Fprintf(&b, "- `%s` %s: %s", item.Finding.Path, formatLines(item.Finding.StartLine, item.Finding.EndLine), item.Reason)
+		if item.Reason == OutsideDiff {
+			b.WriteString(" " + github.FindingMarker(item.Finding.ID))
+		}
+		b.WriteByte('\n')
 	}
 	return strings.TrimSpace(b.String())
 }

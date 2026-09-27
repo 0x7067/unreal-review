@@ -20,7 +20,7 @@ func StatusMarker(s Status) string {
 }
 
 func ParseStatus(body string) (Status, bool) {
-	fields := markerFields(body)
+	fields, _ := markerFields(body)
 	if len(fields) != 4 || fields[0] != "status" || fields[1] == "" {
 		return Status{}, false
 	}
@@ -40,24 +40,42 @@ func FindingMarker(id string) string {
 }
 
 func ParseFinding(body string) (string, bool) {
-	fields := markerFields(body)
+	fields, _ := markerFields(body)
+	return findingID(fields)
+}
+
+func ParseFindings(body string) []string {
+	var ids []string
+	for {
+		fields, rest := markerFields(body)
+		if fields == nil {
+			return ids
+		}
+		if id, ok := findingID(fields); ok {
+			ids = append(ids, id)
+		}
+		body = rest
+	}
+}
+
+func findingID(fields []string) (string, bool) {
 	if len(fields) != 2 || fields[0] != "finding" || fields[1] == "" {
 		return "", false
 	}
 	return fields[1], true
 }
 
-func markerFields(body string) []string {
+func markerFields(body string) ([]string, string) {
 	at := strings.Index(body, markerPrefix)
 	if at < 0 {
-		return nil
+		return nil, ""
 	}
 	rest := body[at+len(markerPrefix):]
 	end := strings.Index(rest, "-->")
 	if end < 0 {
-		return nil
+		return nil, ""
 	}
-	return strings.Fields(rest[:end])
+	return strings.Fields(rest[:end]), rest[end+len("-->"):]
 }
 
 func WithoutMarker(body string) string {

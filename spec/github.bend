@@ -65,6 +65,30 @@ def comments(flags: List<&2, Flags>) -> Nat:
                 case True{}:
                   Nat.add(1n, comments(t))
 
+def dropped(flags: List<&2, Flags>) -> Nat:
+  match flags:
+    case Nil{}:
+      0n
+    case f <> t:
+      match f:
+        case Flags{posted, commentable}:
+          match posted:
+            case True{}:
+              dropped(t)
+            case False{}:
+              match commentable:
+                case False{}:
+                  Nat.add(1n, dropped(t))
+                case True{}:
+                  dropped(t)
+
+def receipt(outside: Nat, overCap: Nat) -> Bool:
+  match overCap:
+    case 0n:
+      True{}
+    case 1n+n:
+      False{}
+
 def postNew(total: Nat, comments: Nat, dropped: Nat) -> Bool:
   match total:
     case 0n:

@@ -270,3 +270,15 @@ law post_new_true_dropped:
 
 law post_new_false_all_reported:
   {G.postNew(1n, 0n, 0n) == False{} : Bool}
+
+law reported_drop_not_dropped_again:
+  {G.dropped([G.Flags{True{}, False{}}, G.Flags{False{}, False{}}]) == 1n : Nat}
+
+law receipt_despite_outside_drop:
+  for +o: Nat
+  {G.receipt(o, 0n) == True{} : Bool}
+
+law receipt_blocked_by_cap:
+  for +o: Nat
+  for +n: Nat
+  {G.receipt(o, 1n+n) == False{} : Bool}

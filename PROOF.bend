@@ -220,3 +220,12 @@ def Laws.post_new_true_dropped():
 
 def Laws.post_new_false_all_reported():
   {==}
+
+def Laws.reported_drop_not_dropped_again():
+  {==}
+
+def Laws.receipt_despite_outside_drop(o):
+  {==}
+
+def Laws.receipt_blocked_by_cap(o, n):
+  {==}
