@@ -61,7 +61,7 @@ func TestClusterFilesPairsJSTests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files, nil))
+	got := groupPaths(clusterFiles(files))
 	want := [][]string{
 		{"lib/__tests__/bar.test.ts", "lib/bar.ts"},
 		{"src/foo.test.ts", "src/foo.ts"},
@@ -81,7 +81,7 @@ func TestClusterFilesLocaleFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files, nil))
+	got := groupPaths(clusterFiles(files))
 	if len(got) != 2 {
 		t.Fatalf("groups: %v", got)
 	}
@@ -96,7 +96,7 @@ func TestClusterFilesLocaleFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = groupPaths(clusterFiles(files, nil))
+	got = groupPaths(clusterFiles(files))
 	if len(got) != 2 {
 		t.Fatalf("locale dirs: %v", got)
 	}
@@ -111,7 +111,7 @@ func TestClusterFilesLocaleFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = groupPaths(clusterFiles(files, nil))
+	got = groupPaths(clusterFiles(files))
 	if len(got) != 2 {
 		t.Fatalf("go files should not strip locale: %v", got)
 	}
@@ -120,7 +120,7 @@ func TestClusterFilesLocaleFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = groupPaths(clusterFiles(files, nil))
+	got = groupPaths(clusterFiles(files))
 	if len(got) != 2 {
 		t.Fatalf("docs lang dirs: %v", got)
 	}
@@ -137,7 +137,7 @@ func TestClusterFilesPackageLocalTests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files, nil))
+	got := groupPaths(clusterFiles(files))
 	want := [][]string{
 		{"internal/session/compare.go", "internal/session/compare_test.go"},
 		{"internal/viewer/compare_test.go", "internal/viewer/handler.go"},
@@ -157,7 +157,7 @@ func TestClusterFilesHeaderPair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files, nil))
+	got := groupPaths(clusterFiles(files))
 	if len(got) != 2 {
 		t.Fatalf("groups: %v", got)
 	}
@@ -174,7 +174,7 @@ func TestClusterFilesStemCompanions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files, nil))
+	got := groupPaths(clusterFiles(files))
 	want := [][]string{
 		{"Button.module.css", "Button.stories.tsx", "Button.tsx"},
 		{"README.md"},
@@ -192,7 +192,7 @@ func TestClusterFilesStemCompanions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = groupPaths(clusterFiles(files, nil))
+	got = groupPaths(clusterFiles(files))
 	want = [][]string{
 		{"pkg/bar.go"},
 		{"pkg/foo.go", "pkg/foo_linux.go"},
@@ -212,7 +212,7 @@ func TestClusterFilesJavaTest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files, nil))
+	got := groupPaths(clusterFiles(files))
 	want := [][]string{
 		{"src/Foo.java", "test/FooTest.java"},
 		{"test/OrphanTest.java"},
@@ -232,7 +232,7 @@ func TestClusterFilesLockfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files, nil))
+	got := groupPaths(clusterFiles(files))
 	want := [][]string{
 		{"go.mod", "go.sum"},
 		{"main.go"},
@@ -256,7 +256,7 @@ func TestClusterFilesPacksFatDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files, nil))
+	got := groupPaths(clusterFiles(files))
 	if len(got) != 2 {
 		t.Fatalf("groups: %d %v", len(got), got)
 	}
@@ -265,83 +265,6 @@ func TestClusterFilesPacksFatDirectory(t *testing.T) {
 	}
 	if len(got[1]) != 5 || got[1][0] != "pkg/f25.go" || got[1][4] != "pkg/f29.go" {
 		t.Fatalf("second pack: %v", got[1])
-	}
-}
-
-func TestClusterFilesImportEdges(t *testing.T) {
-	files, err := parseNumstat("1\t0\tinternal/api/billing.go\n1\t0\tinternal/billing/charge.go\n1\t0\tinternal/other/x.go\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := map[string][]byte{
-		"internal/api/billing.go":    []byte("package api\n\nimport \"example/internal/billing\"\n"),
-		"internal/billing/charge.go": []byte("package billing\n"),
-		"internal/other/x.go":        []byte("package other\n"),
-	}
-	got := groupPaths(clusterFiles(files, src))
-	want := [][]string{
-		{"internal/api/billing.go", "internal/billing/charge.go"},
-		{"internal/other/x.go"},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("go import: %v", got)
-	}
-	for i := range want {
-		if strings.Join(got[i], ",") != strings.Join(want[i], ",") {
-			t.Fatalf("go import group %d: %v want %v", i, got[i], want[i])
-		}
-	}
-
-	files, err = parseNumstat("1\t0\tpkg/a.ts\n1\t0\tlib/b.ts\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	src = map[string][]byte{
-		"pkg/a.ts": []byte("import { b } from '../lib/b'\n"),
-		"lib/b.ts": []byte("export const b = 1\n"),
-	}
-	got = groupPaths(clusterFiles(files, src))
-	want = [][]string{{"lib/b.ts", "pkg/a.ts"}}
-	if len(got) != 1 || strings.Join(got[0], ",") != strings.Join(want[0], ",") {
-		t.Fatalf("ts relative: %v", got)
-	}
-
-	files, err = parseNumstat("1\t0\tapp/Main.kt\n1\t0\tapp/src/com/foo/Bar.kt\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	src = map[string][]byte{
-		"app/Main.kt":            []byte("import com.foo.Bar\n"),
-		"app/src/com/foo/Bar.kt": []byte("package com.foo\nclass Bar\n"),
-	}
-	got = groupPaths(clusterFiles(files, src))
-	if len(got) != 1 {
-		t.Fatalf("kotlin import: %v", got)
-	}
-}
-
-func TestClusterFilesImportAmbiguous(t *testing.T) {
-	files, err := parseNumstat("1\t0\tinternal/api/billing.go\n1\t0\tinternal/billing/charge.go\n1\t0\tinternal/billing/other.go\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := map[string][]byte{
-		"internal/api/billing.go":    []byte("package api\n\nimport \"example/internal/billing\"\n"),
-		"internal/billing/charge.go": []byte("package billing\n"),
-		"internal/billing/other.go":  []byte("package billing\n"),
-	}
-	got := groupPaths(clusterFiles(files, src))
-	want := [][]string{
-		{"internal/api/billing.go"},
-		{"internal/billing/charge.go", "internal/billing/other.go"},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("ambiguous: %v", got)
-	}
-	for i := range want {
-		if strings.Join(got[i], ",") != strings.Join(want[i], ",") {
-			t.Fatalf("ambiguous group %d: %v want %v", i, got[i], want[i])
-		}
 	}
 }
 
@@ -355,7 +278,7 @@ func TestClusterFilesSplitsOversizedDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files, nil))
+	got := groupPaths(clusterFiles(files))
 	if len(got) != 2 {
 		t.Fatalf("groups: %d %v", len(got), got)
 	}
@@ -458,7 +381,7 @@ func TestClusterFilesNestedDirectoryPathspecs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	groups := clusterFiles(files, nil)
+	groups := clusterFiles(files)
 	got := groupPaths(groups)
 	want := [][]string{{"cmd/main.go"}, {"cmd/sub/x.go"}}
 	if len(got) != len(want) {

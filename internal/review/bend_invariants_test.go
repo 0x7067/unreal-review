@@ -22,7 +22,7 @@ import (
 func TestClusterFilesHoldsBendInvariants(t *testing.T) {
 	for _, tc := range clusterScenarios() {
 		t.Run(tc.name, func(t *testing.T) {
-			groups := clusterFiles(tc.files, nil)
+			groups := clusterFiles(tc.files)
 
 			want := pathCounts(tc.files)
 			var got []string
