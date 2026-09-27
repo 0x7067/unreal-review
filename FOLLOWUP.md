@@ -17,8 +17,6 @@ Change:
 
 Done when a PR that edits `cmd/unreal-review` is still reviewed by the base binary. Check the Actions log for the worktree build.
 
-Linux leaves one more path open. The agent's Bash runs as the same user, so it can read `/proc/<parent pid>/environ`, which still shows the environment from before `scrubProcessEnv` in `cmd/unreal-review/run.go`. The fix is to re-exec `unreal-review` with a clean environment and pass the key over a pipe file descriptor. Do this in the same PR or right after it.
-
 ## 2. Stop one dropped finding from blocking the review receipt
 
 A finding whose lines are outside the PR patch turns incremental review back into full-range review, and a new review is posted on every push:
