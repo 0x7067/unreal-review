@@ -100,16 +100,11 @@ law verdict_summary_with_findings:
 law verdict_summary_without_findings_rejected:
   {C.summaryFits(False{}, 0n) == False{} : Bool}
 
-law empty_ids_keep_both:
-  for +sp: Nat
-  for +ex: Nat
-  for +an: F.Anchor
-  for +sv: F.Severity
-  for +sp2: Nat
-  for +ex2: Nat
-  for +an2: F.Anchor
-  for +sv2: F.Severity
-  {F.mergePair(F.Finding{F.NoId{}, sp, ex, an, sv}, F.Finding{F.NoId{}, sp2, ex2, an2, sv2}) == [F.Finding{F.NoId{}, sp, ex, an, sv}, F.Finding{F.NoId{}, sp2, ex2, an2, sv2}] : List<&2, F.Finding>}
+law duplicate_location_rejected:
+  {F.record(True{}) == F.Rejected{} : F.Recorded}
+
+law new_location_accepted:
+  {F.record(False{}) == F.Accepted{} : F.Recorded}
 
 law workspace_labels:
   {R.labels(R.Workspace{}) == R.Labels{R.someNat(0n), R.noneNat()} : R.Labels}

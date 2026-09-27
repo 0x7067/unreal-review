@@ -15,10 +15,11 @@ import (
 
 type recordRegistry struct {
 	tool.Registry
+	identify func(findings.Finding) (findings.Finding, error)
 }
 
-func newRecordRegistry(inner tool.Registry) tool.Registry {
-	return recordRegistry{Registry: inner}
+func newRecordRegistry(inner tool.Registry, identify func(findings.Finding) (findings.Finding, error)) tool.Registry {
+	return recordRegistry{Registry: inner, identify: identify}
 }
 
 func (r recordRegistry) StaticDefinitions() []tool.Definition {
@@ -29,7 +30,7 @@ func (r recordRegistry) StaticDefinitions() []tool.Definition {
 func (r recordRegistry) Resolve(name string) (tool.Translator, bool) {
 	switch name {
 	case review.RecordFindingTool:
-		return recordFindingTranslator{}, true
+		return recordFindingTranslator{identify: r.identify}, true
 	default:
 		return r.Registry.Resolve(name)
 	}
@@ -86,9 +87,11 @@ type recordFindingArgs struct {
 	Body      string `json:"body"`
 }
 
-type recordFindingTranslator struct{}
+type recordFindingTranslator struct {
+	identify func(findings.Finding) (findings.Finding, error)
+}
 
-func (recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
+func (t recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
 	var args recordFindingArgs
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 		return tool.ErrorStatus(fmt.Sprintf("decode arguments: %v", err), 0)
@@ -101,6 +104,10 @@ func (recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) to
 		Severity:  findings.Severity(args.Severity),
 		Body:      args.Body,
 	})
+	if err != nil {
+		return tool.ErrorStatus(err.Error(), 0)
+	}
+	finding, err = t.identify(finding)
 	if err != nil {
 		return tool.ErrorStatus(err.Error(), 0)
 	}

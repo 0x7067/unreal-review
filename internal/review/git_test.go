@@ -526,6 +526,100 @@ func TestGroupsExcludeAndEmpty(t *testing.T) {
 	}
 }
 
+func TestIdentifySameCodeSameIDAcrossLineShifts(t *testing.T) {
+	dir := gitRepo(t)
+	writeFile(t, dir, "file.go", "package main\n\nfunc f() {\n\treturn 1\n}\n")
+	commitAll(t, dir, "base")
+	base := revParse(t, dir, "HEAD")
+
+	writeFile(t, dir, "file.go", "// pad\npackage main\n\nfunc f() {\n\treturn 1\n}\n")
+	commitAll(t, dir, "a")
+	commitA := revParse(t, dir, "HEAD")
+
+	gitRun(t, dir, "checkout", "-q", base)
+	writeFile(t, dir, "file.go", "// pad1\n// pad2\n// pad3\npackage main\n\nfunc f() {\n\treturn 1\n}\n")
+	commitAll(t, dir, "b")
+	commitB := revParse(t, dir, "HEAD")
+	gitRun(t, dir, "checkout", "-q", "main")
+
+	ctx := context.Background()
+	ra, err := resolveRange(ctx, dir, base, commitA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rb, err := resolveRange(ctx, dir, base, commitB)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fa, err := newIdentifier(ctx, dir, ra, nil)(findings.Finding{
+		Path: "file.go", StartLine: 6, EndLine: 6, Anchor: findings.AnchorNew, Severity: findings.SeverityNote, Body: "one",
+	})
+	if err != nil {
+		t.Fatalf("identify a: %v", err)
+	}
+	fb, err := newIdentifier(ctx, dir, rb, nil)(findings.Finding{
+		Path: "file.go", StartLine: 8, EndLine: 8, Anchor: findings.AnchorNew, Severity: findings.SeverityNote, Body: "different wording",
+	})
+	if err != nil {
+		t.Fatalf("identify b: %v", err)
+	}
+	if fa.ID == "" || fa.ID != fb.ID {
+		t.Fatalf("identical code at different lines should keep the same ID: %q vs %q", fa.ID, fb.ID)
+	}
+}
+
+func TestIdentifyErrorsPastEndOfFile(t *testing.T) {
+	dir := gitRepo(t)
+	writeFile(t, dir, "file.go", "line1\nline2\n")
+	commitAll(t, dir, "base")
+	base := revParse(t, dir, "HEAD")
+	writeFile(t, dir, "file.go", "line1\nline2\nline3\n")
+	commitAll(t, dir, "head")
+	head := revParse(t, dir, "HEAD")
+
+	ctx := context.Background()
+	r, err := resolveRange(ctx, dir, base, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identify := newIdentifier(ctx, dir, r, nil)
+	_, err = identify(findings.Finding{
+		Path: "file.go", StartLine: 90, EndLine: 92, Anchor: findings.AnchorNew, Severity: findings.SeverityNote, Body: "x",
+	})
+	if err == nil || !strings.Contains(err.Error(), "past the end of the file") {
+		t.Fatalf("err = %v, want a past-end-of-file error", err)
+	}
+}
+
+func TestIdentifyRejectsSecondFindingOnTheSameLocation(t *testing.T) {
+	dir := gitRepo(t)
+	writeFile(t, dir, "file.go", "package main\n")
+	commitAll(t, dir, "base")
+	base := revParse(t, dir, "HEAD")
+	writeFile(t, dir, "file.go", "package main\n\nfunc f() {\n\treturn 1\n}\n")
+	commitAll(t, dir, "head")
+	head := revParse(t, dir, "HEAD")
+
+	ctx := context.Background()
+	r, err := resolveRange(ctx, dir, base, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identify := newIdentifier(ctx, dir, r, nil)
+	finding := findings.Finding{
+		Path: "file.go", StartLine: 4, EndLine: 4, Anchor: findings.AnchorNew, Severity: findings.SeverityNote, Body: "first",
+	}
+	if _, err := identify(finding); err != nil {
+		t.Fatalf("first record: %v", err)
+	}
+	finding.Body = "extends the same finding differently"
+	_, err = identify(finding)
+	if err == nil || !strings.Contains(err.Error(), "already have a finding") {
+		t.Fatalf("err = %v, want a duplicate-location error", err)
+	}
+}
+
 func TestSpecRejectsMixedFlags(t *testing.T) {
 	const mixed = "use only one of --from/--to, --commit, --branch, or --pr"
 	_, err := Spec{From: "main", Commit: "abc"}.mode()
@@ -621,8 +715,8 @@ func TestPullCarriesReportedFindings(t *testing.T) {
 		Anchor: findings.AnchorNew, Severity: findings.SeverityWarning, Body: "Already said this.",
 	}}
 	got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, ReviewedHead: h.since, Reported: reported})
-	if len(got.pull.Reported) != 1 || got.pull.Reported[0].ID != "a1b2c3d4e5f60708" {
-		t.Fatalf("reported: %+v", got.pull.Reported)
+	if len(got.resolved.pull.Reported) != 1 || got.resolved.pull.Reported[0].ID != "a1b2c3d4e5f60708" {
+		t.Fatalf("reported: %+v", got.resolved.pull.Reported)
 	}
 }
 
@@ -901,5 +995,33 @@ func gitRun(t *testing.T, dir string, args ...string) {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+}
+
+func TestIdentifyTellsIdenticalLinesApartByOccurrence(t *testing.T) {
+	dir := gitRepo(t)
+	writeFile(t, dir, "file.go", "package main\n")
+	commitAll(t, dir, "base")
+	base := revParse(t, dir, "HEAD")
+	writeFile(t, dir, "file.go", "package main\n\nfunc a() error {\n\treturn err\n}\n\nfunc b() error {\n\treturn err\n}\n")
+	commitAll(t, dir, "head")
+	head := revParse(t, dir, "HEAD")
+
+	ctx := context.Background()
+	r, err := resolveRange(ctx, dir, base, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identify := newIdentifier(ctx, dir, r, nil)
+	first, err := identify(findings.Finding{Path: "file.go", StartLine: 4, EndLine: 4, Anchor: findings.AnchorNew, Severity: findings.SeverityError, Body: "a"})
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	second, err := identify(findings.Finding{Path: "file.go", StartLine: 8, EndLine: 8, Anchor: findings.AnchorNew, Severity: findings.SeverityError, Body: "b"})
+	if err != nil {
+		t.Fatalf("second finding on an identical line was rejected: %v", err)
+	}
+	if first.ID == second.ID {
+		t.Fatalf("identical lines at different places share ID %s", first.ID)
 	}
 }

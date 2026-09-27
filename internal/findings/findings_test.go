@@ -32,7 +32,7 @@ func TestParseRunRejectsBackendFields(t *testing.T) {
 }
 
 func TestParseFindingAcceptsExtraFields(t *testing.T) {
-	raw := `{"v":1,"type":"finding","path":"a.go","start_line":1,"end_line":1,"anchor":"new","severity":"note","body":"ok","session_id":"ignored"}`
+	raw := `{"v":1,"type":"finding","id":"a1b2c3d4e5f60708","path":"a.go","start_line":1,"end_line":1,"anchor":"new","severity":"note","body":"ok","session_id":"ignored"}`
 	report, err := Parse(strings.NewReader(raw))
 	if err != nil {
 		t.Fatalf("finding with extra field: %v", err)
@@ -89,7 +89,7 @@ func TestWriteRunRoundTrip(t *testing.T) {
 
 func TestAppendFindingNormalizesLikeParse(t *testing.T) {
 	work := filepath.Join(t.TempDir(), "work.jsonl")
-	finding, err := AppendFinding(work, Finding{Path: " a.go ", StartLine: 2, Severity: SeverityWarning, Body: "  body  "})
+	finding, err := AppendFinding(work, Finding{ID: "a1b2c3d4e5f60708", Path: " a.go ", StartLine: 2, Severity: SeverityWarning, Body: "  body  "})
 	if err != nil {
 		t.Fatalf("append: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestAppendContinuesFileWithoutTrailingNewline(t *testing.T) {
 	if err := os.WriteFile(work, []byte(existing), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := AppendFinding(work, Finding{Path: "b.go", StartLine: 1, Severity: SeverityError, Body: "later"}); err != nil {
+	if _, err := AppendFinding(work, Finding{ID: "deadbeefdeadbeef", Path: "b.go", StartLine: 1, Severity: SeverityError, Body: "later"}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	parsed, err := ReadFile(work)
@@ -144,6 +144,33 @@ func TestNormalizeRejectsInvalidFindings(t *testing.T) {
 		if _, err := Normalize(c.finding); err == nil {
 			t.Fatalf("%s: accepted %+v", c.name, c.finding)
 		}
+	}
+}
+
+func TestFingerprintDependsOnCodeNotWordingOrLines(t *testing.T) {
+	a := Finding{Path: "a.go", StartLine: 10, EndLine: 12, Anchor: AnchorNew, Body: "old wording"}
+	b := Finding{Path: "a.go", StartLine: 40, EndLine: 42, Anchor: AnchorNew, Body: "new wording, longer"}
+	code := []string{"func f() {", "  return 1", "}"}
+	if Fingerprint(a, code, 0) != Fingerprint(b, code, 0) {
+		t.Fatal("reworded or line-shifted finding over identical code should keep its ID")
+	}
+
+	otherCode := []string{"func f() {", "  return 2", "}"}
+	if Fingerprint(a, code, 0) == Fingerprint(a, otherCode, 0) {
+		t.Fatal("different flagged code should change the ID")
+	}
+
+	padded := []string{"func f() {  ", "\treturn 1", "}"}
+	if Fingerprint(a, code, 0) != Fingerprint(a, padded, 0) {
+		t.Fatal("leading or trailing whitespace on a line should not change the ID")
+	}
+}
+
+func TestParseFindingRejectsMissingID(t *testing.T) {
+	raw := `{"v":1,"type":"finding","path":"a.go","start_line":1,"end_line":1,"anchor":"new","severity":"note","body":"ok"}`
+	_, err := Parse(strings.NewReader(raw))
+	if err == nil || !strings.Contains(err.Error(), "id must be set") {
+		t.Fatalf("err = %v, want id must be set", err)
 	}
 }
 

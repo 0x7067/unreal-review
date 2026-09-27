@@ -88,7 +88,10 @@ def Laws.verdict_summary_with_findings(n):
 def Laws.verdict_summary_without_findings_rejected():
   {==}
 
-def Laws.empty_ids_keep_both(sp, ex, an, sv, sp2, ex2, an2, sv2):
+def Laws.duplicate_location_rejected():
+  {==}
+
+def Laws.new_location_accepted():
   {==}
 
 def Laws.workspace_labels():

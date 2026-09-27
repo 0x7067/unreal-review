@@ -146,7 +146,7 @@ func TestReportedFindingsReadsBackWhatWasPosted(t *testing.T) {
 	right := newFinding("src/foo.go", 12, 14, "This map write races with the reader.")
 	left := newFinding("src/gone.go", 7, 7, "This guard was removed.")
 	left.Anchor = findings.AnchorOld
-	left.ID = findings.Fingerprint(left)
+	left.ID = findings.Fingerprint(left, []string{left.Body}, 0)
 	leftComment := githubComment(left)
 
 	got := ReportedFindings([]github.PostedComment{
@@ -223,7 +223,7 @@ func newFinding(path string, start, end int, body string) findings.Finding {
 		Severity:  findings.SeverityWarning,
 		Body:      body,
 	}
-	item.ID = findings.Fingerprint(item)
+	item.ID = findings.Fingerprint(item, []string{item.Body}, 0)
 	return item
 }
 
