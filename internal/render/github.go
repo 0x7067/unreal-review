@@ -1,6 +1,8 @@
 package render
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -105,21 +107,45 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 }
 
 func postedFingerprints(comments []github.PostedComment, reviews []github.PostedReview) map[string]bool {
-	out := make(map[string]bool, len(comments))
-	for _, comment := range comments {
-		if id, ok := github.ParseFinding(comment.Body); ok {
-			out[id] = true
-		}
+	reported := ReportedFindings(comments, reviews)
+	out := make(map[string]bool, len(reported))
+	for _, finding := range reported {
+		out[finding.ID] = true
 	}
+	return out
+}
+
+func ReportedFindings(comments []github.PostedComment, reviews []github.PostedReview) []findings.Finding {
+	return append(inlineFindings(comments), droppedFindings(reviews)...)
+}
+
+func droppedMarker(finding findings.Finding) string {
+	encoded, err := json.Marshal(finding)
+	if err != nil {
+		panic(fmt.Sprintf("encode dropped finding %s: %v", finding.ID, err))
+	}
+	return github.DroppedMarker(base64.RawURLEncoding.EncodeToString(encoded))
+}
+
+func droppedFindings(reviews []github.PostedReview) []findings.Finding {
+	var out []findings.Finding
 	for _, review := range reviews {
-		for _, id := range github.ParseFindings(review.Body) {
-			out[id] = true
+		for _, payload := range github.ParseDropped(review.Body) {
+			raw, err := base64.RawURLEncoding.DecodeString(payload)
+			if err != nil {
+				continue
+			}
+			var finding findings.Finding
+			if err := json.Unmarshal(raw, &finding); err != nil || finding.ID == "" {
+				continue
+			}
+			out = append(out, finding)
 		}
 	}
 	return out
 }
 
-func ReportedFindings(comments []github.PostedComment) []findings.Finding {
+func inlineFindings(comments []github.PostedComment) []findings.Finding {
 	var out []findings.Finding
 	for _, comment := range comments {
 		id, ok := github.ParseFinding(comment.Body)
@@ -245,7 +271,7 @@ func reviewBody(summary string, placed []findings.Finding, dropped []DroppedFind
 	for _, item := range dropped {
 		fmt.Fprintf(&b, "- `%s` %s: %s", item.Finding.Path, formatLines(item.Finding.StartLine, item.Finding.EndLine), item.Reason)
 		if item.Reason == OutsideDiff {
-			b.WriteString(" " + github.FindingMarker(item.Finding.ID))
+			b.WriteString(" " + droppedMarker(item.Finding))
 		}
 		b.WriteByte('\n')
 	}

@@ -51,18 +51,18 @@ func TestFindingMarkerRoundTrip(t *testing.T) {
 	}
 }
 
-func TestParseFindingsReadsEveryMarkerInABody(t *testing.T) {
+func TestParseDroppedReadsEveryDroppedMarkerInABody(t *testing.T) {
 	body := "2 finding(s) were not posted as inline comments:\n" +
-		"- `a.go` line 9: outside " + FindingMarker("aaaa1111") + "\n" +
-		"- `b.go` line 4: over cap\n" +
+		"- `a.go` line 9: outside " + DroppedMarker("cGF5bG9hZC1h") + "\n" +
+		"- `b.go` line 4: over cap " + FindingMarker("bbbb2222") + "\n" +
 		StatusMarker(Status{Head: "abc123", Runs: 1}) + "\n" +
-		"- `c.go` line 2: outside " + FindingMarker("cccc3333") + "\n"
-	got := ParseFindings(body)
-	if len(got) != 2 || got[0] != "aaaa1111" || got[1] != "cccc3333" {
-		t.Fatalf("ParseFindings = %q", got)
+		"- `c.go` line 2: outside " + DroppedMarker("cGF5bG9hZC1j") + "\n"
+	got := ParseDropped(body)
+	if len(got) != 2 || got[0] != "cGF5bG9hZC1h" || got[1] != "cGF5bG9hZC1j" {
+		t.Fatalf("ParseDropped = %q", got)
 	}
-	if got := ParseFindings("LGTM"); len(got) != 0 {
-		t.Fatalf("ParseFindings(LGTM) = %q", got)
+	if got := ParseDropped("LGTM"); len(got) != 0 {
+		t.Fatalf("ParseDropped(LGTM) = %q", got)
 	}
 }
 
@@ -113,7 +113,7 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	})
 	mux.HandleFunc("/repos/o/r/pulls/3/reviews", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(t, w, []map[string]any{
-			{"commit_id": "42227a3", "body": "Summary.\n\n- `a.go` line 9: outside " + FindingMarker("cccc3333")},
+			{"commit_id": "42227a3", "body": "Summary.\n\n- `a.go` line 9: outside " + DroppedMarker("cGF5bG9hZA")},
 		})
 	})
 	server := httptest.NewServer(mux)
@@ -152,8 +152,8 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	if len(state.Reviews) != 1 || state.Reviews[0].CommitID != "42227a3" {
 		t.Fatalf("reviews: %+v", state.Reviews)
 	}
-	if ids := ParseFindings(state.Reviews[0].Body); len(ids) != 1 || ids[0] != "cccc3333" {
-		t.Fatalf("review body markers: %q", ids)
+	if payloads := ParseDropped(state.Reviews[0].Body); len(payloads) != 1 || payloads[0] != "cGF5bG9hZA" {
+		t.Fatalf("review body markers: %q", payloads)
 	}
 }
 

@@ -154,7 +154,7 @@ func TestReportedFindingsReadsBackWhatWasPosted(t *testing.T) {
 		{Path: left.Path, StartLine: 7, EndLine: 7, Side: leftComment.Side, Body: leftComment.Body},
 		{Path: "x.go", StartLine: 1, EndLine: 1, Side: "RIGHT", Body: `<!-- devin-review-comment {"id": "BUG_x_0001"} -->`},
 		{Path: "y.go", StartLine: 2, EndLine: 2, Side: "RIGHT", Body: "a human comment"},
-	})
+	}, nil)
 
 	if len(got) != 2 {
 		t.Fatalf("reported: %+v", got)
@@ -164,6 +164,21 @@ func TestReportedFindingsReadsBackWhatWasPosted(t *testing.T) {
 	}
 	if got[1] != left {
 		t.Fatalf("left side: %+v want %+v", got[1], left)
+	}
+}
+
+func TestReportedFindingsReadsBackAFindingListedInTheReviewBody(t *testing.T) {
+	lines := diffLines(t, "src/foo.go", "@@ -1,2 +1,3 @@\n keep\n+added\n keep\n")
+	offDiff := newFinding("src/foo.go", 90, 92, "A finding on a line the pull request does not touch.")
+	body := GitHub(reportOf(offDiff), GitHubOptions{Lines: lines, HasLines: true}).Payload.Review.Body
+
+	got := ReportedFindings(nil, []github.PostedReview{
+		{CommitID: "head", Body: body},
+		{CommitID: "head", Body: "<!-- unreal-review dropped not-base64! -->"},
+	})
+
+	if len(got) != 1 || got[0] != offDiff {
+		t.Fatalf("reported: %+v want %+v", got, offDiff)
 	}
 }
 

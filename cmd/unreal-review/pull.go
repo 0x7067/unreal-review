@@ -36,7 +36,7 @@ func (p pullResolver) ResolvePull(ctx context.Context, spec string) (review.Pull
 		ReviewedHead: reviewed,
 		Title:        state.Title,
 		Description:  state.Body,
-		Reported:     render.ReportedFindings(state.Comments),
+		Reported:     render.ReportedFindings(state.Comments, state.Reviews),
 	}, nil
 }
 

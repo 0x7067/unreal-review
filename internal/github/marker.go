@@ -41,28 +41,28 @@ func FindingMarker(id string) string {
 
 func ParseFinding(body string) (string, bool) {
 	fields, _ := markerFields(body)
-	return findingID(fields)
-}
-
-func ParseFindings(body string) []string {
-	var ids []string
-	for {
-		fields, rest := markerFields(body)
-		if fields == nil {
-			return ids
-		}
-		if id, ok := findingID(fields); ok {
-			ids = append(ids, id)
-		}
-		body = rest
-	}
-}
-
-func findingID(fields []string) (string, bool) {
 	if len(fields) != 2 || fields[0] != "finding" || fields[1] == "" {
 		return "", false
 	}
 	return fields[1], true
+}
+
+func DroppedMarker(payload string) string {
+	return fmt.Sprintf("%sdropped %s -->", markerPrefix, payload)
+}
+
+func ParseDropped(body string) []string {
+	var payloads []string
+	for {
+		fields, rest := markerFields(body)
+		if fields == nil {
+			return payloads
+		}
+		if len(fields) == 2 && fields[0] == "dropped" {
+			payloads = append(payloads, fields[1])
+		}
+		body = rest
+	}
 }
 
 func markerFields(body string) ([]string, string) {
