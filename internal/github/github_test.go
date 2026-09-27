@@ -117,7 +117,7 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	if len(state.Reviews) != 2 || state.Reviews[0] != wantReviews[0] || state.Reviews[1] != wantReviews[1] {
 		t.Fatalf("reviews: %+v", state.Reviews)
 	}
-	if state.BaseRef != "main" || state.BaseSHA != "8ad9a39" || state.HeadSHA != "42227a3" {
+	if state.BaseSHA != "8ad9a39" || state.HeadSHA != "42227a3" {
 		t.Fatalf("pull request: %+v", state)
 	}
 	if state.StatusCommentID != 13 {

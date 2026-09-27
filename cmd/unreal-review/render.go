@@ -79,7 +79,7 @@ func renderGitHub(args []string) error {
 	if err != nil {
 		return err
 	}
-	token := resolveToken(!*dryRun)
+	token := secret("GH_TOKEN")
 	client, err := githubClient(token)
 	if err != nil {
 		return err
@@ -129,7 +129,7 @@ func renderGitHub(args []string) error {
 		return enc.Encode(result.Payload)
 	}
 	if token == "" {
-		return fmt.Errorf("set GH_TOKEN or GITHUB_TOKEN to post a review")
+		return fmt.Errorf("set GH_TOKEN to post a review")
 	}
 	ctx := context.Background()
 	if result.PostReview() {
