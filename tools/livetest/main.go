@@ -11,8 +11,15 @@ func lastN(items []string, n int) []string {
 
 func main() {
 	args := os.Args[1:]
+	if len(args) == 0 {
+		fmt.Println(usage())
+	}
 	for _, name := range args {
 		fmt.Printf("%s=%d\n", name, lookup(name).value)
 	}
 	fmt.Println(lastN(args, 3))
+}
+
+func usage() string {
+	return "usage: livetest NAME..."
 }
