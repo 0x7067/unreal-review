@@ -262,3 +262,9 @@ def Laws.suppressed_by_location_alone():
 
 def Laws.new_issue_not_suppressed():
   {==}
+
+def Laws.oversized_diff_refused(empty, fresh, status, same):
+  {==}
+
+def Laws.diff_within_limit_decides_as_before(empty, fresh, status, same):
+  {==}

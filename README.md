@@ -41,7 +41,7 @@ unreal-review run --from abc1234 --to def5678 --exclude '*.lock' -- cmd/
 
 `--out` names the checkpoint file; see [schema/findings-v1.md](schema/findings-v1.md) for the `run` record, resume rules, and `--fresh`.
 
-To review a large change in pieces, run `group` on the same git range. It prints related file groups and a `run` command for each (`unreal-review group -h` for range flags):
+`run` refuses a diff over 200,000 bytes rather than reviewing only part of it. To review a large change in pieces, run `group` on the same git range. It prints related file groups and a `run` command for each (`unreal-review group -h` for range flags):
 
 ```sh
 unreal-review group --from origin/main --to HEAD
