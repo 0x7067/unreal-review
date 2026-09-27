@@ -175,13 +175,29 @@ func Parse(r io.Reader) (Report, error) {
 	if raw[0] == '[' {
 		return Report{}, fmt.Errorf("findings must be JSONL, not a JSON array")
 	}
-	var nested struct {
-		Findings json.RawMessage `json:"findings"`
-	}
-	if err := json.Unmarshal(raw, &nested); err == nil && len(nested.Findings) > 0 {
-		return Report{}, fmt.Errorf("findings must be JSONL, not a nested bundle")
+	if err := rejectLegacyEnvelope(raw); err != nil {
+		return Report{}, err
 	}
 	return parseJSONL(raw)
+}
+
+func rejectLegacyEnvelope(raw []byte) error {
+	var peek struct {
+		Type     Type            `json:"type"`
+		Findings json.RawMessage `json:"findings"`
+	}
+	if err := json.Unmarshal(raw, &peek); err != nil {
+		return nil
+	}
+	if len(peek.Findings) == 0 {
+		return nil
+	}
+	switch peek.Type {
+	case TypeFinding, TypeRun, TypeSummary:
+		return nil
+	default:
+		return fmt.Errorf("findings must be JSONL, not a nested bundle")
+	}
 }
 
 func parseJSONL(raw []byte) (Report, error) {

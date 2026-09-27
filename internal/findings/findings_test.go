@@ -27,6 +27,15 @@ func TestParseRejectsLegacyFormats(t *testing.T) {
 	if !strings.Contains(err.Error(), "nested bundle") {
 		t.Fatalf("bundle: got %v", err)
 	}
+
+	findingWithExtra := `{"v":1,"type":"finding","path":"a.go","start_line":1,"end_line":1,"anchor":"new","severity":"note","body":"ok","findings":[{"path":"ignored.go"}]}`
+	report, err := Parse(strings.NewReader(findingWithExtra))
+	if err != nil {
+		t.Fatalf("finding with extra findings field: %v", err)
+	}
+	if len(report.Findings) != 1 || report.Findings[0].Path != "a.go" {
+		t.Fatalf("findings: %+v", report.Findings)
+	}
 }
 
 func TestParseFindingRequiresIntegerLines(t *testing.T) {
