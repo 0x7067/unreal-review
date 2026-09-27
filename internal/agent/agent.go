@@ -93,7 +93,7 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 	}, tool.BashName, tool.ViewImageName)
 
 	observer := newSessionObserver(sessionID, req.FindingsPath, h.Log, cancel)
-	registry := newRecordRegistry(inner, observer)
+	registry := newRecordRegistry(inner)
 
 	operations := operation.NewLocalOperationManager(runCtx)
 	inputs, err := inbox.New(runCtx, restored.ExternalInputIDs)

@@ -16,19 +16,6 @@ import (
 	"unreal-review/internal/findings"
 )
 
-type recordKind int
-
-const (
-	kindFinding recordKind = iota
-	kindSummary
-)
-
-type stashedRecord struct {
-	kind    recordKind
-	finding findings.Finding
-	summary string
-}
-
 type sessionObserver struct {
 	sessionID    session.ID
 	findingsPath string
@@ -39,7 +26,6 @@ type sessionObserver struct {
 	err         error
 	cost        findings.Cost
 	responseIDs []string
-	stash       map[string]stashedRecord
 }
 
 func newSessionObserver(sessionID session.ID, findingsPath string, log io.Writer, cancel context.CancelFunc) *sessionObserver {
@@ -49,20 +35,7 @@ func newSessionObserver(sessionID session.ID, findingsPath string, log io.Writer
 		log:          log,
 		cancel:       cancel,
 		cost:         findings.Cost{Currency: "USD"},
-		stash:        make(map[string]stashedRecord),
 	}
-}
-
-func (o *sessionObserver) stashFinding(callID string, finding findings.Finding) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.stash[callID] = stashedRecord{kind: kindFinding, finding: finding}
-}
-
-func (o *sessionObserver) stashSummary(callID string, body string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.stash[callID] = stashedRecord{kind: kindSummary, summary: body}
 }
 
 func (o *sessionObserver) Observe(id session.ID, item sessionstore.Item) {
@@ -112,45 +85,27 @@ func (o *sessionObserver) observeModelResponse(response llm.Response) {
 }
 
 func (o *sessionObserver) observeToolCallStatus(status sessionstore.ToolCallStatus) {
-	if status.Status.Error != "" {
+	if status.Status.Error != "" || len(status.Operations) != 1 || status.Operations[0].Status != operation.StatusCompleted {
 		return
 	}
-	if !allOperationsTerminal(status.Operations) {
+	encoded, err := operation.DecodeValue(status.Operations[0])
+	if err != nil {
 		return
 	}
-	o.mu.Lock()
-	record, ok := o.stash[status.CallID]
-	if ok {
-		delete(o.stash, status.CallID)
-	}
-	o.mu.Unlock()
-	if !ok {
+	var record recordValue
+	if err := json.Unmarshal(encoded, &record); err != nil {
+		o.fail(fmt.Errorf("decode record: %w", err))
 		return
 	}
-	var err error
-	switch record.kind {
-	case kindFinding:
-		_, err = findings.AppendFinding(o.findingsPath, record.finding)
-	case kindSummary:
-		err = findings.AppendSummary(o.findingsPath, record.summary)
+	switch {
+	case record.Finding != nil:
+		_, err = findings.AppendFinding(o.findingsPath, *record.Finding)
+	case record.Summary != "":
+		err = findings.AppendSummary(o.findingsPath, record.Summary)
 	}
 	if err != nil {
 		o.fail(fmt.Errorf("write findings: %w", err))
 	}
-}
-
-func allOperationsTerminal(operations []operation.Operation) bool {
-	if len(operations) == 0 {
-		return false
-	}
-	for _, op := range operations {
-		switch op.Status {
-		case operation.StatusCompleted, operation.StatusFailed, operation.StatusCanceled:
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 func (o *sessionObserver) fail(err error) {

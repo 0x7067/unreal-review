@@ -16,29 +16,23 @@ import (
 
 type recordRegistry struct {
 	tool.Registry
-	finding *recordFindingTranslator
-	summary *recordSummaryTranslator
 }
 
-func newRecordRegistry(inner tool.Registry, observer *sessionObserver) tool.Registry {
-	return &recordRegistry{
-		Registry: inner,
-		finding:  &recordFindingTranslator{observer: observer},
-		summary:  &recordSummaryTranslator{observer: observer},
-	}
+func newRecordRegistry(inner tool.Registry) tool.Registry {
+	return recordRegistry{Registry: inner}
 }
 
-func (r *recordRegistry) StaticDefinitions() []tool.Definition {
+func (r recordRegistry) StaticDefinitions() []tool.Definition {
 	defs := r.Registry.StaticDefinitions()
 	return append(defs, recordFindingDefinition(), recordSummaryDefinition())
 }
 
-func (r *recordRegistry) Resolve(name string) (tool.Translator, bool) {
+func (r recordRegistry) Resolve(name string) (tool.Translator, bool) {
 	switch name {
 	case review.RecordFindingTool:
-		return r.finding, true
+		return recordFindingTranslator{}, true
 	case review.RecordSummaryTool:
-		return r.summary, true
+		return recordSummaryTranslator{}, true
 	default:
 		return r.Registry.Resolve(name)
 	}
@@ -117,13 +111,14 @@ type recordSummaryArgs struct {
 	Body string `json:"body"`
 }
 
-type recordFindingTranslator struct {
-	observer *sessionObserver
+type recordValue struct {
+	Finding *findings.Finding `json:"finding,omitempty"`
+	Summary string            `json:"summary,omitempty"`
 }
 
-var _ tool.Translator = (*recordFindingTranslator)(nil)
+type recordFindingTranslator struct{}
 
-func (t *recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
+func (recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
 	var args recordFindingArgs
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 		return tool.ErrorStatus(fmt.Sprintf("decode arguments: %v", err), 0)
@@ -139,25 +134,16 @@ func (t *recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall)
 	if err != nil {
 		return tool.ErrorStatus(err.Error(), 0)
 	}
-	id, err := submitValue(ctx, finding.ID)
-	if err != nil {
-		return tool.ErrorStatus(err.Error(), 0)
-	}
-	t.observer.stashFinding(call.CallID, finding)
-	return tool.CallStatus{WaitingFor: []operation.ID{id}}
+	return submitRecord(ctx, recordValue{Finding: &finding})
 }
 
-func (t *recordFindingTranslator) TranslateResult(callID string, status tool.CallStatus, _ []operation.Operation) (llm.ToolResult, error) {
+func (recordFindingTranslator) TranslateResult(callID string, status tool.CallStatus, _ []operation.Operation) (llm.ToolResult, error) {
 	return recordResult(callID, status), nil
 }
 
-type recordSummaryTranslator struct {
-	observer *sessionObserver
-}
+type recordSummaryTranslator struct{}
 
-var _ tool.Translator = (*recordSummaryTranslator)(nil)
-
-func (t *recordSummaryTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
+func (recordSummaryTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
 	var args recordSummaryArgs
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 		return tool.ErrorStatus(fmt.Sprintf("decode arguments: %v", err), 0)
@@ -166,15 +152,10 @@ func (t *recordSummaryTranslator) Translate(ctx tool.Context, call llm.ToolCall)
 	if body == "" {
 		return tool.ErrorStatus("body must be set", 0)
 	}
-	id, err := submitValue(ctx, "summary")
-	if err != nil {
-		return tool.ErrorStatus(err.Error(), 0)
-	}
-	t.observer.stashSummary(call.CallID, body)
-	return tool.CallStatus{WaitingFor: []operation.ID{id}}
+	return submitRecord(ctx, recordValue{Summary: body})
 }
 
-func (t *recordSummaryTranslator) TranslateResult(callID string, status tool.CallStatus, _ []operation.Operation) (llm.ToolResult, error) {
+func (recordSummaryTranslator) TranslateResult(callID string, status tool.CallStatus, _ []operation.Operation) (llm.ToolResult, error) {
 	return recordResult(callID, status), nil
 }
 
@@ -186,14 +167,14 @@ func recordResult(callID string, status tool.CallStatus) llm.ToolResult {
 	return llm.ToolResult{CallID: callID, Output: []llm.ToolResultOutput{{Kind: llm.ToolResultText, Value: text}}}
 }
 
-func submitValue(ctx tool.Context, value string) (operation.ID, error) {
+func submitRecord(ctx tool.Context, value recordValue) tool.CallStatus {
 	encoded, err := json.Marshal(value)
 	if err != nil {
-		return "", fmt.Errorf("encode operation value: %w", err)
+		return tool.ErrorStatus(fmt.Sprintf("encode record: %v", err), 0)
 	}
 	spec, err := operation.NewValueSpec(jsontext.Value(encoded))
 	if err != nil {
-		return "", fmt.Errorf("build operation: %w", err)
+		return tool.ErrorStatus(fmt.Sprintf("build record operation: %v", err), 0)
 	}
-	return ctx.Submit(spec), nil
+	return tool.CallStatus{WaitingFor: []operation.ID{ctx.Submit(spec)}}
 }
