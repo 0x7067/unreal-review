@@ -14,12 +14,13 @@ import (
 )
 
 const RecordFindingTool = "record_finding"
+const ResolveFindingTool = "resolve_finding"
 
 const maxBriefDiff = 200_000
 
 var systemPrompt = fmt.Sprintf(`You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
 
-Prefer lines that appear in the diff. One finding per issue. Record every finding with the %[1]s tool. If nothing is material, record none.
+Prefer lines that appear in the diff. One finding per issue. Record every finding with the %[1]s tool. If nothing is material, record none. If this diff fixes a finding already reported on this pull request, call the %[4]s tool with its id and one sentence on how it is fixed; do not re-record it.
 
 Severity: use "error" when the code does the wrong thing - a crash, hang, race, or corruption, a security compromise, a reported failure the caller can no longer classify so their error handling takes the wrong branch, or a transient fault made permanent with no recovery path. Use "warning" when the code works but weakly - diagnostics silently dropped while behavior stays correct, resources that leak toward exhaustion under sustained load, or capability lost for some inputs while the rest keeps working. Use "note" for anything smaller.
 
@@ -27,7 +28,7 @@ When you are done, your final message is the review summary and nothing else. Th
 - One line of plain prose, one to three sentences, at most %[2]d characters. Inline code is fine; no line breaks, headings, lists, quotes, tables, or code blocks.
 - If you recorded no findings, start with "%[3]s", then say what you checked.
 - If you recorded findings, start with the most severe one and what it breaks. Do not start with "%[3]s".
-- Do not count or list the findings; they are shown separately.`, RecordFindingTool, findings.MaxSummaryLength, findings.CleanVerdict)
+- Do not count or list the findings; they are shown separately.`, RecordFindingTool, findings.MaxSummaryLength, findings.CleanVerdict, ResolveFindingTool)
 
 type Options struct {
 	Workspace string
@@ -117,21 +118,24 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{Diff: diff}, err
 	}
-	if resuming && len(prior.Findings) == 0 && strings.TrimSpace(prior.Summary) == "" {
+	if resuming && len(prior.Findings) == 0 && strings.TrimSpace(prior.Summary) == "" && len(prior.Resolved) == 0 {
 		prior.Findings = checkpoint.Findings
 		prior.Summary = checkpoint.Summary
+		prior.Resolved = checkpoint.Resolved
 		if err := writeWork(findingsPath, prior); err != nil {
 			return Result{Diff: diff}, err
 		}
 	}
 	runMeta.Status = findings.StatusRunning
-	report := findings.Report{Run: runMeta, Findings: prior.Findings, Summary: prior.Summary}
+	report := findings.Report{Run: runMeta, Findings: prior.Findings, Resolved: prior.Resolved, Summary: prior.Summary}
 	result := Result{Report: report, Diff: diff}
 	if err := persist(opts.Out, report); err != nil {
 		return result, err
 	}
 
+	open := reportedIn(selected.resolved.pull.Reported, selected.files)
 	identify := newIdentifier(ctx, workspace, selected.resolved, prior.Findings)
+	resolve := newResolver(open, prior.Resolved)
 	agentResult, agentErr := opts.Agent.Run(ctx, AgentRequest{
 		Workspace:    workspace,
 		ReviewID:     runMeta.ID,
@@ -140,6 +144,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		SystemPrompt: systemPrompt,
 		Model:        opts.Model,
 		Identify:     identify,
+		Resolve:      resolve,
 	})
 	interrupted := agentErr != nil && (errors.Is(agentErr, context.Canceled) || errors.Is(agentErr, context.DeadlineExceeded) || ctx.Err() != nil)
 	runMeta.Cost = runMeta.Cost.Add(agentResult.Cost)
@@ -149,6 +154,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return result, err
 	}
 	report.Findings = mergeFindings(work.Findings)
+	report.Resolved = work.Resolved
 	report.Summary = work.Summary
 	result.Report = report
 
@@ -252,7 +258,7 @@ func reportedSection(reported []findings.Finding) string {
 	var b strings.Builder
 	b.WriteString("Already reported on this pull request:\n")
 	for _, item := range reported {
-		parts := []string{"`" + item.Path + "`"}
+		parts := []string{"id `" + item.ID + "`", "`" + item.Path + "`"}
 		if item.StartLine > 0 {
 			parts = append(parts, fmt.Sprintf("%d-%d", item.StartLine, item.EndLine))
 		}
@@ -261,7 +267,7 @@ func reportedSection(reported []findings.Finding) string {
 		}
 		fmt.Fprintf(&b, "- %s: %s\n", strings.Join(parts, " "), strings.Join(strings.Fields(item.Body), " "))
 	}
-	b.WriteString("\nReport a problem this list does not cover, or a material change in one it does. Do not restate it.\n\n")
+	fmt.Fprintf(&b, "\nReport a problem this list does not cover, or a material change in one it does. Do not restate it. If this diff fixes one of these, call %s with its id and one sentence on how; do not re-record it.\n\n", ResolveFindingTool)
 	return b.String()
 }
 
@@ -341,7 +347,7 @@ func openWork(path string, truncate bool) error {
 }
 
 func writeWork(path string, report findings.Report) error {
-	return findings.WriteFile(path, findings.Report{Findings: report.Findings, Summary: report.Summary})
+	return findings.WriteFile(path, findings.Report{Findings: report.Findings, Resolved: report.Resolved, Summary: report.Summary})
 }
 
 func readWork(path string) (findings.Report, error) {

@@ -26,15 +26,18 @@ func TestReportedSectionListsEachFindingOnce(t *testing.T) {
 		t.Fatalf("an empty list should add nothing to the prompt: %q", got)
 	}
 	got := reportedSection([]findings.Finding{
-		{Path: "src/foo.go", StartLine: 12, EndLine: 14, Severity: findings.SeverityWarning, Body: "This map write\nraces with the reader."},
-		{Path: "src/gone.go", Severity: findings.SeverityNote, Body: "Line unknown."},
+		{ID: "abcd1234abcd1234", Path: "src/foo.go", StartLine: 12, EndLine: 14, Severity: findings.SeverityWarning, Body: "This map write\nraces with the reader."},
+		{ID: "deadbeefdeadbeef", Path: "src/gone.go", Severity: findings.SeverityNote, Body: "Line unknown."},
 	})
 	want := "Already reported on this pull request:\n" +
-		"- `src/foo.go` 12-14 warning: This map write races with the reader.\n" +
-		"- `src/gone.go` note: Line unknown.\n" +
-		"\nReport a problem this list does not cover, or a material change in one it does. Do not restate it.\n\n"
+		"- id `abcd1234abcd1234` `src/foo.go` 12-14 warning: This map write races with the reader.\n" +
+		"- id `deadbeefdeadbeef` `src/gone.go` note: Line unknown.\n" +
+		"\nReport a problem this list does not cover, or a material change in one it does. Do not restate it. If this diff fixes one of these, call resolve_finding with its id and one sentence on how; do not re-record it.\n\n"
 	if got != want {
 		t.Fatalf("section:\n%q\nwant:\n%q", got, want)
+	}
+	if !strings.Contains(got, "id `abcd1234abcd1234`") {
+		t.Fatalf("section should show the finding id:\n%s", got)
 	}
 }
 
@@ -64,6 +67,30 @@ func TestReviewPromptWithoutReportedFindings(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "To: working tree\n") {
 		t.Fatalf("prompt:\n%s", prompt)
+	}
+}
+
+func TestNewResolverValidatesAgainstOpenFindings(t *testing.T) {
+	open := []findings.Finding{{ID: "abcd1234abcd1234", Path: "src/foo.go"}}
+	resolve := newResolver(open, nil)
+
+	if _, err := resolve(findings.Resolution{ID: "abcd1234abcd1234", Body: "Added the nil check back."}); err != nil {
+		t.Fatalf("open id should be accepted: %v", err)
+	}
+	if _, err := resolve(findings.Resolution{ID: "deadbeefdeadbeef", Body: "Not tracked."}); err == nil {
+		t.Fatal("an id not on the open list should be rejected")
+	}
+	if _, err := resolve(findings.Resolution{ID: "abcd1234abcd1234", Body: "Again."}); err == nil {
+		t.Fatal("a second resolution of the same id in one run should be rejected")
+	}
+}
+
+func TestNewResolverSeedsAlreadyResolvedFromPriorWork(t *testing.T) {
+	open := []findings.Finding{{ID: "abcd1234abcd1234", Path: "src/foo.go"}}
+	resolve := newResolver(open, []findings.Resolution{{ID: "abcd1234abcd1234", Body: "Fixed before resume."}})
+
+	if _, err := resolve(findings.Resolution{ID: "abcd1234abcd1234", Body: "Again."}); err == nil {
+		t.Fatal("a resolution already recorded before resume should be rejected")
 	}
 }
 

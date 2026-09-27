@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"unreal-review/internal/diffmap"
@@ -29,6 +30,14 @@ type GitHubResult struct {
 	Dropped    []DroppedFinding
 	Duplicates []findings.Finding
 	LGTM       bool
+	Answers    []ThreadAnswer
+}
+
+type ThreadAnswer struct {
+	ThreadID  string
+	CommentID int64
+	Reply     string
+	Resolve   bool
 }
 
 func (r GitHubResult) PostReview() bool {
@@ -103,11 +112,12 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 			result.Payload.Review.Body = fmt.Sprintf("LGTM - no findings in %s..%s.", shortSHA(report.Run.Source.BaseSHA), shortSHA(report.Run.Source.HeadSHA))
 		}
 	}
+	result.Answers = resolveAnswers(report.Resolved, opts.Posted, opts.CommitID)
 	return result
 }
 
 func postedFingerprints(comments []github.PostedComment, reviews []github.PostedReview) map[string]bool {
-	reported := ReportedFindings(comments, reviews)
+	reported := append(inlineFindings(comments), droppedFindings(reviews)...)
 	out := make(map[string]bool, len(reported))
 	for _, finding := range reported {
 		out[finding.ID] = true
@@ -116,7 +126,39 @@ func postedFingerprints(comments []github.PostedComment, reviews []github.Posted
 }
 
 func ReportedFindings(comments []github.PostedComment, reviews []github.PostedReview) []findings.Finding {
-	return append(inlineFindings(comments), droppedFindings(reviews)...)
+	return append(inlineFindings(openThreads(comments)), droppedFindings(reviews)...)
+}
+
+func openThreads(comments []github.PostedComment) []github.PostedComment {
+	var out []github.PostedComment
+	for _, comment := range comments {
+		if !comment.ThreadResolved {
+			out = append(out, comment)
+		}
+	}
+	return out
+}
+
+func resolveAnswers(resolved []findings.Resolution, posted []github.PostedComment, headSHA string) []ThreadAnswer {
+	byFindingID := make(map[string]github.PostedComment, len(posted))
+	for _, comment := range posted {
+		if id, ok := github.ParseFinding(comment.Body); ok {
+			byFindingID[id] = comment
+		}
+	}
+	var out []ThreadAnswer
+	for _, resolution := range resolved {
+		comment, ok := byFindingID[resolution.ID]
+		if !ok || comment.ThreadResolved {
+			continue
+		}
+		answer := ThreadAnswer{ThreadID: comment.ThreadID, CommentID: comment.CommentID, Resolve: true}
+		if !slices.Contains(comment.Replied, resolution.ID) {
+			answer.Reply = fmt.Sprintf("Fixed in `%s`: %s\n\n%s", shortSHA(headSHA), resolution.Body, github.ResolvedMarker(resolution.ID))
+		}
+		out = append(out, answer)
+	}
+	return out
 }
 
 func droppedMarker(finding findings.Finding) string {
@@ -198,12 +240,13 @@ type RunSummary struct {
 func StatusBody(r RunSummary) string {
 	var b strings.Builder
 	b.WriteString(github.StatusMarker(github.Status{Head: r.HeadSHA, Runs: r.Runs, CostUSD: r.Total}))
-	fmt.Fprintf(&b, "\n**unreal-review** · reviewed through `%s` · run %d · %d new, %d already reported, %d not postable · cost %s (cumulative USD %.6f)\n",
+	fmt.Fprintf(&b, "\n**unreal-review** · reviewed through `%s` · run %d · %d new, %d already reported, %d not postable · %d resolved · cost %s (cumulative USD %.6f)\n",
 		shortSHA(r.HeadSHA),
 		r.Runs,
 		len(r.Result.Payload.Review.Comments),
 		len(r.Result.Duplicates),
 		len(r.Result.Dropped),
+		len(r.Result.Answers),
 		r.Cost.Format(),
 		r.Total,
 	)

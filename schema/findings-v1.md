@@ -52,6 +52,19 @@ The prompt also asks for one to three sentences, a summary that opens with the m
 
 A summary that breaks the contract goes back to the agent for correction, up to two times; after that the run is `failed`. A review of an empty diff writes `No material issues: the selected range has no changes.` Files written before the contract existed are read as they are.
 
+## `resolved`
+
+```json
+{"v":1,"type":"resolved","id":"a1b2c3d4e5f60708","body":"The nil check was added back."}
+```
+
+| field | meaning |
+| --- | --- |
+| `id` | Required. The `id` of a finding already reported on this pull request that this diff fixes. |
+| `body` | Required. One sentence on how the diff fixes it. |
+
+A `resolved` record only answers a finding already posted as an inline comment on this pull request; it is not itself a finding and does not count toward `CheckSummary`'s finding count. The GitHub renderer replies to that comment's thread once and resolves it; a finding with no posted inline thread, or whose thread is already resolved, gets no answer.
+
 ## Renderers
 
-A renderer reads this file and produces a host-specific display. GitHub inline comments map `anchor=new` to `RIGHT` and `anchor=old` to `LEFT`, and drop findings whose lines are not in the pull request diff. The GitHub renderer tags each posted comment body with a marker derived from the finding `id`, and tags each finding the review body lists as outside the diff the same way. It suppresses findings whose `id` already appears on a posted comment or review body, and posts a review only when at least one comment or drop is new, or when the findings file holds none. It records the `unreal-review` check run on the head unless the 50-comment cap left findings unposted; a finding outside the diff does not block it. An empty findings file posts one review per head whose body is `LGTM` with the reviewed range; rendering the same head again does not post it twice.
+A renderer reads this file and produces a host-specific display. GitHub inline comments map `anchor=new` to `RIGHT` and `anchor=old` to `LEFT`, and drop findings whose lines are not in the pull request diff. The GitHub renderer tags each posted comment body with a marker derived from the finding `id`, and tags each finding the review body lists as outside the diff the same way. It suppresses findings whose `id` already appears on a posted comment or review body, and posts a review only when at least one comment or drop is new, or when the findings file holds none. It records the `unreal-review` check run on the head unless the 50-comment cap left findings unposted; a finding outside the diff does not block it. An empty findings file posts one review per head whose body is `LGTM` with the reviewed range; rendering the same head again does not post it twice. For each `resolved` record whose `id` matches a posted inline comment on an unresolved thread, it replies once (tagged with a marker derived from the `id`, skipped if that reply already exists) and resolves the thread; a resolved thread is left alone.

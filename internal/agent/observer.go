@@ -93,13 +93,30 @@ func (o *sessionObserver) observeToolCallStatus(status sessionstore.ToolCallStat
 	if err != nil {
 		return
 	}
-	var finding findings.Finding
-	if err := json.Unmarshal(encoded, &finding); err != nil {
+	var envelope recordEnvelope
+	if err := json.Unmarshal(encoded, &envelope); err != nil {
 		o.fail(fmt.Errorf("decode record: %w", err))
 		return
 	}
-	if _, err := findings.AppendFinding(o.findingsPath, finding); err != nil {
-		o.fail(fmt.Errorf("write findings: %w", err))
+	switch envelope.Type {
+	case findings.TypeFinding:
+		if envelope.Finding == nil {
+			o.fail(fmt.Errorf("decode record: finding is required"))
+			return
+		}
+		if _, err := findings.AppendFinding(o.findingsPath, *envelope.Finding); err != nil {
+			o.fail(fmt.Errorf("write findings: %w", err))
+		}
+	case findings.TypeResolved:
+		if envelope.Resolution == nil {
+			o.fail(fmt.Errorf("decode record: resolution is required"))
+			return
+		}
+		if _, err := findings.AppendResolution(o.findingsPath, *envelope.Resolution); err != nil {
+			o.fail(fmt.Errorf("write resolved: %w", err))
+		}
+	default:
+		o.fail(fmt.Errorf("decode record: unknown type %q", envelope.Type))
 	}
 }
 

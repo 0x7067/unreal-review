@@ -16,21 +16,24 @@ import (
 type recordRegistry struct {
 	tool.Registry
 	identify func(findings.Finding) (findings.Finding, error)
+	resolve  func(findings.Resolution) (findings.Resolution, error)
 }
 
-func newRecordRegistry(inner tool.Registry, identify func(findings.Finding) (findings.Finding, error)) tool.Registry {
-	return recordRegistry{Registry: inner, identify: identify}
+func newRecordRegistry(inner tool.Registry, identify func(findings.Finding) (findings.Finding, error), resolve func(findings.Resolution) (findings.Resolution, error)) tool.Registry {
+	return recordRegistry{Registry: inner, identify: identify, resolve: resolve}
 }
 
 func (r recordRegistry) StaticDefinitions() []tool.Definition {
 	defs := r.Registry.StaticDefinitions()
-	return append(defs, recordFindingDefinition())
+	return append(defs, recordFindingDefinition(), resolveFindingDefinition())
 }
 
 func (r recordRegistry) Resolve(name string) (tool.Translator, bool) {
 	switch name {
 	case review.RecordFindingTool:
 		return recordFindingTranslator{identify: r.identify}, true
+	case review.ResolveFindingTool:
+		return resolveFindingTranslator{resolve: r.resolve}, true
 	default:
 		return r.Registry.Resolve(name)
 	}
@@ -115,19 +118,84 @@ func (t recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) 
 }
 
 func (recordFindingTranslator) TranslateResult(callID string, status tool.CallStatus, _ []operation.Operation) (llm.ToolResult, error) {
-	return recordResult(callID, status), nil
+	return recordResult(callID, status, "recorded"), nil
 }
 
-func recordResult(callID string, status tool.CallStatus) llm.ToolResult {
-	text := "recorded"
+func resolveFindingDefinition() tool.Definition {
+	return tool.Definition{Tool: llm.Tool{
+		Type:        llm.ToolFunction,
+		Name:        review.ResolveFindingTool,
+		Description: "Report that this diff fixes a finding already reported on this pull request. Call once per fixed finding; do not re-record it with record_finding.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id": map[string]any{
+					"type":        "string",
+					"description": "The id of the already-reported finding this diff fixes.",
+				},
+				"body": map[string]any{
+					"type":        "string",
+					"description": "One sentence on how the diff fixes it.",
+				},
+			},
+			"required": []any{"id", "body"},
+		},
+	}}
+}
+
+type resolveFindingArgs struct {
+	ID   string `json:"id"`
+	Body string `json:"body"`
+}
+
+type resolveFindingTranslator struct {
+	resolve func(findings.Resolution) (findings.Resolution, error)
+}
+
+func (t resolveFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
+	var args resolveFindingArgs
+	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+		return tool.ErrorStatus(fmt.Sprintf("decode arguments: %v", err), 0)
+	}
+	resolution, err := findings.NormalizeResolution(findings.Resolution{ID: args.ID, Body: args.Body})
+	if err != nil {
+		return tool.ErrorStatus(err.Error(), 0)
+	}
+	resolution, err = t.resolve(resolution)
+	if err != nil {
+		return tool.ErrorStatus(err.Error(), 0)
+	}
+	return submitResolution(ctx, resolution)
+}
+
+func (resolveFindingTranslator) TranslateResult(callID string, status tool.CallStatus, _ []operation.Operation) (llm.ToolResult, error) {
+	return recordResult(callID, status, "resolved"), nil
+}
+
+func recordResult(callID string, status tool.CallStatus, okText string) llm.ToolResult {
+	text := okText
 	if status.Error != "" {
 		text = "Error: " + status.Error
 	}
 	return llm.ToolResult{CallID: callID, Output: []llm.ToolResultOutput{{Kind: llm.ToolResultText, Value: text}}}
 }
 
+type recordEnvelope struct {
+	Type       findings.Type        `json:"type"`
+	Finding    *findings.Finding    `json:"finding,omitempty"`
+	Resolution *findings.Resolution `json:"resolution,omitempty"`
+}
+
 func submitRecord(ctx tool.Context, finding findings.Finding) tool.CallStatus {
-	encoded, err := json.Marshal(finding)
+	return submitEnvelope(ctx, recordEnvelope{Type: findings.TypeFinding, Finding: &finding})
+}
+
+func submitResolution(ctx tool.Context, resolution findings.Resolution) tool.CallStatus {
+	return submitEnvelope(ctx, recordEnvelope{Type: findings.TypeResolved, Resolution: &resolution})
+}
+
+func submitEnvelope(ctx tool.Context, envelope recordEnvelope) tool.CallStatus {
+	encoded, err := json.Marshal(envelope)
 	if err != nil {
 		return tool.ErrorStatus(fmt.Sprintf("encode record: %v", err), 0)
 	}

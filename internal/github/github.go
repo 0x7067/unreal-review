@@ -39,11 +39,15 @@ type PullFile struct {
 }
 
 type PostedComment struct {
-	Path      string
-	StartLine int
-	EndLine   int
-	Side      string
-	Body      string
+	Path           string
+	StartLine      int
+	EndLine        int
+	Side           string
+	Body           string
+	ThreadID       string
+	ThreadResolved bool
+	CommentID      int64
+	Replied        []string
 }
 
 type PostedReview struct {
@@ -148,7 +152,7 @@ func (c *Client) PullState(ctx context.Context, owner, repo string, number int) 
 			state.StatusCommentID = comment.ID
 		}
 	}
-	comments, err := c.ListReviewComments(ctx, owner, repo, number)
+	comments, err := c.ReviewThreads(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err
 	}
@@ -254,6 +258,150 @@ func firstString(values ...*string) string {
 		}
 	}
 	return ""
+}
+
+const reviewThreadsQuery = `query($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          isResolved
+          path
+          line
+          originalLine
+          startLine
+          originalStartLine
+          diffSide
+          comments(first: 100) {
+            nodes { databaseId body }
+          }
+        }
+      }
+    }
+  }
+}`
+
+const resolveReviewThreadMutation = `mutation($id: ID!) {
+  resolveReviewThread(input: {threadId: $id}) {
+    thread { isResolved }
+  }
+}`
+
+type graphqlError struct {
+	Message string `json:"message"`
+}
+
+type graphqlResponse struct {
+	Data   json.RawMessage `json:"data"`
+	Errors []graphqlError  `json:"errors"`
+}
+
+func (c *Client) graphql(ctx context.Context, query string, variables map[string]any, dest any) error {
+	payload := struct {
+		Query     string         `json:"query"`
+		Variables map[string]any `json:"variables"`
+	}{Query: query, Variables: variables}
+	var resp graphqlResponse
+	if err := c.post(ctx, "/graphql", payload, &resp); err != nil {
+		return err
+	}
+	if len(resp.Errors) > 0 {
+		messages := make([]string, len(resp.Errors))
+		for i, e := range resp.Errors {
+			messages[i] = e.Message
+		}
+		return fmt.Errorf("github graphql: %s", strings.Join(messages, "; "))
+	}
+	if dest == nil || len(resp.Data) == 0 {
+		return nil
+	}
+	return json.Unmarshal(resp.Data, dest)
+}
+
+type reviewThreadsData struct {
+	Repository struct {
+		PullRequest struct {
+			ReviewThreads struct {
+				PageInfo struct {
+					HasNextPage bool   `json:"hasNextPage"`
+					EndCursor   string `json:"endCursor"`
+				} `json:"pageInfo"`
+				Nodes []struct {
+					ID                string `json:"id"`
+					IsResolved        bool   `json:"isResolved"`
+					Path              string `json:"path"`
+					Line              *int   `json:"line"`
+					OriginalLine      *int   `json:"originalLine"`
+					StartLine         *int   `json:"startLine"`
+					OriginalStartLine *int   `json:"originalStartLine"`
+					DiffSide          string `json:"diffSide"`
+					Comments          struct {
+						Nodes []struct {
+							DatabaseID int64  `json:"databaseId"`
+							Body       string `json:"body"`
+						} `json:"nodes"`
+					} `json:"comments"`
+				} `json:"nodes"`
+			} `json:"reviewThreads"`
+		} `json:"pullRequest"`
+	} `json:"repository"`
+}
+
+func (c *Client) ReviewThreads(ctx context.Context, owner, repo string, number int) ([]PostedComment, error) {
+	var out []PostedComment
+	var after *string
+	for {
+		var resp reviewThreadsData
+		variables := map[string]any{"owner": owner, "name": repo, "number": number, "after": after}
+		if err := c.graphql(ctx, reviewThreadsQuery, variables, &resp); err != nil {
+			return nil, err
+		}
+		threads := resp.Repository.PullRequest.ReviewThreads
+		for _, node := range threads.Nodes {
+			if len(node.Comments.Nodes) == 0 {
+				continue
+			}
+			root := node.Comments.Nodes[0]
+			end := firstInt(node.Line, node.OriginalLine)
+			start := firstInt(node.StartLine, node.OriginalStartLine)
+			if start == 0 {
+				start = end
+			}
+			var replied []string
+			for _, reply := range node.Comments.Nodes[1:] {
+				if id, ok := ParseResolved(reply.Body); ok {
+					replied = append(replied, id)
+				}
+			}
+			out = append(out, PostedComment{
+				Path:           node.Path,
+				StartLine:      start,
+				EndLine:        end,
+				Side:           node.DiffSide,
+				Body:           root.Body,
+				ThreadID:       node.ID,
+				ThreadResolved: node.IsResolved,
+				CommentID:      root.DatabaseID,
+				Replied:        replied,
+			})
+		}
+		if !threads.PageInfo.HasNextPage {
+			return out, nil
+		}
+		cursor := threads.PageInfo.EndCursor
+		after = &cursor
+	}
+}
+
+func (c *Client) ReplyToReviewComment(ctx context.Context, owner, repo string, number int, commentID int64, body string) error {
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/comments/%d/replies", owner, repo, number, commentID)
+	return c.post(ctx, path, commentBody{Body: body}, nil)
+}
+
+func (c *Client) ResolveReviewThread(ctx context.Context, threadID string) error {
+	return c.graphql(ctx, resolveReviewThreadMutation, map[string]any{"id": threadID}, nil)
 }
 
 func (c *Client) ListPullFiles(ctx context.Context, owner, repo string, number int) ([]PullFile, error) {

@@ -74,6 +74,30 @@ func newIdentifier(ctx context.Context, workspace string, r resolved, prior []fi
 	}
 }
 
+func newResolver(open []findings.Finding, prior []findings.Resolution) func(findings.Resolution) (findings.Resolution, error) {
+	var mu sync.Mutex
+	openIDs := make(map[string]bool, len(open))
+	for _, f := range open {
+		openIDs[f.ID] = true
+	}
+	resolved := make(map[string]bool, len(prior))
+	for _, r := range prior {
+		resolved[r.ID] = true
+	}
+	return func(resolution findings.Resolution) (findings.Resolution, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !openIDs[resolution.ID] {
+			return findings.Resolution{}, fmt.Errorf("%s is not an open finding on this pull request", resolution.ID)
+		}
+		if resolved[resolution.ID] {
+			return findings.Resolution{}, fmt.Errorf("%s was already resolved", resolution.ID)
+		}
+		resolved[resolution.ID] = true
+		return resolution, nil
+	}
+}
+
 type flaggedCode struct {
 	lines      []string
 	occurrence int

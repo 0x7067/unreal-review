@@ -20,9 +20,10 @@ const SchemaVersion = 1
 type Type string
 
 const (
-	TypeRun     Type = "run"
-	TypeFinding Type = "finding"
-	TypeSummary Type = "summary"
+	TypeRun      Type = "run"
+	TypeFinding  Type = "finding"
+	TypeSummary  Type = "summary"
+	TypeResolved Type = "resolved"
 )
 
 type Anchor string
@@ -121,9 +122,15 @@ type Finding struct {
 	Body      string   `json:"body"`
 }
 
+type Resolution struct {
+	ID   string `json:"id"`
+	Body string `json:"body"`
+}
+
 type Report struct {
 	Run      *Run
 	Findings []Finding
+	Resolved []Resolution
 	Summary  string
 }
 
@@ -284,6 +291,12 @@ func reportFromRaw(raws []json.RawMessage) (Report, error) {
 				return Report{}, fmt.Errorf("record %d: summary body must be set", i)
 			}
 			report.Summary = body
+		case TypeResolved:
+			resolution, err := parseResolution(rec)
+			if err != nil {
+				return Report{}, fmt.Errorf("record %d: %w", i, err)
+			}
+			report.Resolved = append(report.Resolved, resolution)
 		default:
 			return Report{}, fmt.Errorf("record %d: unknown type %q", i, typ)
 		}
@@ -356,6 +369,22 @@ func parseFinding(rec record) (Finding, error) {
 		return Finding{}, fmt.Errorf("id must be set")
 	}
 	return finding, nil
+}
+
+func parseResolution(rec record) (Resolution, error) {
+	return NormalizeResolution(Resolution{ID: rec.ID, Body: rec.Body})
+}
+
+func NormalizeResolution(resolution Resolution) (Resolution, error) {
+	resolution.ID = strings.TrimSpace(resolution.ID)
+	if resolution.ID == "" {
+		return Resolution{}, fmt.Errorf("id must be set")
+	}
+	resolution.Body = strings.TrimSpace(resolution.Body)
+	if resolution.Body == "" {
+		return Resolution{}, fmt.Errorf("body must be set")
+	}
+	return resolution, nil
 }
 
 func Normalize(finding Finding) (Finding, error) {
@@ -460,6 +489,23 @@ func AppendFinding(path string, finding Finding) (Finding, error) {
 		return Finding{}, err
 	}
 	return finding, nil
+}
+
+func AppendResolution(path string, resolution Resolution) (Resolution, error) {
+	resolution, err := NormalizeResolution(resolution)
+	if err != nil {
+		return Resolution{}, err
+	}
+	err = appendLine(path, record{
+		V:    SchemaVersion,
+		Type: TypeResolved,
+		ID:   resolution.ID,
+		Body: resolution.Body,
+	})
+	if err != nil {
+		return Resolution{}, err
+	}
+	return resolution, nil
 }
 
 const (
@@ -580,6 +626,17 @@ func Write(w io.Writer, report Report) error {
 		}
 		if err := enc.Encode(rec); err != nil {
 			return fmt.Errorf("encode finding %s: %w", finding.ID, err)
+		}
+	}
+	for _, resolution := range report.Resolved {
+		rec := record{
+			V:    SchemaVersion,
+			Type: TypeResolved,
+			ID:   resolution.ID,
+			Body: resolution.Body,
+		}
+		if err := enc.Encode(rec); err != nil {
+			return fmt.Errorf("encode resolved %s: %w", resolution.ID, err)
 		}
 	}
 	if strings.TrimSpace(report.Summary) != "" {

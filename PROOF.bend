@@ -238,3 +238,22 @@ def Laws.oversized_diff_refused(empty, fresh, status, same):
 
 def Laws.diff_within_limit_decides_as_before(empty, fresh, status, same):
   {==}
+
+def Laws.open_thread_answered():
+  {==}
+
+def Laws.resolved_thread_left_alone(posted):
+  match posted:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.unposted_finding_not_answered(resolved):
+  {==}
+
+def Laws.reply_not_repeated():
+  {==}
+
+def Laws.first_reply_sent():
+  {==}

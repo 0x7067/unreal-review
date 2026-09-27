@@ -47,6 +47,18 @@ func ParseFinding(body string) (string, bool) {
 	return fields[1], true
 }
 
+func ResolvedMarker(id string) string {
+	return fmt.Sprintf("%sresolved %s -->", markerPrefix, id)
+}
+
+func ParseResolved(body string) (string, bool) {
+	fields, _ := markerFields(body)
+	if len(fields) != 2 || fields[0] != "resolved" || fields[1] == "" {
+		return "", false
+	}
+	return fields[1], true
+}
+
 func DroppedMarker(payload string) string {
 	return fmt.Sprintf("%sdropped %s -->", markerPrefix, payload)
 }

@@ -189,6 +189,40 @@ func TestCheckSummaryMatchesVerdictToFindings(t *testing.T) {
 	}
 }
 
+func TestResolutionRoundTripsThroughWriteFileAndParse(t *testing.T) {
+	in := Report{Resolved: []Resolution{{ID: "a1b2c3d4e5f60708", Body: "The nil check was added back."}}}
+	path := filepath.Join(t.TempDir(), "findings.jsonl")
+	if err := WriteFile(path, in); err != nil {
+		t.Fatal(err)
+	}
+	out, err := ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Resolved) != 1 || out.Resolved[0] != in.Resolved[0] {
+		t.Fatalf("resolved: %+v want %+v", out.Resolved, in.Resolved)
+	}
+}
+
+func TestAppendResolutionRejectsMissingIDOrBody(t *testing.T) {
+	work := filepath.Join(t.TempDir(), "work.jsonl")
+	if _, err := AppendResolution(work, Resolution{ID: "", Body: "fixed it"}); err == nil {
+		t.Fatal("accepted a resolution without an id")
+	}
+	if _, err := AppendResolution(work, Resolution{ID: "abc", Body: "  "}); err == nil {
+		t.Fatal("accepted a resolution without a body")
+	}
+}
+
+func TestParseResolvedRejectsMissingIDOrBody(t *testing.T) {
+	if _, err := Parse(strings.NewReader(`{"v":1,"type":"resolved","body":"fixed it"}`)); err == nil {
+		t.Fatal("accepted a resolved record without an id")
+	}
+	if _, err := Parse(strings.NewReader(`{"v":1,"type":"resolved","id":"abc"}`)); err == nil {
+		t.Fatal("accepted a resolved record without a body")
+	}
+}
+
 func TestCheckSummaryRejectsStructuredText(t *testing.T) {
 	cases := []string{
 		"",

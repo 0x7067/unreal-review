@@ -291,3 +291,20 @@ law diff_within_limit_decides_as_before:
   for status: F.Status
   for same: Bool
   {C.decideReview(False{}, empty, fresh, status, same) == C.decideEmpty(empty, fresh, status, same) : C.Decision}
+
+law open_thread_answered:
+  {G.answer(True{}, False{}) == True{} : Bool}
+
+law resolved_thread_left_alone:
+  for posted: Bool
+  {G.answer(posted, True{}) == False{} : Bool}
+
+law unposted_finding_not_answered:
+  for resolved: Bool
+  {G.answer(False{}, resolved) == False{} : Bool}
+
+law reply_not_repeated:
+  {G.reply(True{}) == False{} : Bool}
+
+law first_reply_sent:
+  {G.reply(False{}) == True{} : Bool}

@@ -214,6 +214,81 @@ func TestStatusBodyCarriesTheProgressMarker(t *testing.T) {
 	}
 }
 
+func TestGitHubAnswers(t *testing.T) {
+	fixed := newFinding("src/foo.go", 12, 14, "This map write races with the reader.")
+	stillOpen := newFinding("src/bar.go", 3, 3, "Not fixed.")
+	alreadyResolved := newFinding("src/baz.go", 1, 1, "Also fixed but the thread is already resolved.")
+	alreadyReplied := newFinding("src/qux.go", 5, 5, "Fixed twice.")
+
+	openPosted := postedComment(fixed)
+	openPosted.ThreadID = "thread_open"
+	openPosted.CommentID = 501
+
+	resolvedPosted := postedComment(alreadyResolved)
+	resolvedPosted.ThreadID = "thread_resolved"
+	resolvedPosted.CommentID = 502
+	resolvedPosted.ThreadResolved = true
+
+	repliedPosted := postedComment(alreadyReplied)
+	repliedPosted.ThreadID = "thread_replied"
+	repliedPosted.CommentID = 503
+	repliedPosted.Replied = []string{alreadyReplied.ID}
+
+	report := reportOf(stillOpen)
+	report.Resolved = []findings.Resolution{
+		{ID: fixed.ID, Body: "Added the missing lock."},
+		{ID: alreadyResolved.ID, Body: "Fixed regardless."},
+		{ID: alreadyReplied.ID, Body: "Fixed again."},
+		{ID: "unknown-id-not-posted", Body: "No matching thread."},
+	}
+
+	result := GitHub(report, GitHubOptions{
+		Posted:   []github.PostedComment{openPosted, resolvedPosted, repliedPosted},
+		CommitID: "dab3e1c9d4e5f60708090a0b0c0d0e0f10111213",
+	})
+
+	if len(result.Answers) != 2 {
+		t.Fatalf("answers: %+v", result.Answers)
+	}
+	byThread := make(map[string]ThreadAnswer, len(result.Answers))
+	for _, a := range result.Answers {
+		byThread[a.ThreadID] = a
+	}
+	open, ok := byThread["thread_open"]
+	if !ok || !open.Resolve || open.Reply == "" || !strings.Contains(open.Reply, "Added the missing lock.") {
+		t.Fatalf("open thread answer: %+v", open)
+	}
+	if !strings.Contains(open.Reply, "Fixed in `dab3e1c`:") {
+		t.Fatalf("reply should name the short head sha: %q", open.Reply)
+	}
+	if !strings.Contains(open.Reply, github.ResolvedMarker(fixed.ID)) {
+		t.Fatalf("reply should carry the resolved marker: %q", open.Reply)
+	}
+	replied, ok := byThread["thread_replied"]
+	if !ok || !replied.Resolve || replied.Reply != "" {
+		t.Fatalf("a thread that already has our reply should resolve without a second reply: %+v", replied)
+	}
+	if _, ok := byThread["thread_resolved"]; ok {
+		t.Fatal("a resolved thread must not be answered again")
+	}
+}
+
+func TestReportedFindingsDropsResolvedThreadFindingsWhileDedupStillSuppressesReposting(t *testing.T) {
+	resolved := newFinding("src/gone.go", 1, 1, "Was fixed already.")
+	comment := postedComment(resolved)
+	comment.ThreadResolved = true
+
+	reported := ReportedFindings([]github.PostedComment{comment}, nil)
+	if len(reported) != 0 {
+		t.Fatalf("a resolved thread must not be handed to the model again: %+v", reported)
+	}
+
+	dup := GitHub(reportOf(resolved), GitHubOptions{Posted: []github.PostedComment{comment}})
+	if len(dup.Payload.Review.Comments) != 0 || len(dup.Duplicates) != 1 {
+		t.Fatalf("a resolved thread's finding must still count as posted, not be re-posted: %+v", dup)
+	}
+}
+
 func newFinding(path string, start, end int, body string) findings.Finding {
 	item := findings.Finding{
 		Path:      path,

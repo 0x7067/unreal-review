@@ -29,32 +29,44 @@ func Markdown(w io.Writer, report findings.Report) error {
 	}
 	if len(report.Findings) == 0 {
 		if report.Summary == "" {
-			_, err := fmt.Fprintln(w, "No findings.")
-			return err
+			if _, err := fmt.Fprintln(w, "No findings."); err != nil {
+				return err
+			}
 		}
-		return nil
-	}
-	current := ""
-	for _, finding := range report.Findings {
-		if finding.Path != current {
-			if current != "" {
-				if _, err := fmt.Fprintln(w); err != nil {
+	} else {
+		current := ""
+		for _, finding := range report.Findings {
+			if finding.Path != current {
+				if current != "" {
+					if _, err := fmt.Fprintln(w); err != nil {
+						return err
+					}
+				}
+				if _, err := fmt.Fprintf(w, "## `%s`\n\n", finding.Path); err != nil {
+					return err
+				}
+				current = finding.Path
+			}
+			loc := formatLines(finding.StartLine, finding.EndLine)
+			if _, err := fmt.Fprintf(w, "- **%s** %s (%s): %s\n", finding.Severity, loc, finding.Anchor, oneLine(finding.Body)); err != nil {
+				return err
+			}
+			if strings.Contains(finding.Body, "\n") {
+				if _, err := fmt.Fprintf(w, "\n%s\n", indent(finding.Body)); err != nil {
 					return err
 				}
 			}
-			if _, err := fmt.Fprintf(w, "## `%s`\n\n", finding.Path); err != nil {
-				return err
-			}
-			current = finding.Path
 		}
-		loc := formatLines(finding.StartLine, finding.EndLine)
-		if _, err := fmt.Fprintf(w, "- **%s** %s (%s): %s\n", finding.Severity, loc, finding.Anchor, oneLine(finding.Body)); err != nil {
+	}
+	if len(report.Resolved) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprint(w, "\n## Resolved\n\n"); err != nil {
+		return err
+	}
+	for _, resolution := range report.Resolved {
+		if _, err := fmt.Fprintf(w, "- `%s`: %s\n", resolution.ID, oneLine(resolution.Body)); err != nil {
 			return err
-		}
-		if strings.Contains(finding.Body, "\n") {
-			if _, err := fmt.Fprintf(w, "\n%s\n", indent(finding.Body)); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

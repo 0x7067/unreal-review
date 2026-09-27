@@ -90,24 +90,57 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 			{"id": 13, "body": StatusMarker(Status{Head: "dab3e1c", Runs: 2, CostUSD: 1.25})},
 		})
 	})
-	mux.HandleFunc("/repos/o/r/pulls/3/comments", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(t, w, []map[string]any{
-			{
-				"path": "internal/eval/eval.go",
-				"body": "**warning**\n\nFirst.\n\n" + FindingMarker("aaaa1111"),
-				"line": 155, "start_line": nil, "side": "RIGHT",
-				"original_line": 155, "original_commit_id": "7c81b2c", "commit_id": "42227a3",
-			},
-			{
-				"path": ".github/workflows/review.yml",
-				"body": "**error**\n\nOutdated one.\n\n" + FindingMarker("bbbb2222"),
-				"line": nil, "start_line": nil, "side": nil, "position": nil,
-				"original_line": 37, "original_start_line": 35, "original_side": "RIGHT",
-			},
-			{
-				"path": "cmd/unreal-review/eval.go",
-				"body": "a human inline comment",
-				"line": 43, "side": "RIGHT",
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Variables map[string]any `json:"variables"`
+		}
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &req)
+		writeJSON(t, w, map[string]any{
+			"data": map[string]any{
+				"repository": map[string]any{
+					"pullRequest": map[string]any{
+						"reviewThreads": map[string]any{
+							"pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""},
+							"nodes": []map[string]any{
+								{
+									"id": "thread_1", "isResolved": false,
+									"path": "internal/eval/eval.go",
+									"line": 155, "originalLine": 155, "startLine": nil, "originalStartLine": nil,
+									"diffSide": "RIGHT",
+									"comments": map[string]any{
+										"nodes": []map[string]any{
+											{"databaseId": 501, "body": "**warning**\n\nFirst.\n\n" + FindingMarker("aaaa1111")},
+										},
+									},
+								},
+								{
+									"id": "thread_2", "isResolved": true,
+									"path": ".github/workflows/review.yml",
+									"line": nil, "originalLine": 37, "startLine": nil, "originalStartLine": 35,
+									"diffSide": "RIGHT",
+									"comments": map[string]any{
+										"nodes": []map[string]any{
+											{"databaseId": 502, "body": "**error**\n\nOutdated one.\n\n" + FindingMarker("bbbb2222")},
+											{"databaseId": 503, "body": "Fixed in `dab3e1c`: patched.\n\n" + ResolvedMarker("bbbb2222")},
+										},
+									},
+								},
+								{
+									"id": "thread_3", "isResolved": false,
+									"path": "cmd/unreal-review/eval.go",
+									"line": 43, "originalLine": 43, "startLine": nil, "originalStartLine": nil,
+									"diffSide": "RIGHT",
+									"comments": map[string]any{
+										"nodes": []map[string]any{
+											{"databaseId": 504, "body": "a human inline comment"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
 			},
 		})
 	})
@@ -143,17 +176,45 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	if id, ok := ParseFinding(current.Body); !ok || id != "aaaa1111" {
 		t.Fatalf("marker: %q %v", id, ok)
 	}
+	if current.ThreadID != "thread_1" || current.ThreadResolved || current.CommentID != 501 {
+		t.Fatalf("current thread metadata: %+v", current)
+	}
 	if outdated.StartLine != 35 || outdated.EndLine != 37 || outdated.Side != "RIGHT" {
 		t.Fatalf("outdated comment lost its original position: %+v", outdated)
 	}
+	if outdated.ThreadID != "thread_2" || !outdated.ThreadResolved || outdated.CommentID != 502 {
+		t.Fatalf("outdated thread metadata: %+v", outdated)
+	}
+	if len(outdated.Replied) != 1 || outdated.Replied[0] != "bbbb2222" {
+		t.Fatalf("outdated thread should carry our reply id: %+v", outdated.Replied)
+	}
 	if _, ok := ParseFinding(human.Body); ok {
 		t.Fatal("a human comment must not parse as one of ours")
+	}
+	if human.ThreadID != "thread_3" || human.ThreadResolved {
+		t.Fatalf("human thread metadata: %+v", human)
 	}
 	if len(state.Reviews) != 1 || state.Reviews[0].CommitID != "42227a3" {
 		t.Fatalf("reviews: %+v", state.Reviews)
 	}
 	if payloads := ParseDropped(state.Reviews[0].Body); len(payloads) != 1 || payloads[0] != "cGF5bG9hZA" {
 		t.Fatalf("review body markers: %q", payloads)
+	}
+}
+
+func TestReviewThreadsGraphQLErrorsReturnedAsError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, map[string]any{
+			"errors": []map[string]any{{"message": "Could not resolve to a Repository"}},
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := &Client{Token: "t", BaseURL: server.URL, HTTP: server.Client()}
+	if _, err := client.ReviewThreads(context.Background(), "o", "r", 3); err == nil {
+		t.Fatal("a graphql errors array should be returned as an error")
 	}
 }
 

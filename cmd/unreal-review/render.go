@@ -152,6 +152,9 @@ func renderGitHub(args []string) error {
 			}
 		}
 	}
+	if err := answerThreads(ctx, client, owner, name, number, result); err != nil {
+		return err
+	}
 	cost := runCost(report)
 	status := render.StatusBody(render.RunSummary{
 		HeadSHA: opts.CommitID,
@@ -207,8 +210,27 @@ func reportPosted(result render.GitHubResult, cost findings.Cost) {
 	if len(result.Dropped) > 0 {
 		fmt.Fprintf(os.Stderr, ", dropped %d", len(result.Dropped))
 	}
+	if len(result.Answers) > 0 {
+		fmt.Fprintf(os.Stderr, ", %d resolved", len(result.Answers))
+	}
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintf(os.Stderr, "cost: %s\n", cost.Format())
+}
+
+func answerThreads(ctx context.Context, client *github.Client, owner, repo string, number int, result render.GitHubResult) error {
+	for _, answer := range result.Answers {
+		if answer.Reply != "" {
+			if err := client.ReplyToReviewComment(ctx, owner, repo, number, answer.CommentID, answer.Reply); err != nil {
+				return err
+			}
+		}
+		if answer.Resolve {
+			if err := client.ResolveReviewThread(ctx, answer.ThreadID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func loadReport(path string) (findings.Report, error) {

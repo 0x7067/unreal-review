@@ -110,3 +110,21 @@ def postOk(complete: Bool, dry: Bool) -> Bool:
       True{}
     case False{}:
       complete
+
+def answer(posted: Bool, resolved: Bool) -> Bool:
+  match posted:
+    case False{}:
+      False{}
+    case True{}:
+      match resolved:
+        case True{}:
+          False{}
+        case False{}:
+          True{}
+
+def reply(replied: Bool) -> Bool:
+  match replied:
+    case True{}:
+      False{}
+    case False{}:
+      True{}
