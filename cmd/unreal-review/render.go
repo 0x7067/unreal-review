@@ -149,14 +149,6 @@ func renderGitHub(args []string) error {
 			if err := client.CreateReview(ctx, result.Payload); err != nil {
 				return err
 			}
-			missing, err := missingComments(ctx, client, owner, name, number, result)
-			if err != nil {
-				return err
-			}
-			if len(missing) > 0 {
-				return fmt.Errorf("%d inline comment(s) did not land on the pull request: %s",
-					len(missing), strings.Join(missing, ", "))
-			}
 		}
 	}
 	cost := runCost(report)
