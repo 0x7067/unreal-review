@@ -229,3 +229,9 @@ def Laws.receipt_despite_outside_drop(o):
 
 def Laws.receipt_blocked_by_cap(o, n):
   {==}
+
+def Laws.oversized_diff_refused(empty, fresh, status, same):
+  {==}
+
+def Laws.diff_within_limit_decides_as_before(empty, fresh, status, same):
+  {==}

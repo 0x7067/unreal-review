@@ -282,3 +282,17 @@ law receipt_blocked_by_cap:
   for +o: Nat
   for +n: Nat
   {G.receipt(o, 1n+n) == False{} : Bool}
+
+law oversized_diff_refused:
+  for empty: Bool
+  for fresh: Bool
+  for status: F.Status
+  for same: Bool
+  {C.decideReview(True{}, empty, fresh, status, same) == C.RefuseOversized{} : C.Decision}
+
+law diff_within_limit_decides_as_before:
+  for empty: Bool
+  for fresh: Bool
+  for status: F.Status
+  for same: Bool
+  {C.decideReview(False{}, empty, fresh, status, same) == C.decideEmpty(empty, fresh, status, same) : C.Decision}

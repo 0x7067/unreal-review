@@ -69,6 +69,13 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return result, nil
 	}
 
+	if len(diff) > maxBriefDiff {
+		return Result{Diff: diff}, fmt.Errorf(
+			"diff is %d bytes, over the %d-byte review limit; narrow it with pathspecs or split it with unreal-review group",
+			len(diff), maxBriefDiff,
+		)
+	}
+
 	checkpoint, err := loadCheckpoint(opts.Out)
 	if err != nil {
 		return Result{Diff: diff}, err
@@ -191,17 +198,13 @@ func reviewPrompt(sel selection) string {
 	if target == "" {
 		target = "working tree"
 	}
-	body := sel.diff
-	if len(body) > maxBriefDiff {
-		body = body[:maxBriefDiff] + "\n\n[diff truncated]\n"
-	}
 	return fmt.Sprintf(
 		"From: %s\nTo: %s\n\n%s%s```diff\n%s\n```\n",
 		sel.source.Base,
 		target,
 		pullSection(sel.pull),
 		reportedSection(reportedIn(sel.pull.Reported, sel.files)),
-		body,
+		sel.diff,
 	)
 }
 

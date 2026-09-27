@@ -39,7 +39,7 @@ unreal-review run --from abc1234 --to def5678 --exclude '*.lock' -- cmd/
 
 `--out` is the checkpoint. The `run` record stores completeness (`status`) and the reviewed commit SHAs plus a hash of the exact diff. Interrupt the process to pause. The same command continues that review if the diff is unchanged. `--fresh` starts over. GitHub rendering refuses a file that is not `complete`. The checkpoint is the findings file; it does not name an agent backend.
 
-To review a large change in pieces, run `group` on the same git range. It prints related file groups and a `run` command for each:
+`run` refuses a diff over 200,000 bytes rather than review part of it. To review a large change in pieces, run `group` on the same git range. It prints related file groups and a `run` command for each:
 
 ```sh
 unreal-review group --from origin/main --to HEAD

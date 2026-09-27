@@ -7,6 +7,7 @@ type Decision is Data:
   EmptyComplete{}
   RefuseComplete{}
   RefuseMismatch{}
+  RefuseOversized{}
 
 def decideRunning(same: Bool) -> Decision:
   match same:
@@ -40,6 +41,13 @@ def decideEmpty(empty: Bool, fresh: Bool, status: F.Status, same: Bool) -> Decis
     case False{}:
       decideFresh(fresh, status, same)
 
+def decideReview(oversized: Bool, empty: Bool, fresh: Bool, status: F.Status, same: Bool) -> Decision:
+  match oversized:
+    case True{}:
+      RefuseOversized{}
+    case False{}:
+      decideEmpty(empty, fresh, status, same)
+
 def outcomeStatus(d: Decision) -> F.Status:
   match d:
     case Start{}:
@@ -52,6 +60,8 @@ def outcomeStatus(d: Decision) -> F.Status:
       F.StatusComplete{}
     case RefuseMismatch{}:
       F.StatusRunning{}
+    case RefuseOversized{}:
+      F.StatusFailed{}
 
 def canComplete(summary: Bool, rec: Bool) -> Bool:
   Bool.and(summary, rec)
