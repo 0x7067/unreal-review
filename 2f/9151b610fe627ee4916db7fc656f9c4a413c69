@@ -1,0 +1,31 @@
+internal/review/review_test.go
+  s_2469fd92ef607c::t_d0cfcc726cecdb 42-48,61-62,69-80
+  s_2469fd92ef607c::t_58815300ecda0a 81-82
+cmd/unreal-review/pull.go
+  s_2469fd92ef607c::t_d0cfcc726cecdb 37-38
+internal/github/github.go
+  s_2469fd92ef607c::t_d0cfcc726cecdb 31,62-63,112,131,140
+internal/review/git.go
+  s_2469fd92ef607c::t_d0cfcc726cecdb 28-29,114,118-121,148-149,204
+internal/review/git_test.go
+  s_2469fd92ef607c::t_d0cfcc726cecdb 624-625
+internal/review/review.go
+  s_2469fd92ef607c::t_d0cfcc726cecdb 131,189-190,194,199-200,202-203,208-223
+  s_2469fd92ef607c::t_8ac7ebfc9f3d85 224-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f9151b610fe627ee4916db7fc656f9c4a413c69",
+  "prompts": {},
+  "sessions": {
+    "s_2469fd92ef607c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f18303d9-c8bb-4d3b-9973-64924ba62fd3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
