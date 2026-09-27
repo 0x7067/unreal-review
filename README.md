@@ -61,7 +61,7 @@ unreal-review render github --pr owner/repo#12 findings.jsonl
 
 `--dry-run` prints the GitHub review payload and does not post. The renderer maps `anchor: new` to the right side of the diff and drops findings whose lines are not in the pull request patch. `run --pr` narrows the range to commits pushed since the newest reviewed commit (tracked by check runs), names already-posted findings in the prompt with their ids so the agent can call `resolve_finding` on the ones this diff fixes, and the renderer suppresses duplicates before the 50-comment cap, tags each comment and each out-of-diff finding in the review body with a marker, records the check run unless the 50-comment cap left findings unposted, replies to and resolves the review thread of each finding the agent reports fixed, and keeps a status comment on the PR holding the run count, cumulative cost, and resolved count. A review is posted only when it says something new; the status comment still updates.
 
-GitHub Actions is the same two commands. This repository reviews its own pull requests with [.github/workflows/review.yml](.github/workflows/review.yml); [examples/github-actions/review.yml](examples/github-actions/review.yml) is the shape to copy into another repository.
+GitHub Actions is the same two commands in two jobs. `run` builds from the base commit and reviews with a read-only token; `render github` runs in a second job that never checks out the pull request, with the write token it needs to post and to resolve fixed threads (`contents: write` for `resolveReviewThread`). This repository reviews its own pull requests with [.github/workflows/review.yml](.github/workflows/review.yml); [examples/github-actions/review.yml](examples/github-actions/review.yml) is the shape to copy into another repository.
 
 ## Evaluate a model
 
@@ -82,6 +82,11 @@ share of planted issues found (same file, overlapping lines);
 expected severity; `status` is the review checkpoint. Each case gets a
 fresh git workspace and its own findings.jsonl under `--out`. Eval calls
 the model and costs money; it is not part of `make check`.
+
+Baseline for `openai/gpt-6-luna-pro` at `d08df52` (2026-09-27): 11 of 11
+cases complete, recall 10/10, precision 10/11, severity 9/10, total cost
+USD 0.0219 over 32 requests. The miss on severity is `swallowed-error`; the
+extra finding is in `once-failure`.
 
 ## Findings file
 

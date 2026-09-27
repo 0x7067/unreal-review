@@ -4,11 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-permissions:
-  contents: read
-  pull-requests: write
-  issues: write
-  checks: write
+permissions: {}
 
 concurrency:
   group: review-${{ github.event.pull_request.number }}
@@ -16,12 +12,20 @@ concurrency:
 
 jobs:
   review:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      checks: read
     steps:
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Check out base commit
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -34,7 +38,7 @@ jobs:
         working-directory: ${{ runner.temp }}/base
         run: |
           go install ./cmd/unreal-review
-      - name: Review
+      - name: Review pull request
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           UNREAL_HARNESS_LLM_MODEL: ${{ vars.UNREAL_HARNESS_LLM_MODEL }}
@@ -42,4 +46,39 @@ jobs:
           PULL_REQUEST: ${{ github.repository }}#${{ github.event.pull_request.number }}
         run: |
           unreal-review run --pr "$PULL_REQUEST" --out findings.jsonl
-          unreal-review render github --pr "$PULL_REQUEST" findings.jsonl
+      - uses: actions/upload-artifact@v7
+        with:
+          name: findings
+          path: findings.jsonl
+          retention-days: 7
+
+  post:
+    needs: review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+      - name: Install unreal-review from base commit
+        run: |
+          go install ./cmd/unreal-review
+      - uses: actions/download-artifact@v8
+        with:
+          name: findings
+          path: ${{ runner.temp }}/findings
+      - name: Post review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PULL_REQUEST: ${{ github.repository }}#${{ github.event.pull_request.number }}
+        run: |
+          unreal-review render github --pr "$PULL_REQUEST" "$RUNNER_TEMP/findings/findings.jsonl"
