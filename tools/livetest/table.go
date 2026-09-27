@@ -13,7 +13,7 @@ var table = map[string]entry{
 func lookup(name string) *entry {
 	e, ok := table[name]
 	if !ok {
-		return &entry{name: name}
+		return nil
 	}
 	return &e
 }
