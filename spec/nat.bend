@@ -61,9 +61,7 @@ def fromFalseTrue(e: {False{} == True{} : Bool}) -> Empty:
 def absurd(A: Type, e: Empty) -> A:
   match e:
 
-# A Cmp motive that refutes any equality claiming to equal LT. Pair it with
-# Equal.sym to turn {X == LT} into {LT == X}, then the goal becomes NotLt(X).
-def NotLt(c: Cmp) -> Type:
+def IsLt(c: Cmp) -> Type:
   match c:
     case LT{}:
       Unit
@@ -72,17 +70,15 @@ def NotLt(c: Cmp) -> Type:
     case GT{}:
       Empty
 
-# Nat.cmp(a, b) = LT means a < b, so a + 1 <= b: exactly what needFlush leaves us
-# to prove about a chunk that just grew by one file.
 def leSuccOfLt(+a: Nat, +b: Nat, e: {Nat.cmp(a, b) == LT{} : Cmp}) -> LE(1n+a, b):
   match a b:
     case 0n 0n:
-      %Equal.sym(Cmp, EQ{}, LT{}, e) : NotLt(_)
+      %Equal.sym(Cmp, EQ{}, LT{}, e) : IsLt(_)
       Unit{}
     case 0n 1n+bp:
       Unit{}
     case 1n+p 0n:
-      %Equal.sym(Cmp, GT{}, LT{}, e) : NotLt(_)
+      %Equal.sym(Cmp, GT{}, LT{}, e) : IsLt(_)
       Unit{}
     case 1n+p 1n+q:
       leSuccOfLt(p, q, e)
@@ -96,8 +92,7 @@ def isGeFalse(c: Cmp, e: {Cmp.is_ge(c) == False{} : Bool}) -> {c == LT{} : Cmp}:
     case GT{}:
       absurd({GT{} == LT{} : Cmp}, fromFalseTrue(Equal.sym(Bool, True{}, False{}, e)))
 
-# The motive that refutes {1n+p == 0n}: DiscNat(0n) is Empty, DiscNat(1n+p) is Unit.
-def DiscNat(n: Nat) -> Type:
+def IsSucc(n: Nat) -> Type:
   match n:
     case 0n:
       Empty

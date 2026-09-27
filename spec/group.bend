@@ -497,9 +497,6 @@ def uniqueImplGo(+stem: Nat, +ext: Nat, xs: List<&2, Item>, acc: Found) -> Found
 def uniqueImpl(stem: Nat, ext: Nat, xs: List<&2, Item>) -> Maybe<&2, Item>:
   foundItem(uniqueImplGo(stem, ext, xs, FoundNone{}))
 
-# Single self-recursive def: Bool.pick does the branch inside its own body, so
-# the choice never has to be scrutinised here (a match cannot inspect a computed
-# value). That removes the mutual recursion, and with it the @unsafe marker.
 def remapId(+id: Nat, +newKey: GKey, xs: List<&2, Item>) -> List<&2, Item>:
   match xs:
     case Nil{}:
@@ -608,10 +605,6 @@ def applyEdges(es: List<&2, Edge>, xs: List<&2, Item>) -> List<&2, Item>:
 type Bucket is Data:
   Bucket{key: GKey, files: List<&2, ChangedFile>}
 
-# The decision for the head bucket, computed once so the walk below can take it as
-# a parameter. A match cannot scrutinise a computed value, so it has to arrive as
-# one; threading it through the recursion is what removes the mutual recursion,
-# and with it the @unsafe that permitted the forward reference.
 def headKeyEq(+k: GKey, t: List<&2, Bucket>) -> Bool:
   match t:
     case Nil{}:
@@ -619,10 +612,6 @@ def headKeyEq(+k: GKey, t: List<&2, Bucket>) -> Bool:
     case Bucket{+k2, fs} <> rest:
       keyEq(k, k2)
 
-# addTo merges one bucket into an accumulator: into the entry already carrying
-# this key, or as a new entry at the end. Every recursive call shrinks its own
-# argument, so Bend checks the termination itself rather than taking @unsafe's
-# word for it - which is what the old skip-then-recurse could not manage.
 def addTo(acc: List<&2, Bucket>, +k: GKey, fs: List<&2, ChangedFile>, eq: Bool) -> List<&2, Bucket>:
   match acc:
     case Nil{}:
@@ -805,8 +794,6 @@ def mergeAllFilesGo(+xs: List<&2, Item>, +xs1: List<&2, Item>, e1: {filesOf(xs1)
 def mergeAllFiles(+xs: List<&2, Item>) -> {filesOf(mergeAll(xs)) == filesOf(xs) : List<&2, ChangedFile>}:
   mergeAllFilesGo(xs, mergePass(PassLocale{}, xs), mergePassFiles(PassLocale{}, xs))
 
-# filesOf never looks at the key, so the pick above is invisible to it and this
-# needs no case analysis - just the induction hypothesis.
 def remapIdFiles(+id: Nat, +newKey: GKey, xs: List<&2, Item>) -> {filesOf(remapId(id, newKey, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
   match xs:
     case Nil{}:
@@ -937,14 +924,12 @@ def singCount(+id: Nat, xs: List<&2, Item>) -> {countIdBuckets(id, singletons(xs
       %Equal.sym(Nat, countIdBuckets(id, singletons(t)), countId(id, filesOf(t)), singCount(id, t)) : {Nat.add(bump(Nat.is_eq(id, fid), 0n), _) == bump(Nat.is_eq(id, fid), countId(id, filesOf(t))) : Nat}
       bumpAdd(Nat.is_eq(id, fid), countId(id, filesOf(t)))
 
-# Two reorderings of Nat.add that the merged counts need.
 def addRot(+a: Nat, +b: Nat, +c: Nat) -> {Nat.add(Nat.add(a, b), c) == Nat.add(b, Nat.add(a, c)) : Nat}:
   Equal.trans(Nat, Nat.add(Nat.add(a, b), c), Nat.add(Nat.add(b, a), c), Nat.add(b, Nat.add(a, c)), Equal.cong(Nat, Nat, x => Nat.add(x, c), Nat.add(a, b), Nat.add(b, a), N.addComm(a, b)), N.addAssoc(b, a, c))
 
 def addSwap(+a: Nat, +b: Nat, +c: Nat) -> {Nat.add(a, Nat.add(b, c)) == Nat.add(b, Nat.add(a, c)) : Nat}:
   Equal.trans(Nat, Nat.add(a, Nat.add(b, c)), Nat.add(Nat.add(a, b), c), Nat.add(b, Nat.add(a, c)), Equal.sym(Nat, Nat.add(Nat.add(a, b), c), Nat.add(a, Nat.add(b, c)), N.addAssoc(a, b, c)), addRot(a, b, c))
 
-# groupsOf emits one group per bucket, so it carries the count across unchanged.
 def groupsOfCount(+id: Nat, +bs: List<&2, Bucket>) -> {countIdGroups(id, groupsOf(bs)) == countIdBuckets(id, bs) : Nat}:
   match bs:
     case Nil{}:
@@ -953,7 +938,6 @@ def groupsOfCount(+id: Nat, +bs: List<&2, Bucket>) -> {countIdGroups(id, groupsO
       %groupsOfCount(id, t) : {Nat.add(countId(id, fs), countIdGroups(id, groupsOf(t))) == Nat.add(countId(id, fs), _) : Nat}
       {==}
 
-# Merging into the matching entry or starting a new one both keep every file.
 def addToCount(+id: Nat, acc: List<&2, Bucket>, +k: GKey, +fs: List<&2, ChangedFile>, eq: Bool) -> {countIdBuckets(id, addTo(acc, k, fs, eq)) == Nat.add(countId(id, fs), countIdBuckets(id, acc)) : Nat}:
   match acc:
     case Nil{}:
@@ -1159,10 +1143,6 @@ def allCappedAppend(a: List<&2, Group>, b: List<&2, Group>, ca: AllCapped(a), cb
       (ca_fs, ca_t) = ca
       (ca_fs, allCappedAppend(t, b, ca_t, cb))
 
-# --- cap arithmetic -------------------------------------------------------
-# pack grows a chunk one file at a time. To show the grown chunk still respects
-# the caps we need the two measures of a chunk to commute with that append.
-
 def lengthSnoc(+xs: List<&2, ChangedFile>, +h: ChangedFile) -> {List.length(&2, ChangedFile, snocFile(xs, h)) == 1n+List.length(&2, ChangedFile, xs) : Nat}:
   match xs:
     case Nil{}:
@@ -1181,11 +1161,9 @@ def sumLinesSnoc(+xs: List<&2, ChangedFile>, +h: ChangedFile) -> {sumLines(snocF
       {==}
 
 def noConfusionLen(+ys: List<&2, ChangedFile>, e: {1n+List.length(&2, ChangedFile, ys) == 0n : Nat}) -> Empty:
-  %e : N.DiscNat(_)
+  %e : N.IsSucc(_)
   Unit{}
 
-# Zero- and one-element chunks are trivially capped; anything longer must respect
-# both caps. So two bounds are all CappedFiles ever asks for.
 def cappedOfBounds(fs: List<&2, ChangedFile>, b1: N.LE(List.length(&2, ChangedFile, fs), maxFiles()), b2: N.LE(sumLines(fs), maxLines())) -> CappedFiles(fs):
   match fs:
     case Nil{}:
@@ -1209,7 +1187,6 @@ def snocSumBound(+y: ChangedFile, +ys: List<&2, ChangedFile>, +h: ChangedFile, +
   %es : N.LE(Nat.add(_, fileLines(h)), maxLines())
   N.leOf(Nat.add(nl, fileLines(h)), maxLines(), notGtLe(Nat.add(nl, fileLines(h)), maxLines(), egt))
 
-# One file appended to a capped chunk stays capped, because needFlush said no.
 def snocCapped(+chunk: List<&2, ChangedFile>, +h: ChangedFile, +nf: Nat, +nl: Nat, cc: CappedFiles(chunk), +el: {nf == List.length(&2, ChangedFile, chunk) : Nat}, +es: {nl == sumLines(chunk) : Nat}, +e: {needFlush(nf, nl, fileLines(h)) == False{} : Bool}) -> CappedFiles(snocFile(chunk, h)):
   match chunk:
     case Nil{}:
@@ -1228,9 +1205,6 @@ def flushCapped(chunk: List<&2, ChangedFile>, acc: List<&2, Group>, cc: CappedFi
     case y <> ys:
       allCappedAppend(acc, [Group{y <> ys}], ca, (cc, Unit{}))
 
-# Mirrors pack/packNeed. pack is @unsafe (mutual recursion), so the proof of it
-# has to use the same two-def shape; Bend reports cluster_perm and cluster_caps as
-# relying on unsafe code either way.
 def snocLenInv(+chunk: List<&2, ChangedFile>, +h: ChangedFile, +nf: Nat, +el: {nf == List.length(&2, ChangedFile, chunk) : Nat}) -> {1n+nf == List.length(&2, ChangedFile, snocFile(chunk, h)) : Nat}:
   %Equal.sym(Nat, List.length(&2, ChangedFile, snocFile(chunk, h)), 1n+List.length(&2, ChangedFile, chunk), lengthSnoc(chunk, h)) : {1n+nf == _ : Nat}
   %el : {1n+nf == 1n+_ : Nat}
@@ -1279,8 +1253,4 @@ def splitAllCapped(gs: List<&2, Group>) -> AllCapped(splitAll(gs)):
 
 def clusterCaps(+fs: List<&2, ChangedFile>, +es: List<&2, Edge>) -> AllCapped(cluster(fs, es)):
   splitAllCapped(bucket(applyEdges(es, attachAll(mergeAll(initItems(fs))))))
-
-
-
-
 

@@ -1,11 +1,4 @@
 #!/bin/sh
-# Prove the laws, and refuse to let the proof quietly lean on @unsafe code.
-#
-# Bend exits 0 both for "All terms check." and for "All terms check, but N defs
-# rely on unsafe or foreign code: ...". The second is a real obligation waived:
-# @unsafe skips the termination check, so a non-terminating def can discharge any
-# law. Accepting it silently makes "@unsafe" the cheapest way to turn a red proof
-# green, which is exactly the bypass this script closes.
 set -u
 cd "$(dirname "$0")/.." || exit 1
 

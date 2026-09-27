@@ -7,9 +7,6 @@ import (
 	"testing"
 )
 
-// spec/github.bend models the inline-comment cap this package enforces, and
-// keeps its own copy of the number. Pin them together so a change to one side
-// cannot leave the model describing a limit the renderer does not use.
 func TestBendModelInlineCapMatchesGo(t *testing.T) {
 	src, err := os.ReadFile("../../spec/github.bend")
 	if err != nil {

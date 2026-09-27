@@ -4,10 +4,6 @@
 // decision), so this does what Cursor's followup_message does: when the proof is
 // red it pushes a user message, which forces another turn.
 //
-// hooks/prove-stop.sh bounds its own retries - three consecutive failures, then
-// it stands down and exits 0 - so this cannot loop forever. Only exit 2 is a
-// block; 0 means green, or the gate has given up and CI takes over.
-//
 // The gate is resolved from this file's own location, never from ctx.cwd: a
 // relative "hooks/prove-stop.sh" exits 127 whenever Pi runs from a subdirectory,
 // and 127 is indistinguishable from a pass here.

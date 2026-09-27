@@ -4,9 +4,6 @@
 // session.idle only arrives through the observer. So this nudges instead - it
 // pushes a follow-up user message, the same shape as Cursor's followup_message.
 //
-// hooks/prove-stop.sh bounds its own retries (three consecutive failures, then it
-// stands down and exits 0), so this cannot loop forever. Only exit 2 is a block.
-//
 // Loaded from .opencode/plugin/ - the project-level discovery path. A "plugins"
 // entry in opencode.json does NOT load a local file (it is for npm packages).
 //
@@ -19,11 +16,8 @@ import { dirname, join } from 'node:path';
 
 const run = promisify(execFile);
 
-// this file lives at <repo>/.opencode/plugin/, so two directories up is <repo>
 const GATE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'hooks', 'prove-stop.sh');
 
-// Built per invocation and closed over its own ctx, so two entry points (or two
-// concurrent sessions) cannot clobber each other's client.
 function makeHooks(ctx) {
   return {
     event: async ({ event }) => {

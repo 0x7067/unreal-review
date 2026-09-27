@@ -6,19 +6,6 @@ import (
 	"testing"
 )
 
-// spec/group.bend states two product invariants as Bend laws and proves them
-// against a hand-written model of this package:
-//
-//	law cluster_perm: countId(id, fs) == countIdGroups(id, cluster(fs, es))
-//	law cluster_caps: AllCapped(cluster(fs, es))
-//
-// Nothing tied that model to this code, so those proofs could stay green while
-// this package broke either one. These cases assert the same two properties of
-// the real clusterFiles: every input file lands in exactly one group, and every
-// group it emits respects the caps.
-//
-// Groups of one file are exempt, matching CappedFiles in the model: a single
-// file over the line cap cannot be split any further.
 func TestClusterFilesHoldsBendInvariants(t *testing.T) {
 	for _, tc := range clusterScenarios() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -49,8 +36,6 @@ func TestClusterFilesHoldsBendInvariants(t *testing.T) {
 	}
 }
 
-// pathCounts renders the file list as sorted "path xN" entries, so a lost or
-// duplicated file shows up as a difference rather than a map-print order.
 func pathCounts(files []ChangedFile) []string {
 	counts := map[string]int{}
 	for _, f := range files {
