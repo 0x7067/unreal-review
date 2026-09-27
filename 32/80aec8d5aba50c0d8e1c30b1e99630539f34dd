@@ -1,0 +1,90 @@
+internal/agent/registry.go
+  s_668f6a102d1610::t_5a5fecd17a96fc 126,142-145,147
+  s_668f6a102d1610::t_b4d90b08292ec6 167,176-179,181
+  s_668f6a102d1610::t_583d84d9d334ca 194-205
+  s_668f6a102d1610::t_daf4f4708ff3b0 5
+  s_668f6a102d1610::t_7552000df32798 1-4,6-125,127-141,146,148-166,168-175,180,182-193
+internal/findings/findings.go
+  s_668f6a102d1610::t_48fee5617d9318 343
+  s_668f6a102d1610::t_7e79c5639b985b 422
+  s_668f6a102d1610::t_3dae3d2dbe34ca 354
+cmd/unreal-review/main.go
+  s_668f6a102d1610::t_24ad6da547856a 39
+internal/agent/agent.go
+  s_668f6a102d1610::t_be9a701d747148 9,14-27,32,34-36,38,40,45,47-48,50,53-56,58-62,64-66,68-71,73,75-99,101,103-115,118-125,127-130,132-135,137-142,144-163,165-178,180,183-186,188-189,191-204,206
+  s_668f6a102d1610::t_db1b5ab0a7b615 33
+cmd/unreal-review/run.go
+  s_668f6a102d1610::t_5f3fdf9034194d 35
+  s_668f6a102d1610::t_763a289224b56a 65
+  s_668f6a102d1610::t_61e097775d8c76 112-117
+  s_668f6a102d1610::t_b6e9b60a93cbdd 86,88
+AGENTS.md
+  s_668f6a102d1610::t_fc5f1fafdd1db4 18
+internal/findings/findings_test.go
+  s_668f6a102d1610::t_1f73d22715a195 132-148
+cmd/unreal-review/eval.go
+  s_668f6a102d1610::t_b4305b67d7338e 62
+  s_668f6a102d1610::t_0e501a4e2132df 78,80
+internal/review/review.go
+  s_668f6a102d1610::t_09fc39a3a28cd3 188,198
+  s_668f6a102d1610::t_594077906dcfa5 17-20,25,28
+  s_668f6a102d1610::t_82b300aeed6709 130-131
+  s_668f6a102d1610::t_df9fa566378776 16
+.grok/skills/verify-unreal-review/SKILL.md
+  s_668f6a102d1610::t_4c26f695fa71c6 68
+  s_668f6a102d1610::t_83924fcd6ae4ad 44
+internal/review/review_test.go
+  s_668f6a102d1610::t_4557137b021954 42
+  s_668f6a102d1610::t_58906144e7df26 56
+internal/agent/cost.go
+  s_668f6a102d1610::t_7bcf691bd935cd 58-76
+README.md
+  s_668f6a102d1610::t_4b98d5210f360b 54
+  s_668f6a102d1610::t_a658e8696920b1 3
+.grok/skills/verify-unreal-review/features/README.md
+  s_668f6a102d1610::t_29464cd19fa4a1 14
+.grok/skills/verify-unreal-review/features/checkpoint.md
+  s_668f6a102d1610::t_2e726ff40490b6 28-30,33
+  s_668f6a102d1610::t_e80d187e8c0390 26
+  s_668f6a102d1610::t_5e1742196e5b02 40
+  s_668f6a102d1610::t_42ca56558f373c 31-32
+  s_668f6a102d1610::t_a1b56f2b2ad6f0 27
+.grok/skills/verify-unreal-review/features/cli-usage.md
+  s_668f6a102d1610::t_2223d1853cad06 3
+  s_668f6a102d1610::t_f8f5f73edead7d 21
+internal/agent/observer.go
+  s_668f6a102d1610::t_eb4cc197b7b19d 1-11,13-124,128-148,163-201
+  s_668f6a102d1610::t_bef10d3499841c 125-127
+  s_668f6a102d1610::t_36e5b058aa54a6 12
+  s_668f6a102d1610::t_5eb32d51fbc356 149-162
+.grok/skills/verify-unreal-review/features/review-git-range.md
+  s_668f6a102d1610::t_cab726779d0679 38
+  s_668f6a102d1610::t_3834a95b0f2c0b 47
+  s_668f6a102d1610::t_bd491b88b4ef9c 52-53
+  s_668f6a102d1610::t_89fa3c0081b651 60
+  s_668f6a102d1610::t_60a6ce32e56397 19
+  s_668f6a102d1610::t_1c7edee4ed50e4 63
+  s_668f6a102d1610::t_2e726ff40490b6 40-46,48,50-51
+  s_668f6a102d1610::t_7d6f194c012b87 39
+go.mod
+  s_668f6a102d1610::t_30ce5df078c6c7 5-8,10-16
+  s_668f6a102d1610::t_16ea5bcc459ee5 9
+go.sum
+  s_668f6a102d1610::t_5f5f86ece1659a 1-14,17-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3280aec8d5aba50c0d8e1c30b1e99630539f34dd",
+  "prompts": {},
+  "sessions": {
+    "s_668f6a102d1610": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49952c2f-3c45-48ce-8ca1-bc72004d357c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
