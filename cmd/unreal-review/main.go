@@ -6,6 +6,10 @@ import (
 )
 
 func main() {
+	if err := isolateSecrets(); err != nil {
+		fmt.Fprintf(os.Stderr, "unreal-review: %v\n", err)
+		os.Exit(1)
+	}
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "unreal-review: %v\n", err)
 		os.Exit(1)

@@ -42,7 +42,7 @@ func cmdRun(args []string) error {
 	if *model == "" {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")
 	}
-	key := os.Getenv("OPENROUTER_API_KEY")
+	key := secret("OPENROUTER_API_KEY")
 	if key == "" {
 		return fmt.Errorf("set OPENROUTER_API_KEY")
 	}
@@ -59,7 +59,6 @@ func cmdRun(args []string) error {
 			return err
 		}
 	}
-	scrubProcessEnv()
 	var logWriter io.Writer
 	if *agentLog != "" {
 		file, err := os.Create(*agentLog)
@@ -104,12 +103,6 @@ func cmdRun(args []string) error {
 		}
 	}
 	return err
-}
-
-func scrubProcessEnv() {
-	for _, name := range []string{"OPENROUTER_API_KEY", "UNREAL_HARNESS_LLM_API_KEY", "GH_TOKEN", "GITHUB_TOKEN"} {
-		_ = os.Unsetenv(name)
-	}
 }
 
 type stringList []string

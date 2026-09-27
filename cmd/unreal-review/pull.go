@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -79,7 +78,7 @@ func newPullResolver(token, repo string) (review.PullResolver, error) {
 }
 
 func resolveToken(flag string, allowGH bool) string {
-	token := firstNonEmpty(flag, os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"))
+	token := firstNonEmpty(flag, secret("GH_TOKEN"), secret("GITHUB_TOKEN"))
 	if token == "" && allowGH {
 		if out, err := exec.CommandContext(context.Background(), "gh", "auth", "token").Output(); err == nil {
 			token = strings.TrimSpace(string(out))

@@ -42,11 +42,12 @@ Severity is `error` when the code does the wrong thing: crash, hang, race, or co
 {"v":1,"type":"summary","body":"The cache write races with the reader, so readers can see torn entries; the eviction change looks sound."}
 ```
 
-`body` is the agent's final message, checked against the summary contract before it is written:
+`body` is the agent's final message. `findings.CheckSummary` enforces the summary contract before the summary is written:
 
-- One line of plain prose, one to three sentences, at most 300 characters. Inline code is allowed; line breaks, headings, lists, quotes, tables, and code blocks are not.
-- With no findings, it starts with `No material issues`. With findings, it starts with the most severe one and what it breaks, and does not start with `No material issues`.
-- It does not count or list the findings; renderers show those from the `finding` records.
+- One line of plain prose, at most 300 characters. Inline code is allowed; line breaks, headings, list items, quotes, tables, and code blocks are not.
+- The verdict matches the findings: it starts with `No material issues` exactly when the review recorded no findings.
+
+The prompt also asks for one to three sentences, a summary that opens with the most severe finding and what it breaks, and no count or list of findings, since renderers show those from the `finding` records. Code cannot check those reliably, so they are requests, not part of the contract.
 
 A summary that breaks the contract goes back to the agent for correction, up to two times; after that the run is `failed`. A review of an empty diff writes `No material issues: the selected range has no changes.` Files written before the contract existed are read as they are.
 

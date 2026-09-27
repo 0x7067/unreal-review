@@ -48,7 +48,7 @@ func cmdEval(args []string) error {
 	if *model == "" {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")
 	}
-	key := os.Getenv("OPENROUTER_API_KEY")
+	key := secret("OPENROUTER_API_KEY")
 	if key == "" {
 		return fmt.Errorf("set OPENROUTER_API_KEY")
 	}
@@ -56,7 +56,6 @@ func cmdEval(args []string) error {
 	if err != nil {
 		return err
 	}
-	scrubProcessEnv()
 	root := *outDir
 	if root == "" {
 		temp, err := os.MkdirTemp("", "unreal-review-eval-")
