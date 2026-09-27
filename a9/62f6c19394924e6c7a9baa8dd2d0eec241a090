@@ -1,0 +1,74 @@
+internal/review/git.go
+  s_2469fd92ef607c::t_9487397a4b6640 148-149
+  s_2469fd92ef607c::t_caef23aaaa7634 118-121
+LAWS.bend
+  s_2469fd92ef607c::t_b094e85bc54ca5 103-107
+internal/findings/findings_test.go
+  s_2469fd92ef607c::t_be1fe29edb2676 150-153,155-158,160-163,165-176
+  s_2469fd92ef607c::t_6399d0c0590392 92
+  s_2469fd92ef607c::t_e098107a687c2d 114
+  s_2469fd92ef607c::t_04a5326e0f6833 35
+  s_2469fd92ef607c::t_e00206b892444f 154,159,164
+internal/render/github_test.go
+  s_2469fd92ef607c::t_e00206b892444f 149,226
+PROOF.bend
+  s_2469fd92ef607c::t_fc27dec5f86745 91-94
+spec/findings.bend
+  s_2469fd92ef607c::t_99e9c2b3190f79 161-170
+  s_2469fd92ef607c::t_26d199b473be19 171
+internal/review/review_test.go
+  s_2469fd92ef607c::t_dd69fc23833815 46,48,72-74
+internal/findings/findings.go
+  s_2469fd92ef607c::t_766eb4ead318cb 437-439
+  s_2469fd92ef607c::t_b3382a8e87a27a 343,352-358
+  s_2469fd92ef607c::t_e00206b892444f 414,418-419,424-429
+  s_2469fd92ef607c::t_d420a69cf0ef13 430-431
+schema/findings-v1.md
+  s_2469fd92ef607c::t_d590a9fa2de9d2 57
+  s_2469fd92ef607c::t_1ac28ff4e67ce4 23,31
+internal/review/agent.go
+  s_2469fd92ef607c::t_f00d77e6188cbd 20
+internal/review/git_test.go
+  s_2469fd92ef607c::t_84d27cf3bd0e58 529-576,579-622
+  s_2469fd92ef607c::t_e468b571552a6f 578
+  s_2469fd92ef607c::t_dd69fc23833815 718-719
+  s_2469fd92ef607c::t_c3429b317941c9 1000-1027
+  s_2469fd92ef607c::t_13724ffb672f7f 577
+internal/review/review.go
+  s_2469fd92ef607c::t_a14a0018e33c00 134,142
+  s_2469fd92ef607c::t_e00206b892444f 207-208
+internal/review/identify.go
+  s_2469fd92ef607c::t_000d3ade5547d8 1-22,24-46,49-54,56,58,60-64,66-74,80-81,83-90,92-97,99-103,117,119-130
+  s_2469fd92ef607c::t_e00206b892444f 23,47-48,55,57,59,65,75-79,82,91,98,104-116,118
+internal/agent/agent.go
+  s_2469fd92ef607c::t_937af49c9e8d78 75-77
+  s_2469fd92ef607c::t_2e14cfc8dcbf58 89
+internal/agent/registry.go
+  s_2469fd92ef607c::t_c164be1cb29f13 90-92,94,110
+  s_2469fd92ef607c::t_af08029df68679 18,21-22,33
+  s_952e58896f4751::t_3d485ac6cc620f 111-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a962f6c19394924e6c7a9baa8dd2d0eec241a090",
+  "prompts": {},
+  "sessions": {
+    "s_2469fd92ef607c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f18303d9-c8bb-4d3b-9973-64924ba62fd3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_952e58896f4751": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f369dfdf-7da4-4f22-9bdb-56019db1727c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
