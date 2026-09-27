@@ -41,3 +41,10 @@ jobs:
         run: |
           unreal-review run --pr "$PULL_REQUEST" --out findings.jsonl
           unreal-review render github --pr "$PULL_REQUEST" findings.jsonl
+      - name: Upload review session
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unreal-review-session
+          path: ~/.local/state/unreal-agent/sessions/
+          if-no-files-found: warn
