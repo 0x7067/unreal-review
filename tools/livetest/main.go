@@ -6,6 +6,9 @@ import (
 )
 
 func lastN(items []string, n int) []string {
+	if n > len(items) {
+		n = len(items)
+	}
 	return items[len(items)-n:]
 }
 
