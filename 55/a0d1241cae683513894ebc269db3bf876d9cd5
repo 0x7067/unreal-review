@@ -1,0 +1,40 @@
+internal/agent/agent_test.go
+  s_bf52f838c5f51c::t_3cb5381c11bde5 1-137,140-164,167-201,203-204,207-233,236-271
+  s_bf52f838c5f51c::t_62d21f2df1e713 165-166,205-206
+  s_bf52f838c5f51c::t_cc65124a9fd137 138-139
+  s_bf52f838c5f51c::t_20fcc1df111271 202
+  s_bf52f838c5f51c::t_50e179ecf151d3 234-235
+.github/workflows/review.yml
+  s_bf52f838c5f51c::t_b5c78606d680c9 35-36,38-39
+internal/agent/registry_test.go
+  s_bf52f838c5f51c::t_31e9dcd00a9b2e 1-5,7-24,27-188,190-220
+  s_bf52f838c5f51c::t_9747b79f6eb3dc 25-26
+  s_bf52f838c5f51c::t_8509ee33a195b4 6,189
+internal/agent/agent.go
+  s_bf52f838c5f51c::t_cf5c2cd02bb60c 61-62,64,98
+examples/github-actions/review.yml
+  s_bf52f838c5f51c::t_6e7dc1eb22feed 29-30,32-33
+internal/agent/observer_test.go
+  s_bf52f838c5f51c::t_66fc6226ca6d3e 85-87
+  s_bf52f838c5f51c::t_f5a482b0ecaa12 46
+  s_bf52f838c5f51c::t_5865c2d124a7fe 1-7,9-45,47-84,88-90,92-183,187-188
+  s_bf52f838c5f51c::t_7d8874aefeb138 8,91,184-186
+FOLLOWUP.md
+  s_bf52f838c5f51c::t_1435ac228cfa30 3,7,20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55a0d1241cae683513894ebc269db3bf876d9cd5",
+  "prompts": {},
+  "sessions": {
+    "s_bf52f838c5f51c": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0dba2-d940-7260-b968-f3d32f0784f4",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
