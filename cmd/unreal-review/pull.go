@@ -86,24 +86,3 @@ func resolveToken(allowGH bool) string {
 	}
 	return token
 }
-
-func missingComments(ctx context.Context, client *github.Client, owner, repo string, number int, result render.GitHubResult) ([]string, error) {
-	comments, err := client.ListReviewComments(ctx, owner, repo, number)
-	if err != nil {
-		return nil, err
-	}
-	landed := make(map[string]bool, len(comments))
-	for _, comment := range comments {
-		if id, ok := github.ParseFinding(comment.Body); ok {
-			landed[id] = true
-		}
-	}
-	var missing []string
-	for _, comment := range result.Payload.Review.Comments {
-		id, ok := github.ParseFinding(comment.Body)
-		if ok && !landed[id] {
-			missing = append(missing, fmt.Sprintf("%s %d", comment.Path, comment.Line))
-		}
-	}
-	return missing, nil
-}
