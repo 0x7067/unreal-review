@@ -1,0 +1,21 @@
+.github/workflows/review.yml
+  s_bf52f838c5f51c::t_99cda568903784 50-56
+examples/github-actions/review.yml
+  s_bf52f838c5f51c::t_92ff0fcfe748b6 44-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e61eb65f782ade099c211969b3874129f327c29e",
+  "prompts": {},
+  "sessions": {
+    "s_bf52f838c5f51c": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0dba2-d940-7260-b968-f3d32f0784f4",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
