@@ -130,6 +130,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return result, err
 	}
 
+	identify := newIdentifier(ctx, workspace, selected.resolved, prior.Findings)
 	agentResult, agentErr := opts.Agent.Run(ctx, AgentRequest{
 		Workspace:    workspace,
 		ReviewID:     runMeta.ID,
@@ -137,6 +138,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Prompt:       reviewPrompt(selected),
 		SystemPrompt: systemPrompt,
 		Model:        opts.Model,
+		Identify:     identify,
 	})
 	interrupted := agentErr != nil && (errors.Is(agentErr, context.Canceled) || errors.Is(agentErr, context.DeadlineExceeded) || ctx.Err() != nil)
 	runMeta.Cost = runMeta.Cost.Add(agentResult.Cost)
@@ -201,8 +203,8 @@ func reviewPrompt(sel selection) string {
 		"From: %s\nTo: %s\n\n%s%s```diff\n%s\n```\n",
 		sel.source.Base,
 		target,
-		pullSection(sel.pull),
-		reportedSection(reportedIn(sel.pull.Reported, sel.files)),
+		pullSection(sel.resolved.pull),
+		reportedSection(reportedIn(sel.resolved.pull.Reported, sel.files)),
 		sel.diff,
 	)
 }

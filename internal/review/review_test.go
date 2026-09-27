@@ -43,9 +43,9 @@ func TestReviewPromptCarriesTheReportedList(t *testing.T) {
 		diff:   "diff --git a/x b/x\n",
 		source: findings.Source{Base: "abc123", Head: "def456"},
 		files:  []ChangedFile{{Path: "x"}},
-		pull: Pull{Reported: []findings.Finding{
+		resolved: resolved{pull: Pull{Reported: []findings.Finding{
 			{Path: "x", StartLine: 1, EndLine: 1, Severity: findings.SeverityError, Body: "Boom."},
-		}},
+		}}},
 	})
 	if !strings.Contains(prompt, "From: abc123\nTo: def456\n") {
 		t.Fatalf("prompt:\n%s", prompt)
@@ -69,9 +69,9 @@ func TestReviewPromptWithoutReportedFindings(t *testing.T) {
 
 func TestReviewPromptCarriesThePullRequestIntentBeforeTheDiff(t *testing.T) {
 	prompt := reviewPrompt(selection{
-		diff:   "diff --git a/x b/x\n",
-		source: findings.Source{Base: "abc123", Head: "def456"},
-		pull:   Pull{Title: "Cache user lookups", Description: "Adds an LRU in front of the user store."},
+		diff:     "diff --git a/x b/x\n",
+		source:   findings.Source{Base: "abc123", Head: "def456"},
+		resolved: resolved{pull: Pull{Title: "Cache user lookups", Description: "Adds an LRU in front of the user store."}},
 	})
 	title := strings.Index(prompt, "Title: Cache user lookups\n")
 	description := strings.Index(prompt, "Description:\nAdds an LRU in front of the user store.\n")

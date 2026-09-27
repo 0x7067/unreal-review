@@ -116,10 +116,10 @@ type resolved struct {
 }
 
 type selection struct {
-	diff   string
-	source findings.Source
-	files  []ChangedFile
-	pull   Pull
+	diff     string
+	source   findings.Source
+	files    []ChangedFile
+	resolved resolved
 }
 
 func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclude []string, pull PullResolver) (selection, error) {
@@ -146,8 +146,8 @@ func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclud
 			HeadSHA: r.headSHA,
 			DiffSHA: diffFingerprint(diff),
 		},
-		files: files,
-		pull:  r.pull,
+		files:    files,
+		resolved: r,
 	}, nil
 }
 

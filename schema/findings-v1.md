@@ -20,7 +20,7 @@ Present on every `unreal-review run`. `cost` is required.
 
 ## `finding`
 
-Every finding has `severity`. Allowed values: `error`, `warning`, `note`.
+Every finding has `id` and `severity`. Allowed severities: `error`, `warning`, `note`.
 
 ```json
 {"v":1,"type":"finding","id":"a1b2c3d4e5f60708","path":"src/foo.go","start_line":12,"end_line":14,"anchor":"new","severity":"warning","body":"This map write races with the reader."}
@@ -28,6 +28,7 @@ Every finding has `severity`. Allowed values: `error`, `warning`, `note`.
 
 | field | meaning |
 | --- | --- |
+| `id` | Required. Derived from `path`, `anchor`, the trimmed text of lines `start_line`..`end_line`, and how many identical blocks come before them in the file. Rewording the finding or shifting its lines does not change it; editing those lines does. A finding is rejected at record time if another finding already has the same `id`. |
 | `path` | Repository-relative path |
 | `start_line`, `end_line` | Inclusive 1-based lines |
 | `anchor` | `new` (post-change file) or `old` (deleted lines) |
@@ -54,4 +55,4 @@ A summary that breaks the contract goes back to the agent for correction, up to 
 
 ## Renderers
 
-A renderer reads this file and produces a host-specific display. GitHub inline comments map `anchor=new` to `RIGHT` and `anchor=old` to `LEFT`, and drop findings whose lines are not in the pull request diff. The GitHub renderer tags each posted comment body with a marker derived from the finding `id`, lists each finding outside the diff in the review body with the same marker, suppresses a finding as already reported when its `id` or `duplicate_of` names a posted finding, or when it overlaps the lines of a posted finding on the same path and anchor, and posts a review only when at least one comment or drop is new, or when the findings file holds none. After posting it records the head as reviewed with an `unreal-review` check run, unless a finding was cut by the 50-comment cap. A finding outside the diff does not hold the receipt back. An empty findings file posts one review per head whose body is `LGTM` with the reviewed range; rendering the same head again does not post it twice. `id` is derived from path, line range, anchor, and body, so an unchanged issue keeps its identity across runs. Line overlap uses positions valid at the pull request head: an inline comment GitHub still maps onto the head, or a finding listed outside the diff in a review of the same head. An outdated comment matches by `id` or `duplicate_of` only.
+A renderer reads this file and produces a host-specific display. GitHub inline comments map `anchor=new` to `RIGHT` and `anchor=old` to `LEFT`, and drop findings whose lines are not in the pull request diff. The GitHub renderer tags each posted comment body with a marker derived from the finding `id`, lists each finding outside the diff in the review body with the same marker, suppresses a finding as already reported when its `id` or `duplicate_of` names a posted finding, or when it overlaps the lines of a posted finding on the same path and anchor, and posts a review only when at least one comment or drop is new, or when the findings file holds none. After posting it records the head as reviewed with an `unreal-review` check run, unless a finding was cut by the 50-comment cap. A finding outside the diff does not hold the receipt back. An empty findings file posts one review per head whose body is `LGTM` with the reviewed range; rendering the same head again does not post it twice. Line overlap uses positions valid at the pull request head: an inline comment GitHub still maps onto the head, or a finding listed outside the diff in a review of the same head. An outdated comment matches by `id` or `duplicate_of` only.
