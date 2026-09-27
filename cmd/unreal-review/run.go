@@ -53,7 +53,7 @@ func cmdRun(args []string) error {
 	selected.Pull = *pr
 	var resolver review.PullResolver
 	if *pr != "" {
-		resolver, err = newPullResolver(resolveToken(true), *repo)
+		resolver, err = newPullResolver(secret("GH_TOKEN"), *repo)
 		if err != nil {
 			return err
 		}

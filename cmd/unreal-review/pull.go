@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
 
 	"unreal-review/internal/github"
 	"unreal-review/internal/render"
@@ -33,7 +31,6 @@ func (p pullResolver) ResolvePull(ctx context.Context, spec string) (review.Pull
 		return review.Pull{}, err
 	}
 	return review.Pull{
-		BaseRef:      state.BaseRef,
 		BaseSHA:      state.BaseSHA,
 		HeadSHA:      state.HeadSHA,
 		ReviewedHead: reviewed,
@@ -60,7 +57,7 @@ func (p pullResolver) reviewedHead(ctx context.Context, owner, repo string, numb
 
 func newPullResolver(token, repo string) (review.PullResolver, error) {
 	if token == "" {
-		return nil, fmt.Errorf("set GH_TOKEN or GITHUB_TOKEN to review a pull request")
+		return nil, fmt.Errorf("set GH_TOKEN to review a pull request")
 	}
 	owner, name := "", ""
 	if repo != "" {
@@ -75,16 +72,6 @@ func newPullResolver(token, repo string) (review.PullResolver, error) {
 		defaultOwner: owner,
 		defaultRepo:  name,
 	}, nil
-}
-
-func resolveToken(allowGH bool) string {
-	token := firstNonEmpty(secret("GH_TOKEN"), secret("GITHUB_TOKEN"))
-	if token == "" && allowGH {
-		if out, err := exec.CommandContext(context.Background(), "gh", "auth", "token").Output(); err == nil {
-			token = strings.TrimSpace(string(out))
-		}
-	}
-	return token
 }
 
 func missingComments(ctx context.Context, client *github.Client, owner, repo string, number int, result render.GitHubResult) ([]string, error) {

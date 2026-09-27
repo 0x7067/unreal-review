@@ -86,7 +86,7 @@ func renderGitHub(args []string) error {
 	if err != nil {
 		return err
 	}
-	token := resolveToken(!*dryRun)
+	token := secret("GH_TOKEN")
 	client := &github.Client{Token: token, HTTP: github.NewHTTPClient()}
 	opts := render.GitHubOptions{
 		Owner:      owner,
@@ -134,7 +134,7 @@ func renderGitHub(args []string) error {
 		return enc.Encode(result.Payload)
 	}
 	if token == "" {
-		return fmt.Errorf("set GH_TOKEN or GITHUB_TOKEN to post a review")
+		return fmt.Errorf("set GH_TOKEN to post a review")
 	}
 	ctx := context.Background()
 	if result.PostReview() {
@@ -238,51 +238,7 @@ func resolvePR(spec, repo string) (string, string, int, error) {
 		}
 	}
 	if spec == "" {
-		spec = actionsPR()
-	}
-	if spec == "" {
 		return "", "", 0, fmt.Errorf("set --pr")
 	}
 	return github.ParsePR(spec, defaultOwner, defaultRepo)
-}
-
-func actionsPR() string {
-	path := os.Getenv("GITHUB_EVENT_PATH")
-	if path == "" {
-		return ""
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	var event struct {
-		Number int `json:"number"`
-		PR     struct {
-			Number int `json:"number"`
-		} `json:"pull_request"`
-	}
-	if err := json.Unmarshal(raw, &event); err != nil {
-		return ""
-	}
-	n := event.Number
-	if n == 0 {
-		n = event.PR.Number
-	}
-	if n == 0 {
-		return ""
-	}
-	repo := os.Getenv("GITHUB_REPOSITORY")
-	if repo == "" {
-		return fmt.Sprintf("%d", n)
-	}
-	return fmt.Sprintf("%s#%d", repo, n)
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }

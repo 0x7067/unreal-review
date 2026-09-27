@@ -25,7 +25,6 @@ type PullRequest struct {
 	Number  int
 	Owner   string
 	Repo    string
-	BaseRef string
 	BaseSHA string
 	HeadSHA string
 	Title   string
@@ -57,7 +56,6 @@ type IssueComment struct {
 }
 
 type PullState struct {
-	BaseRef         string
 	BaseSHA         string
 	HeadSHA         string
 	Status          Status
@@ -109,7 +107,6 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 		Number int    `json:"number"`
 		Title  string `json:"title"`
 		Base   struct {
-			Ref string `json:"ref"`
 			SHA string `json:"sha"`
 		} `json:"base"`
 		Head struct {
@@ -124,7 +121,6 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 		Number:  raw.Number,
 		Owner:   owner,
 		Repo:    repo,
-		BaseRef: raw.Base.Ref,
 		BaseSHA: raw.Base.SHA,
 		HeadSHA: raw.Head.SHA,
 		Title:   raw.Title,
@@ -136,7 +132,7 @@ func (c *Client) PullState(ctx context.Context, owner, repo string, number int) 
 	if err != nil {
 		return PullState{}, err
 	}
-	state := PullState{BaseRef: pull.BaseRef, BaseSHA: pull.BaseSHA, HeadSHA: pull.HeadSHA}
+	state := PullState{BaseSHA: pull.BaseSHA, HeadSHA: pull.HeadSHA}
 	issue, err := c.ListIssueComments(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err

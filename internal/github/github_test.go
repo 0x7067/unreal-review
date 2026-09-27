@@ -124,7 +124,7 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.BaseRef != "main" || state.BaseSHA != "8ad9a39" || state.HeadSHA != "42227a3" {
+	if state.BaseSHA != "8ad9a39" || state.HeadSHA != "42227a3" {
 		t.Fatalf("pull request: %+v", state)
 	}
 	if state.StatusCommentID != 13 {

@@ -41,7 +41,7 @@ It must report `doctor: ok` and confirm all of:
 - `go` and `git` are on `PATH`
 - evidence and scratch live under `$VERIFY_ROOT`, outside the repo
 
-It also notes (without failing) whether `OPENROUTER_API_KEY`, `UNREAL_HARNESS_LLM_MODEL`, and a GitHub token/`gh auth` are present. Live `run` of a non-empty diff needs the key and a model; the harness is built into the binary, no external runner to check. GitHub posting needs `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`. `--dry-run` calls the API only when one of those env vars is set; it does not consult `gh`.
+It also notes (without failing) whether `OPENROUTER_API_KEY`, `UNREAL_HARNESS_LLM_MODEL`, and `GH_TOKEN` are present. Live `run` of a non-empty diff needs the key and a model; the harness is built into the binary, no external runner to check. GitHub posting and `run --pr` need `GH_TOKEN`; nothing else is read. `--dry-run` calls the API only when `GH_TOKEN` is set.
 
 Refuse to drive any other `unreal-review` on `PATH`.
 
@@ -55,7 +55,7 @@ Run every CLI invocation through `scripts/cli.sh` so command, stdout, stderr, an
 .grok/skills/verify-unreal-review/scripts/cli.sh --name <step> --stdin <file> -- render markdown -
 ```
 
-`--no-github-auth` unsets `GH_TOKEN`/`GITHUB_TOKEN` and puts a failing `gh` shim first on `PATH`, so `gh auth token` cannot succeed. That keeps posting from using a host `gh`.
+`--no-github-auth` unsets `GH_TOKEN`, so posting cannot reach GitHub.
 
 For `run`, create a disposable repo first:
 
@@ -85,7 +85,7 @@ Proof is the user-visible action plus the resulting state:
 - For markdown, the rendered text (cost line, summary, `## \`path\``, severity bullets)
 - For GitHub `--dry-run`, the JSON payload on stdout (`event: COMMENT`, `comments[].side` `RIGHT` for `anchor=new` and `LEFT` for `anchor=old`)
 
-`--dry-run` skips `CreateReview`. With `GH_TOKEN` or `GITHUB_TOKEN` it still `GET`s the pull request and files. Without those, it prints the payload and does not call the API, even if `gh auth token` would succeed. Observe which of those happened; do not trust the flag name.
+`--dry-run` skips `CreateReview`. With `GH_TOKEN` it still `GET`s the pull request and files. Without it, it prints the payload and does not call the API. Observe which of those happened; do not trust the flag name.
 
 Do not treat `make check`, `go test`, or internal setters as a user-path proof.
 

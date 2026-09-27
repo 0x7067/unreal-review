@@ -72,6 +72,6 @@ the review itself. GitHub posting requires a complete review.
 Environment:
   OPENROUTER_API_KEY             required for run
   UNREAL_HARNESS_LLM_MODEL       default --model
-  GH_TOKEN or GITHUB_TOKEN       required to post a GitHub review
+  GH_TOKEN                       required for --pr and to post a GitHub review
 `)
 }

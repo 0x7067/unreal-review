@@ -22,7 +22,6 @@ type Spec struct {
 }
 
 type Pull struct {
-	BaseRef      string
 	BaseSHA      string
 	HeadSHA      string
 	ReviewedHead string
@@ -189,7 +188,7 @@ func resolvePull(ctx context.Context, workspace string, p Pull) (resolved, error
 	if p.HeadSHA == "" {
 		return resolved{}, fmt.Errorf("pull request has no head commit")
 	}
-	from, err := pullFullBase(ctx, workspace, p)
+	from, err := pullBase(ctx, workspace, p)
 	if err != nil {
 		return resolved{}, err
 	}
@@ -204,14 +203,12 @@ func resolvePull(ctx context.Context, workspace string, p Pull) (resolved, error
 	return r, nil
 }
 
-func pullFullBase(ctx context.Context, workspace string, p Pull) (string, error) {
-	if p.BaseRef != "" {
-		if ref := "origin/" + p.BaseRef; resolves(ctx, workspace, ref) {
-			return ref, nil
-		}
-	}
+func pullBase(ctx context.Context, workspace string, p Pull) (string, error) {
 	if p.BaseSHA == "" {
 		return "", fmt.Errorf("pull request has no base commit")
+	}
+	if !resolves(ctx, workspace, p.BaseSHA+"^{commit}") {
+		return "", fmt.Errorf("pull request base %s is not in the local repository; fetch it (actions/checkout needs fetch-depth: 0)", p.BaseSHA)
 	}
 	return p.BaseSHA, nil
 }
