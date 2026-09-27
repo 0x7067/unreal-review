@@ -9,6 +9,46 @@ import (
 	"time"
 )
 
+func TestParseRejectsLegacyFormats(t *testing.T) {
+	array := `[{"v":1,"type":"finding","path":"a.go","start_line":1,"end_line":1,"anchor":"new","severity":"note","body":"ok"}]`
+	_, err := Parse(strings.NewReader(array))
+	if err == nil {
+		t.Fatal("accepted JSON array")
+	}
+	if !strings.Contains(err.Error(), "JSON array") {
+		t.Fatalf("array: got %v", err)
+	}
+
+	bundle := `{"findings":[{"v":1,"type":"finding","path":"a.go","start_line":1,"end_line":1,"anchor":"new","severity":"note","body":"ok"}],"summary":"done"}`
+	_, err = Parse(strings.NewReader(bundle))
+	if err == nil {
+		t.Fatal("accepted nested bundle")
+	}
+	if !strings.Contains(err.Error(), "nested bundle") {
+		t.Fatalf("bundle: got %v", err)
+	}
+}
+
+func TestParseFindingRequiresIntegerLines(t *testing.T) {
+	valid := `{"v":1,"type":"finding","path":"a.go","start_line":12,"end_line":14,"anchor":"new","severity":"warning","body":"ok"}`
+	report, err := Parse(strings.NewReader(valid))
+	if err != nil {
+		t.Fatalf("integer lines: %v", err)
+	}
+	if len(report.Findings) != 1 || report.Findings[0].StartLine != 12 || report.Findings[0].EndLine != 14 {
+		t.Fatalf("findings: %+v", report.Findings)
+	}
+
+	stringLine := `{"v":1,"type":"finding","path":"a.go","start_line":"12","end_line":14,"anchor":"new","severity":"warning","body":"ok"}`
+	_, err = Parse(strings.NewReader(stringLine))
+	if err == nil {
+		t.Fatal("accepted string start_line")
+	}
+	if !strings.Contains(err.Error(), "start_line") || !strings.Contains(err.Error(), "integer") {
+		t.Fatalf("string line: got %v", err)
+	}
+}
+
 func TestParseRunRejectsBackendFields(t *testing.T) {
 	valid := `{"v":1,"type":"run","id":"1","created_at":"2026-09-23T12:00:00Z","status":"complete","source":{"kind":"git","base":"main","head":"HEAD","base_sha":"a","head_sha":"b","diff_sha":"c"},"cost":{"amount_usd":0,"currency":"USD","input_tokens":0,"output_tokens":0,"requests":0}}`
 	report, err := Parse(strings.NewReader(valid))

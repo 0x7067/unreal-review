@@ -148,7 +148,6 @@ type record struct {
 	Severity  string          `json:"severity,omitempty"`
 	Body      string          `json:"body,omitempty"`
 	Summary   string          `json:"summary,omitempty"`
-	Findings  json.RawMessage `json:"findings,omitempty"`
 	Cost      *Cost           `json:"cost,omitempty"`
 	Status    string          `json:"status,omitempty"`
 }
@@ -174,53 +173,15 @@ func Parse(r io.Reader) (Report, error) {
 		return Report{}, nil
 	}
 	if raw[0] == '[' {
-		var records []json.RawMessage
-		if err := json.Unmarshal(raw, &records); err != nil {
-			return Report{}, fmt.Errorf("decode findings array: %w", err)
-		}
-		return reportFromRaw(records)
+		return Report{}, fmt.Errorf("findings must be JSONL, not a JSON array")
 	}
-	if bundle, ok, err := parseBundle(raw); err != nil {
-		return Report{}, err
-	} else if ok {
-		return bundle, nil
+	var nested struct {
+		Findings json.RawMessage `json:"findings"`
+	}
+	if err := json.Unmarshal(raw, &nested); err == nil && len(nested.Findings) > 0 {
+		return Report{}, fmt.Errorf("findings must be JSONL, not a nested bundle")
 	}
 	return parseJSONL(raw)
-}
-
-func parseBundle(raw []byte) (Report, bool, error) {
-	var rec record
-	if err := json.Unmarshal(raw, &rec); err != nil {
-		return Report{}, false, nil
-	}
-	if len(rec.Findings) == 0 && rec.Type != "" {
-		return Report{}, false, nil
-	}
-	if rec.Type != "" && rec.Type != TypeFinding && rec.Type != TypeRun && rec.Type != TypeSummary {
-		return Report{}, false, nil
-	}
-	if len(rec.Findings) == 0 && rec.Summary == "" && rec.Body == "" {
-		return Report{}, false, nil
-	}
-	if rec.Type != "" && len(rec.Findings) == 0 {
-		return Report{}, false, nil
-	}
-	var nested []json.RawMessage
-	if len(rec.Findings) > 0 {
-		if err := json.Unmarshal(rec.Findings, &nested); err != nil {
-			return Report{}, false, fmt.Errorf("decode nested findings: %w", err)
-		}
-	}
-	report, err := reportFromRaw(nested)
-	if err != nil {
-		return Report{}, true, err
-	}
-	if rec.Summary != "" {
-		report.Summary = rec.Summary
-	} else if rec.Body != "" && rec.Type == TypeSummary {
-		report.Summary = rec.Body
-	}
-	return report, true, nil
 }
 
 func parseJSONL(raw []byte) (Report, error) {
@@ -393,15 +354,7 @@ func parseLine(raw json.RawMessage) (int, error) {
 		return 0, nil
 	}
 	var n int
-	if err := json.Unmarshal(raw, &n); err == nil {
-		return n, nil
-	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return 0, fmt.Errorf("must be an integer")
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil {
+	if err := json.Unmarshal(raw, &n); err != nil {
 		return 0, fmt.Errorf("must be an integer")
 	}
 	return n, nil
