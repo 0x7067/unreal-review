@@ -621,8 +621,8 @@ func TestPullCarriesReportedFindings(t *testing.T) {
 		Anchor: findings.AnchorNew, Severity: findings.SeverityWarning, Body: "Already said this.",
 	}}
 	got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, ReviewedHead: h.since, Reported: reported})
-	if len(got.reported) != 1 || got.reported[0].ID != "a1b2c3d4e5f60708" {
-		t.Fatalf("reported: %+v", got.reported)
+	if len(got.pull.Reported) != 1 || got.pull.Reported[0].ID != "a1b2c3d4e5f60708" {
+		t.Fatalf("reported: %+v", got.pull.Reported)
 	}
 }
 
