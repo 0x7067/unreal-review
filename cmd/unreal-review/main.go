@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-
-	"unreal-review/internal/review"
 )
 
 func main() {
@@ -32,16 +30,13 @@ func run(args []string) error {
 		printUsage(os.Stdout)
 		return nil
 	default:
-		if tool, ok := review.FindTool(review.DefaultTools(), args[0]); ok {
-			return runAgentTool(tool, args[1:])
-		}
 		printUsage(os.Stderr)
 		return fmt.Errorf("unknown command %q", args[0])
 	}
 }
 
 func printUsage(w *os.File) {
-	_, _ = fmt.Fprint(w, `Review a git diff with unreal-agent-runner and write findings.jsonl.
+	_, _ = fmt.Fprint(w, `Review a git diff with the unreal-agent harness and write findings.jsonl.
 Render that file for GitHub inline comments, markdown, or another host.
 
 Usage:
@@ -73,7 +68,6 @@ the review itself. GitHub posting requires a complete review.
 Environment:
   OPENROUTER_API_KEY             required for run
   UNREAL_HARNESS_LLM_MODEL       default --model
-  UNREAL_HARNESS_LLM_PROVIDER    default openrouter
   GH_TOKEN or GITHUB_TOKEN       required to post a GitHub review
 `)
 }

@@ -29,12 +29,10 @@ func cmdRun(args []string) error {
 	fs.Var(&exclude, "exclude", "git glob to omit from the diff; repeatable")
 	outPath := fs.String("out", "findings.jsonl", "findings JSONL path, or - for stdout")
 	fresh := fs.Bool("fresh", false, "start a new review even if --out already exists")
-	runner := fs.String("runner", "unreal-agent-runner", "unreal-agent-runner binary")
 	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
-	provider := fs.String("provider", "", "LLM provider (default openrouter)")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout")
-	agentLog := fs.String("agent-log", "", "optional path for unreal-agent-runner JSONL")
+	agentLog := fs.String("agent-log", "", "optional path for the harness session JSONL log")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -55,9 +53,6 @@ func cmdRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := agent.LookPath(*runner); err != nil {
-		return err
-	}
 	selected := spec.spec()
 	selected.Pull = *pr
 	var resolver review.PullResolver
@@ -67,6 +62,7 @@ func cmdRun(args []string) error {
 			return err
 		}
 	}
+	scrubProcessEnv()
 	var logWriter io.Writer
 	if *agentLog != "" {
 		file, err := os.Create(*agentLog)
@@ -87,13 +83,10 @@ func cmdRun(args []string) error {
 		Fresh:     *fresh,
 		Model:     *model,
 		Pull:      resolver,
-		Agent: agent.Runner{
-			Bin:           *runner,
-			ThinkingLevel: level,
-			Provider:      *provider,
+		Agent: agent.Harness{
 			APIKey:        key,
+			ThinkingLevel: level,
 			Log:           logWriter,
-			Stderr:        os.Stderr,
 			Timeout:       *timeout,
 		},
 	})
@@ -114,6 +107,12 @@ func cmdRun(args []string) error {
 		}
 	}
 	return err
+}
+
+func scrubProcessEnv() {
+	for _, name := range []string{"OPENROUTER_API_KEY", "UNREAL_HARNESS_LLM_API_KEY", "GH_TOKEN", "GITHUB_TOKEN"} {
+		_ = os.Unsetenv(name)
+	}
 }
 
 type stringList []string

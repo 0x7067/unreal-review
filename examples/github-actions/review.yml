@@ -27,7 +27,6 @@ jobs:
           go-version: '1.27'
       - name: Install tools
         run: |
-          go install github.com/unreallabsai/unreal-agent/cmd/unreal-agent-runner@v0.2.0
           go install ./cmd/unreal-review
       - name: Review
         env:

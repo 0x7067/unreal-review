@@ -340,7 +340,7 @@ func parseFinding(rec record) (Finding, error) {
 	if err != nil {
 		return Finding{}, fmt.Errorf("end_line: %w", err)
 	}
-	return normalize(Finding{
+	return Normalize(Finding{
 		ID:        rec.ID,
 		Path:      rec.Path,
 		StartLine: start,
@@ -351,7 +351,7 @@ func parseFinding(rec record) (Finding, error) {
 	})
 }
 
-func normalize(finding Finding) (Finding, error) {
+func Normalize(finding Finding) (Finding, error) {
 	finding.Path = strings.TrimSpace(finding.Path)
 	if finding.Path == "" {
 		return Finding{}, fmt.Errorf("path must be set")
@@ -419,7 +419,7 @@ func Fingerprint(finding Finding) string {
 }
 
 func AppendFinding(path string, finding Finding) (Finding, error) {
-	finding, err := normalize(finding)
+	finding, err := Normalize(finding)
 	if err != nil {
 		return Finding{}, err
 	}

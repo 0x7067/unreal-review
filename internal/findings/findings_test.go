@@ -129,3 +129,20 @@ func TestAppendSummaryRequiresBody(t *testing.T) {
 		t.Fatal("accepted empty summary")
 	}
 }
+
+func TestNormalizeRejectsInvalidFindings(t *testing.T) {
+	cases := []struct {
+		name    string
+		finding Finding
+	}{
+		{"bad severity", Finding{Path: "a.go", StartLine: 1, Severity: "critical", Body: "body"}},
+		{"blank path", Finding{Path: " ", StartLine: 1, Severity: SeverityNote, Body: "body"}},
+		{"end before start", Finding{Path: "a.go", StartLine: 3, EndLine: 1, Severity: SeverityNote, Body: "body"}},
+		{"blank body", Finding{Path: "a.go", StartLine: 1, Severity: SeverityNote, Body: "   "}},
+	}
+	for _, c := range cases {
+		if _, err := Normalize(c.finding); err == nil {
+			t.Fatalf("%s: accepted %+v", c.name, c.finding)
+		}
+	}
+}

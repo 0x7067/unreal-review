@@ -1,11 +1,10 @@
 # unreal-review
 
-A local CLI that reviews a git diff with [unreal-agent-runner](https://github.com/unreallabsai/unreal-agent) and OpenRouter, then writes a portable findings file. GitHub inline comments are one renderer of that file.
+A local CLI that reviews a git diff with the embedded [unreal-agent](https://github.com/unreallabsai/unreal-agent) harness and OpenRouter, then writes a portable findings file. GitHub inline comments are one renderer of that file.
 
 ## Install
 
 ```sh
-go install github.com/unreallabsai/unreal-agent/cmd/unreal-agent-runner@v0.2.0
 go install ./cmd/unreal-review
 ```
 
@@ -52,7 +51,7 @@ Files in one directory stay together. Files that share a stem in the same direct
 unreal-review render markdown findings.jsonl
 ```
 
-The agent records findings through built-in tools rather than writing the findings file by hand: `unreal-review record` validates and appends one finding or the summary. The review prompt names the binary path and the findings file; the tool definitions live in `internal/review`.
+The agent records findings through two tools built into the embedded harness rather than writing the findings file by hand: `record_finding` validates and appends one finding, `record_summary` appends the summary. The tool names live in `internal/review`; `internal/agent` wires them into the harness and appends each validated record to the findings file as the agent calls them.
 
 ## Post inline comments on a GitHub pull request
 

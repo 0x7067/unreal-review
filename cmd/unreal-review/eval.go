@@ -36,9 +36,7 @@ func cmdEval(args []string) error {
 	fs.SetOutput(os.Stderr)
 	outDir := fs.String("out", "", "directory for eval artifacts (default: a fresh temp dir)")
 	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
-	runner := fs.String("runner", "unreal-agent-runner", "unreal-agent-runner binary")
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
-	provider := fs.String("provider", "", "LLM provider (default openrouter)")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
 	asJSON := fs.Bool("json", false, "print machine-readable JSON instead of a table")
 	if err := fs.Parse(args); err != nil {
@@ -61,9 +59,7 @@ func cmdEval(args []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := agent.LookPath(*runner); err != nil {
-		return err
-	}
+	scrubProcessEnv()
 	root := *outDir
 	if root == "" {
 		temp, err := os.MkdirTemp("", "unreal-review-eval-")
@@ -79,12 +75,9 @@ func cmdEval(args []string) error {
 	for _, c := range eval.Corpus {
 		score, err := eval.Run(context.Background(), c, root, eval.Options{
 			Model: *model,
-			Agent: agent.Runner{
-				Bin:           *runner,
-				ThinkingLevel: level,
-				Provider:      *provider,
+			Agent: agent.Harness{
 				APIKey:        key,
-				Stderr:        os.Stderr,
+				ThinkingLevel: level,
 				Timeout:       *timeout,
 			},
 		})

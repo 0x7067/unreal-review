@@ -33,7 +33,6 @@ jobs:
           cache: false
       - name: Install unreal-review
         run: |
-          go install github.com/unreallabsai/unreal-agent/cmd/unreal-agent-runner@v0.2.0
           go install ./cmd/unreal-review
       - name: Review pull request
         env:

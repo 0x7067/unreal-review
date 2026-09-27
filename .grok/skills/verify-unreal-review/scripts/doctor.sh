@@ -52,12 +52,6 @@ else
 	fail=1
 fi
 
-if command -v unreal-agent-runner >/dev/null; then
-	note "ok  unreal-agent-runner=$(command -v unreal-agent-runner)"
-else
-	note "info unreal-agent-runner missing (required for a live review of a non-empty diff)"
-fi
-
 if [ -n "${OPENROUTER_API_KEY:-}${UNREAL_HARNESS_LLM_API_KEY:-}" ]; then
 	note "ok  OPENROUTER_API_KEY is set"
 else

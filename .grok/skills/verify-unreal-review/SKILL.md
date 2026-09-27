@@ -41,7 +41,7 @@ It must report `doctor: ok` and confirm all of:
 - `go` and `git` are on `PATH`
 - evidence and scratch live under `$VERIFY_ROOT`, outside the repo
 
-It also notes (without failing) whether `OPENROUTER_API_KEY`, `UNREAL_HARNESS_LLM_MODEL`, `unreal-agent-runner`, and a GitHub token/`gh auth` are present. Live `run` of a non-empty diff needs the key, a model, and the runner. GitHub posting needs `--token`, `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`. `--dry-run` calls the API only when `--token` or those env vars are set; it does not consult `gh`.
+It also notes (without failing) whether `OPENROUTER_API_KEY`, `UNREAL_HARNESS_LLM_MODEL`, and a GitHub token/`gh auth` are present. Live `run` of a non-empty diff needs the key and a model; the harness is built into the binary, no external runner to check. GitHub posting needs `--token`, `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth token`. `--dry-run` calls the API only when `--token` or those env vars are set; it does not consult `gh`.
 
 Refuse to drive any other `unreal-review` on `PATH`.
 
@@ -65,7 +65,7 @@ For `run`, create a disposable repo first:
 
 That prints `VERIFY_FIXTURE`, `BASE_SHA`, and `HEAD_SHA` and writes `$VERIFY_SCRATCH/fixture.env` (source it). Pass `--workspace "$VERIFY_FIXTURE"`. Do not use the product checkout as `--workspace` unless the recipe is reviewing this repo's own range.
 
-`run` requires `--model` or `UNREAL_HARNESS_LLM_MODEL`, and `OPENROUTER_API_KEY`. Dummy values are enough for paths that never start the agent (empty diff, complete-file refuse, SHA mismatch, mixed range flags, bad revision). A non-empty diff execs `--runner` (default `unreal-agent-runner`). An absolute missing runner fails at `fork/exec`; a relative missing runner fails at `LookPath` with `install github.com/unreallabsai/unreal-agent/cmd/unreal-agent-runner`.
+`run` requires `--model` or `UNREAL_HARNESS_LLM_MODEL`, and `OPENROUTER_API_KEY`. Dummy values are enough for paths that never start the agent (empty diff, complete-file refuse, SHA mismatch, mixed range flags, bad revision). A non-empty diff runs the embedded harness and calls the model directly; a dummy key reaches the model and fails on a `401`, so it never bills.
 
 Live review of a non-empty diff spends OpenRouter credit. Drive it only when the feature file's live sub-feature is in scope and `UNREAL_HARNESS_LLM_MODEL` is set. Otherwise record the unmet precondition and continue.
 

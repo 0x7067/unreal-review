@@ -15,7 +15,7 @@ unreal-review is a pipeline of replaceable pieces around one product: [schema/fi
 | Review | Checkpoint, SHA binding, prompt, status | `internal/review` |
 | Renderer | Display a report | functions on `findings.Report` (markdown, GitHub) |
 
-Wire a replacement at `cmd/unreal-review`. `AgentRequest.ReviewID` is the review id; any continuation mapping stays inside the adapter (`internal/agent` for unreal-agent-runner).
+Wire a replacement at `cmd/unreal-review`. `AgentRequest.ReviewID` is the review id; any continuation mapping stays inside the adapter (`internal/agent` for the unreal-agent harness).
 
 A new backend, source, or renderer should plug in without changing the findings schema.
 

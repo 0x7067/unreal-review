@@ -1,155 +1,209 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+	"uuid"
+
+	"github.com/unreallabsai/unreal-agent/harness/contextbuilder"
+	"github.com/unreallabsai/unreal-agent/harness/coordinator"
+	"github.com/unreallabsai/unreal-agent/harness/inbox"
+	"github.com/unreallabsai/unreal-agent/harness/llm"
+	"github.com/unreallabsai/unreal-agent/harness/llm/clients/openrouter"
+	"github.com/unreallabsai/unreal-agent/harness/operation"
+	"github.com/unreallabsai/unreal-agent/harness/session"
+	"github.com/unreallabsai/unreal-agent/harness/sessionstore"
+	"github.com/unreallabsai/unreal-agent/harness/sessionstore/localfile"
+	"github.com/unreallabsai/unreal-agent/harness/tool"
+	"github.com/unreallabsai/unreal-agent/harness/tool/bash"
+	"github.com/unreallabsai/unreal-agent/harness/tool/viewimage"
 
 	"unreal-review/internal/review"
 )
 
-const defaultRunner = "unreal-agent-runner"
+const (
+	openRouterBaseURL     = "https://openrouter.ai/api/v1"
+	toolHeartbeatInterval = 10 * time.Minute
+	sessionDirectoryName  = "unreal-agent/sessions"
+)
 
-type Runner struct {
-	Bin           string
-	ThinkingLevel string
-	Provider      string
+type Harness struct {
 	APIKey        string
+	ThinkingLevel string
 	Log           io.Writer
-	Stderr        io.Writer
 	Timeout       time.Duration
 }
 
-var _ review.Agent = Runner{}
+var _ review.Agent = Harness{}
 
-func (r Runner) Run(ctx context.Context, req review.AgentRequest) (review.AgentResult, error) {
-	runner := r.Bin
-	if runner == "" {
-		runner = defaultRunner
-	}
-	if r.Timeout > 0 {
+func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.AgentResult, error) {
+	if h.Timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, r.Timeout)
+		ctx, cancel = context.WithTimeout(ctx, h.Timeout)
 		defer cancel()
 	}
-	payload := map[string]any{
-		"system_prompt": req.SystemPrompt,
-		"prompt":        req.Prompt,
-	}
-	if req.ReviewID != "" {
-		payload["session_id"] = req.ReviewID
-		payload["messages"] = []any{map[string]any{
-			"role":       "user",
-			"content":    req.Prompt,
-			"message_id": req.ReviewID,
-		}}
-		delete(payload, "prompt")
-	}
-	if req.Model != "" {
-		payload["model"] = req.Model
-	}
-	if r.ThinkingLevel != "" {
-		payload["thinking_level"] = r.ThinkingLevel
-	}
-	encoded, err := json.Marshal(payload)
+
+	client, err := openrouter.NewClient(openrouter.Config{APIKey: h.APIKey, BaseURL: openRouterBaseURL})
 	if err != nil {
-		return review.AgentResult{}, fmt.Errorf("encode agent request: %w", err)
+		return review.AgentResult{}, fmt.Errorf("create openrouter client: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, runner, "-workspace", req.Workspace)
-	cmd.Stdin = bytes.NewReader(encoded)
-	var logBuf bytes.Buffer
-	logWriter := io.Writer(&logBuf)
-	if r.Log != nil {
-		logWriter = io.MultiWriter(&logBuf, r.Log)
-	}
-	cmd.Stdout = logWriter
-	if r.Stderr != nil {
-		cmd.Stderr = r.Stderr
-	} else {
-		cmd.Stderr = os.Stderr
-	}
-	cmd.Env = r.environ(req.Model)
-	runErr := cmd.Run()
-	if runErr != nil {
-		runErr = fmt.Errorf("run %s: %w", runner, runErr)
-	}
-	cost, generationIDs, err := ParseLogCost(bytes.NewReader(logBuf.Bytes()))
+	defer func() { _ = client.Close() }()
+
+	storeDirectory, err := sessionDirectory()
 	if err != nil {
-		return review.AgentResult{}, errors.Join(runErr, err)
+		return review.AgentResult{}, fmt.Errorf("resolve session directory: %w", err)
 	}
-	interrupted := runErr != nil && (errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) || ctx.Err() != nil)
-	if !cost.Recorded() && r.APIKey != "" && len(generationIDs) > 0 {
-		fetched, fetchErr := FetchOpenRouterCost(ctx, r.APIKey, generationIDs)
-		if fetchErr != nil && !interrupted && ctx.Err() == nil {
-			return review.AgentResult{Cost: cost}, errors.Join(runErr, fmt.Errorf("track review cost: %w", fetchErr))
-		}
-		if fetchErr == nil {
-			cost = fetched
+	store, err := localfile.New(storeDirectory)
+	if err != nil {
+		return review.AgentResult{}, fmt.Errorf("open session store: %w", err)
+	}
+
+	sessionID := session.ID(strings.TrimSpace(req.ReviewID))
+	if sessionID == "" {
+		return review.AgentResult{}, fmt.Errorf("review ID must be set")
+	}
+	restored, err := openSession(ctx, store, sessionID)
+	if err != nil {
+		return review.AgentResult{}, err
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	operationDirectory := filepath.Join(storeDirectory, "operations", string(sessionID))
+	if err := os.MkdirAll(operationDirectory, 0o700); err != nil {
+		return review.AgentResult{}, fmt.Errorf("create operation directory: %w", err)
+	}
+	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+
+	inner := tool.NewRegistry(tool.StaticTranslators{
+		Bash:      bash.New(bash.Config{Shell: shell, Directory: req.Workspace, BaseDirectory: operationDirectory}),
+		ViewImage: viewimage.New(viewimage.Config{Directory: req.Workspace}),
+	}, tool.BashName, tool.ViewImageName)
+
+	observer := newSessionObserver(sessionID, req.FindingsPath, h.Log, cancel)
+	registry := newRecordRegistry(inner, observer)
+
+	operations := operation.NewLocalOperationManager(runCtx)
+	inputs, err := inbox.New(runCtx, restored.ExternalInputIDs)
+	if err != nil {
+		return review.AgentResult{}, fmt.Errorf("open inbox: %w", err)
+	}
+
+	reasoningEffort := llm.ReasoningEffort(h.ThinkingLevel)
+	settingsPayload, err := json.Marshal(inbox.ControlMessage{
+		Mode:       inbox.UpdateSettings,
+		Parameters: inbox.Settings{ReasoningEffort: reasoningEffort},
+	})
+	if err != nil {
+		return review.AgentResult{}, fmt.Errorf("encode settings: %w", err)
+	}
+	if err := inputs.Submit(runCtx, inbox.Input{
+		ID: inbox.ID(uuid.New().String()), Kind: inbox.InputControl, Payload: settingsPayload,
+	}); err != nil {
+		return review.AgentResult{}, fmt.Errorf("submit settings: %w", err)
+	}
+
+	promptPayload, err := json.Marshal(req.Prompt)
+	if err != nil {
+		return review.AgentResult{}, fmt.Errorf("encode prompt: %w", err)
+	}
+	if err := inputs.Submit(runCtx, inbox.Input{
+		ID: inbox.ID(sessionID), Kind: inbox.InputExternal, Payload: promptPayload,
+	}); err != nil {
+		return review.AgentResult{}, fmt.Errorf("submit prompt: %w", err)
+	}
+
+	stopPayload, err := json.Marshal(inbox.ControlMessage{Mode: inbox.StopWhenIdle})
+	if err != nil {
+		return review.AgentResult{}, fmt.Errorf("encode stop request: %w", err)
+	}
+	if err := inputs.Submit(runCtx, inbox.Input{
+		ID: inbox.ID(uuid.New().String()), Kind: inbox.InputControl, Payload: stopPayload,
+	}); err != nil {
+		return review.AgentResult{}, fmt.Errorf("submit stop request: %w", err)
+	}
+
+	builder := contextbuilder.NewBuilder()
+	builder.SetModel(llm.Model{ID: req.Model, ReasoningEffort: reasoningEffort})
+	builder.SetSystemPrompt(req.SystemPrompt)
+	for _, definition := range registry.StaticDefinitions() {
+		builder.AddTool(definition.Tool)
+	}
+
+	observerID := store.AddObserver(observer.Observe)
+	defer store.RemoveObserver(observerID)
+
+	current := coordinator.New(coordinator.Dependencies{
+		ToolHeartbeatInterval: toolHeartbeatInterval,
+		SessionID:             sessionID,
+		Inbox:                 inputs,
+		Restored:              restored,
+		Sessions:              store,
+		ContextBuilder:        builder,
+		LLM:                   client,
+		Tools:                 registry,
+		Operations:            operations,
+	})
+	coordinatorErr := current.Run(runCtx)
+	if observerErr := observer.Err(); observerErr != nil {
+		coordinatorErr = observerErr
+	} else if coordinatorErr != nil {
+		coordinatorErr = fmt.Errorf("run coordinator: %w", coordinatorErr)
+	}
+
+	cost := observer.Cost()
+	if cost.AmountUSD == 0 {
+		if responseIDs := observer.ResponseIDs(); len(responseIDs) > 0 {
+			interrupted := coordinatorErr != nil &&
+				(errors.Is(coordinatorErr, context.Canceled) || errors.Is(coordinatorErr, context.DeadlineExceeded) || ctx.Err() != nil)
+			fetched, fetchErr := FetchOpenRouterCost(ctx, h.APIKey, responseIDs)
+			if fetchErr != nil && !interrupted && ctx.Err() == nil {
+				return review.AgentResult{Cost: cost}, errors.Join(coordinatorErr, fmt.Errorf("track review cost: %w", fetchErr))
+			}
+			if fetchErr == nil {
+				cost.AmountUSD = fetched.AmountUSD
+			}
 		}
 	}
-	return review.AgentResult{Cost: cost}, runErr
+	return review.AgentResult{Cost: cost}, coordinatorErr
 }
 
-func (r Runner) environ(model string) []string {
-	keep := map[string]string{}
-	for _, name := range []string{
-		"PATH", "HOME", "USER", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM",
-		"SSL_CERT_FILE", "SSL_CERT_DIR", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-		"http_proxy", "https_proxy", "no_proxy",
-		"UNREAL_HARNESS_LLM_BASE_URL", "UNREAL_HARNESS_LLM_MAX_ATTEMPTS",
-		"XDG_STATE_HOME",
-	} {
-		if value, ok := os.LookupEnv(name); ok {
-			keep[name] = value
-		}
+func openSession(ctx context.Context, store *localfile.Store, id session.ID) (sessionstore.ResumeState, error) {
+	restored, err := store.Resume(ctx, id)
+	if err == nil {
+		return restored, nil
 	}
-	provider := r.Provider
-	if provider == "" {
-		provider = os.Getenv("UNREAL_HARNESS_LLM_PROVIDER")
+	if !errors.Is(err, fs.ErrNotExist) {
+		return sessionstore.ResumeState{}, fmt.Errorf("open session %q: %w", id, err)
 	}
-	if provider == "" {
-		provider = "openrouter"
+	if _, err := store.Create(ctx, id); err != nil {
+		return sessionstore.ResumeState{}, fmt.Errorf("create session %q: %w", id, err)
 	}
-	keep["UNREAL_HARNESS_LLM_PROVIDER"] = provider
-	if model != "" {
-		keep["UNREAL_HARNESS_LLM_MODEL"] = model
-	} else if value := os.Getenv("UNREAL_HARNESS_LLM_MODEL"); value != "" {
-		keep["UNREAL_HARNESS_LLM_MODEL"] = value
-	}
-	if r.APIKey != "" {
-		keep["OPENROUTER_API_KEY"] = r.APIKey
-	} else if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
-		keep["OPENROUTER_API_KEY"] = key
-	} else if key := os.Getenv("UNREAL_HARNESS_LLM_API_KEY"); key != "" {
-		keep["OPENROUTER_API_KEY"] = key
-	}
-	env := make([]string, 0, len(keep))
-	for name, value := range keep {
-		env = append(env, name+"="+value)
-	}
-	return env
+	return sessionstore.ResumeState{}, nil
 }
 
-func LookPath(runner string) (string, error) {
-	if runner == "" {
-		runner = defaultRunner
+func sessionDirectory() (string, error) {
+	stateHome := os.Getenv("XDG_STATE_HOME")
+	if !filepath.IsAbs(stateHome) {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("find home directory: %w", err)
+		}
+		stateHome = filepath.Join(home, ".local", "state")
 	}
-	if filepath.IsAbs(runner) {
-		return runner, nil
-	}
-	path, err := exec.LookPath(runner)
-	if err != nil {
-		return "", fmt.Errorf("find %s: %w; install github.com/unreallabsai/unreal-agent/cmd/unreal-agent-runner", runner, err)
-	}
-	return path, nil
+	return filepath.Join(stateHome, sessionDirectoryName), nil
 }
 
 func SanitizeLevel(level string) (string, error) {
