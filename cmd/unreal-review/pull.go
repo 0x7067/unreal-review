@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -61,7 +60,7 @@ func (p pullResolver) reviewedHead(ctx context.Context, owner, repo string, numb
 
 func newPullResolver(token, repo string) (review.PullResolver, error) {
 	if token == "" {
-		return nil, fmt.Errorf("set GH_TOKEN, GITHUB_TOKEN, or --token to review a pull request")
+		return nil, fmt.Errorf("set GH_TOKEN or GITHUB_TOKEN to review a pull request")
 	}
 	owner, name := "", ""
 	if repo != "" {
@@ -78,8 +77,8 @@ func newPullResolver(token, repo string) (review.PullResolver, error) {
 	}, nil
 }
 
-func resolveToken(flag string, allowGH bool) string {
-	token := firstNonEmpty(flag, os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN"))
+func resolveToken(allowGH bool) string {
+	token := firstNonEmpty(secret("GH_TOKEN"), secret("GITHUB_TOKEN"))
 	if token == "" && allowGH {
 		if out, err := exec.CommandContext(context.Background(), "gh", "auth", "token").Output(); err == nil {
 			token = strings.TrimSpace(string(out))

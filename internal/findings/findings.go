@@ -340,7 +340,7 @@ func parseFinding(rec record) (Finding, error) {
 	if err != nil {
 		return Finding{}, fmt.Errorf("end_line: %w", err)
 	}
-	return normalize(Finding{
+	return Normalize(Finding{
 		ID:        rec.ID,
 		Path:      rec.Path,
 		StartLine: start,
@@ -351,7 +351,7 @@ func parseFinding(rec record) (Finding, error) {
 	})
 }
 
-func normalize(finding Finding) (Finding, error) {
+func Normalize(finding Finding) (Finding, error) {
 	finding.Path = strings.TrimSpace(finding.Path)
 	if finding.Path == "" {
 		return Finding{}, fmt.Errorf("path must be set")
@@ -419,7 +419,7 @@ func Fingerprint(finding Finding) string {
 }
 
 func AppendFinding(path string, finding Finding) (Finding, error) {
-	finding, err := normalize(finding)
+	finding, err := Normalize(finding)
 	if err != nil {
 		return Finding{}, err
 	}
@@ -446,6 +446,43 @@ func AppendFinding(path string, finding Finding) (Finding, error) {
 		return Finding{}, err
 	}
 	return finding, nil
+}
+
+const (
+	CleanVerdict     = "No material issues"
+	MaxSummaryLength = 300
+)
+
+func CheckSummary(body string, findingCount int) (string, error) {
+	body = strings.TrimSpace(body)
+	switch {
+	case body == "":
+		return "", fmt.Errorf("summary must be set")
+	case strings.ContainsAny(body, "\r\n"):
+		return "", fmt.Errorf("summary must be one line")
+	case len([]rune(body)) > MaxSummaryLength:
+		return "", fmt.Errorf("summary must be at most %d characters", MaxSummaryLength)
+	case strings.Contains(body, "```") || blockMarkdown(body):
+		return "", fmt.Errorf("summary must be plain prose, without headings, lists, quotes, or code blocks")
+	}
+	clean := strings.HasPrefix(body, CleanVerdict)
+	if findingCount == 0 && !clean {
+		return "", fmt.Errorf("summary of a review with no findings must start with %q", CleanVerdict)
+	}
+	if findingCount > 0 && clean {
+		return "", fmt.Errorf("summary of a review with %d finding(s) must name the most severe one, not start with %q", findingCount, CleanVerdict)
+	}
+	return body, nil
+}
+
+func blockMarkdown(body string) bool {
+	for _, prefix := range []string{"#", "- ", "* ", "+ ", "> ", "|"} {
+		if strings.HasPrefix(body, prefix) {
+			return true
+		}
+	}
+	digits := strings.TrimLeft(body, "0123456789")
+	return len(digits) < len(body) && (strings.HasPrefix(digits, ". ") || strings.HasPrefix(digits, ") "))
 }
 
 func AppendSummary(path, body string) error {
@@ -508,9 +545,6 @@ func Write(w io.Writer, report Report) error {
 		}
 	}
 	for _, finding := range report.Findings {
-		if finding.ID == "" {
-			finding.ID = Fingerprint(finding)
-		}
 		start, err := json.Marshal(finding.StartLine)
 		if err != nil {
 			return fmt.Errorf("encode start_line: %w", err)

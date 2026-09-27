@@ -24,17 +24,14 @@ func cmdRun(args []string) error {
 	spec := addSpecFlags(fs)
 	pr := fs.String("pr", "", "pull request to review: owner/repo#n, a URL, or a number")
 	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repo when --pr is a number")
-	tokenFlag := fs.String("token", "", "GitHub token for --pr (default GH_TOKEN or GITHUB_TOKEN)")
 	var exclude stringList
 	fs.Var(&exclude, "exclude", "git glob to omit from the diff; repeatable")
 	outPath := fs.String("out", "findings.jsonl", "findings JSONL path, or - for stdout")
 	fresh := fs.Bool("fresh", false, "start a new review even if --out already exists")
-	runner := fs.String("runner", "unreal-agent-runner", "unreal-agent-runner binary")
 	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
-	provider := fs.String("provider", "", "LLM provider (default openrouter)")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout")
-	agentLog := fs.String("agent-log", "", "optional path for unreal-agent-runner JSONL")
+	agentLog := fs.String("agent-log", "", "optional path for the harness session JSONL log")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -44,10 +41,7 @@ func cmdRun(args []string) error {
 	if *model == "" {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")
 	}
-	key := os.Getenv("OPENROUTER_API_KEY")
-	if key == "" {
-		key = os.Getenv("UNREAL_HARNESS_LLM_API_KEY")
-	}
+	key := secret("OPENROUTER_API_KEY")
 	if key == "" {
 		return fmt.Errorf("set OPENROUTER_API_KEY")
 	}
@@ -55,14 +49,11 @@ func cmdRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := agent.LookPath(*runner); err != nil {
-		return err
-	}
 	selected := spec.spec()
 	selected.Pull = *pr
 	var resolver review.PullResolver
 	if *pr != "" {
-		resolver, err = newPullResolver(resolveToken(*tokenFlag, true), *repo)
+		resolver, err = newPullResolver(resolveToken(true), *repo)
 		if err != nil {
 			return err
 		}
@@ -87,13 +78,10 @@ func cmdRun(args []string) error {
 		Fresh:     *fresh,
 		Model:     *model,
 		Pull:      resolver,
-		Agent: agent.Runner{
-			Bin:           *runner,
-			ThinkingLevel: level,
-			Provider:      *provider,
+		Agent: agent.Harness{
 			APIKey:        key,
+			ThinkingLevel: level,
 			Log:           logWriter,
-			Stderr:        os.Stderr,
 			Timeout:       *timeout,
 		},
 	})

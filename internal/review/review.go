@@ -13,26 +13,21 @@ import (
 	"unreal-review/internal/findings"
 )
 
-const (
-	maxBriefDiff     = 200_000
-	systemPromptBase = `You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
+const RecordFindingTool = "record_finding"
 
-Prefer lines that appear in the diff. One finding per issue. Record every finding with the record tool below, then end with exactly one summary record; if nothing material, record only the summary.
+const maxBriefDiff = 200_000
 
-Severity: use "error" when the code does the wrong thing - a crash, hang, race, or corruption, a security compromise, a reported failure the caller can no longer classify so their error handling takes the wrong branch, or a transient fault made permanent with no recovery path. Use "warning" when the code works but weakly - diagnostics silently dropped while behavior stays correct, resources that leak toward exhaustion under sustained load, or capability lost for some inputs while the rest keeps working. Use "note" for anything smaller.`
-)
+var systemPrompt = fmt.Sprintf(`You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Do not edit files. Do not call git hosting APIs. Do not post comments.
 
-func agentSystemPrompt() string {
-	entry, err := os.Executable()
-	if err != nil {
-		entry = os.Args[0]
-	}
-	return systemPromptBase + "\n\n" + promptSection(shellQuote(entry), DefaultTools())
-}
+Prefer lines that appear in the diff. One finding per issue. Record every finding with the %[1]s tool. If nothing is material, record none.
 
-func shellQuote(path string) string {
-	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
-}
+Severity: use "error" when the code does the wrong thing - a crash, hang, race, or corruption, a security compromise, a reported failure the caller can no longer classify so their error handling takes the wrong branch, or a transient fault made permanent with no recovery path. Use "warning" when the code works but weakly - diagnostics silently dropped while behavior stays correct, resources that leak toward exhaustion under sustained load, or capability lost for some inputs while the rest keeps working. Use "note" for anything smaller.
+
+When you are done, your final message is the review summary and nothing else. The summary contract:
+- One line of plain prose, one to three sentences, at most %[2]d characters. Inline code is fine; no line breaks, headings, lists, quotes, tables, or code blocks.
+- If you recorded no findings, start with "%[3]s", then say what you checked.
+- If you recorded findings, start with the most severe one and what it breaks. Do not start with "%[3]s".
+- Do not count or list the findings; they are shown separately.`, RecordFindingTool, findings.MaxSummaryLength, findings.CleanVerdict)
 
 type Options struct {
 	Workspace string
@@ -66,7 +61,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		runMeta.Status = findings.StatusComplete
 		result := Result{Report: findings.Report{
 			Run:     runMeta,
-			Summary: "No changes to review.",
+			Summary: findings.CleanVerdict + ": the selected range has no changes.",
 		}, Diff: diff}
 		if err := persist(opts.Out, result.Report); err != nil {
 			return result, err
@@ -133,8 +128,8 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Workspace:    workspace,
 		ReviewID:     runMeta.ID,
 		FindingsPath: findingsPath,
-		Prompt:       reviewPrompt(source.Base, source.Head, findingsPath, diff, reportedIn(selected.reported, selected.files)),
-		SystemPrompt: agentSystemPrompt(),
+		Prompt:       reviewPrompt(source.Base, source.Head, diff, reportedIn(selected.reported, selected.files)),
+		SystemPrompt: systemPrompt,
 		Model:        opts.Model,
 	})
 	interrupted := agentErr != nil && (errors.Is(agentErr, context.Canceled) || errors.Is(agentErr, context.DeadlineExceeded) || ctx.Err() != nil)
@@ -191,7 +186,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 }
 
-func reviewPrompt(from, to, findingsPath, diff string, reported []findings.Finding) string {
+func reviewPrompt(from, to, diff string, reported []findings.Finding) string {
 	target := to
 	if target == "" {
 		target = "working tree"
@@ -201,8 +196,7 @@ func reviewPrompt(from, to, findingsPath, diff string, reported []findings.Findi
 		body = body[:maxBriefDiff] + "\n\n[diff truncated]\n"
 	}
 	return fmt.Sprintf(
-		"Write findings JSONL to %s\n\nFrom: %s\nTo: %s\n\n%s```diff\n%s\n```\n",
-		findingsPath,
+		"From: %s\nTo: %s\n\n%s```diff\n%s\n```\n",
 		from,
 		target,
 		reportedSection(reported),
@@ -345,10 +339,6 @@ func mergeFindings(items []findings.Finding) []findings.Finding {
 	seen := make(map[string]int, len(items))
 	out := make([]findings.Finding, 0, len(items))
 	for _, item := range items {
-		if item.ID == "" {
-			out = append(out, item)
-			continue
-		}
 		if i, ok := seen[item.ID]; ok {
 			out[i] = item
 			continue

@@ -86,6 +86,20 @@ law complete_needs_cost:
 law complete_when_both:
   {C.canComplete(True{}, True{}) == True{} : Bool}
 
+law clean_summary_without_findings:
+  {C.summaryFits(True{}, 0n) == True{} : Bool}
+
+law clean_summary_with_findings_rejected:
+  for +n: Nat
+  {C.summaryFits(True{}, 1n+n) == False{} : Bool}
+
+law verdict_summary_with_findings:
+  for +n: Nat
+  {C.summaryFits(False{}, 1n+n) == True{} : Bool}
+
+law verdict_summary_without_findings_rejected:
+  {C.summaryFits(False{}, 0n) == False{} : Bool}
+
 law empty_ids_keep_both:
   for +sp: Nat
   for +ex: Nat

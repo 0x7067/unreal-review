@@ -1,155 +1,226 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+	"uuid"
 
+	"github.com/unreallabsai/unreal-agent/harness/contextbuilder"
+	"github.com/unreallabsai/unreal-agent/harness/coordinator"
+	"github.com/unreallabsai/unreal-agent/harness/inbox"
+	"github.com/unreallabsai/unreal-agent/harness/llm"
+	"github.com/unreallabsai/unreal-agent/harness/llm/clients/openrouter"
+	"github.com/unreallabsai/unreal-agent/harness/operation"
+	"github.com/unreallabsai/unreal-agent/harness/session"
+	"github.com/unreallabsai/unreal-agent/harness/sessionstore"
+	"github.com/unreallabsai/unreal-agent/harness/sessionstore/localfile"
+	"github.com/unreallabsai/unreal-agent/harness/tool"
+	"github.com/unreallabsai/unreal-agent/harness/tool/bash"
+	"github.com/unreallabsai/unreal-agent/harness/tool/viewimage"
+
+	"unreal-review/internal/findings"
 	"unreal-review/internal/review"
 )
 
-const defaultRunner = "unreal-agent-runner"
+const (
+	maxSummaryCorrections = 2
+	openRouterBaseURL     = "https://openrouter.ai/api/v1"
+	toolHeartbeatInterval = 10 * time.Minute
+	sessionDirectoryName  = ".local/state/unreal-agent/sessions"
+)
 
-type Runner struct {
-	Bin           string
-	ThinkingLevel string
-	Provider      string
+type Harness struct {
 	APIKey        string
+	ThinkingLevel string
 	Log           io.Writer
-	Stderr        io.Writer
 	Timeout       time.Duration
 }
 
-var _ review.Agent = Runner{}
+var _ review.Agent = Harness{}
 
-func (r Runner) Run(ctx context.Context, req review.AgentRequest) (review.AgentResult, error) {
-	runner := r.Bin
-	if runner == "" {
-		runner = defaultRunner
-	}
-	if r.Timeout > 0 {
+func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.AgentResult, error) {
+	if h.Timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, r.Timeout)
+		ctx, cancel = context.WithTimeout(ctx, h.Timeout)
 		defer cancel()
 	}
-	payload := map[string]any{
-		"system_prompt": req.SystemPrompt,
-		"prompt":        req.Prompt,
-	}
-	if req.ReviewID != "" {
-		payload["session_id"] = req.ReviewID
-		payload["messages"] = []any{map[string]any{
-			"role":       "user",
-			"content":    req.Prompt,
-			"message_id": req.ReviewID,
-		}}
-		delete(payload, "prompt")
-	}
-	if req.Model != "" {
-		payload["model"] = req.Model
-	}
-	if r.ThinkingLevel != "" {
-		payload["thinking_level"] = r.ThinkingLevel
-	}
-	encoded, err := json.Marshal(payload)
+
+	client, err := openrouter.NewClient(openrouter.Config{APIKey: h.APIKey, BaseURL: openRouterBaseURL})
 	if err != nil {
-		return review.AgentResult{}, fmt.Errorf("encode agent request: %w", err)
+		return review.AgentResult{}, fmt.Errorf("create openrouter client: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, runner, "-workspace", req.Workspace)
-	cmd.Stdin = bytes.NewReader(encoded)
-	var logBuf bytes.Buffer
-	logWriter := io.Writer(&logBuf)
-	if r.Log != nil {
-		logWriter = io.MultiWriter(&logBuf, r.Log)
-	}
-	cmd.Stdout = logWriter
-	if r.Stderr != nil {
-		cmd.Stderr = r.Stderr
-	} else {
-		cmd.Stderr = os.Stderr
-	}
-	cmd.Env = r.environ(req.Model)
-	runErr := cmd.Run()
-	if runErr != nil {
-		runErr = fmt.Errorf("run %s: %w", runner, runErr)
-	}
-	cost, generationIDs, err := ParseLogCost(bytes.NewReader(logBuf.Bytes()))
+	defer func() { _ = client.Close() }()
+
+	storeDirectory, err := sessionDirectory()
 	if err != nil {
-		return review.AgentResult{}, errors.Join(runErr, err)
+		return review.AgentResult{}, fmt.Errorf("resolve session directory: %w", err)
 	}
-	interrupted := runErr != nil && (errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) || ctx.Err() != nil)
-	if !cost.Recorded() && r.APIKey != "" && len(generationIDs) > 0 {
-		fetched, fetchErr := FetchOpenRouterCost(ctx, r.APIKey, generationIDs)
-		if fetchErr != nil && !interrupted && ctx.Err() == nil {
-			return review.AgentResult{Cost: cost}, errors.Join(runErr, fmt.Errorf("track review cost: %w", fetchErr))
-		}
-		if fetchErr == nil {
-			cost = fetched
-		}
+	store, err := localfile.New(storeDirectory)
+	if err != nil {
+		return review.AgentResult{}, fmt.Errorf("open session store: %w", err)
 	}
-	return review.AgentResult{Cost: cost}, runErr
+
+	sessionID := session.ID(strings.TrimSpace(req.ReviewID))
+	if sessionID == "" {
+		return review.AgentResult{}, fmt.Errorf("review ID must be set")
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	operationDirectory := filepath.Join(storeDirectory, "operations", string(sessionID))
+	if err := os.MkdirAll(operationDirectory, 0o700); err != nil {
+		return review.AgentResult{}, fmt.Errorf("create operation directory: %w", err)
+	}
+	registry := newRecordRegistry(tool.NewRegistry(tool.StaticTranslators{
+		Bash:      bash.New(bash.Config{Shell: "/bin/sh", Directory: req.Workspace, BaseDirectory: operationDirectory}),
+		ViewImage: viewimage.New(viewimage.Config{Directory: req.Workspace}),
+	}, tool.BashName, tool.ViewImageName))
+
+	observer := newSessionObserver(sessionID, req.FindingsPath, h.Log, cancel)
+	observerID := store.AddObserver(observer.Observe)
+	defer store.RemoveObserver(observerID)
+
+	s := harnessSession{
+		id:           sessionID,
+		store:        store,
+		llm:          client,
+		registry:     registry,
+		model:        llm.Model{ID: req.Model, ReasoningEffort: llm.ReasoningEffort(h.ThinkingLevel)},
+		systemPrompt: req.SystemPrompt,
+	}
+	coordinatorErr := s.turn(runCtx, inbox.ID(sessionID), req.Prompt)
+	for attempt := 0; coordinatorErr == nil; attempt++ {
+		count, err := findingCount(req.FindingsPath)
+		if err != nil {
+			coordinatorErr = err
+			break
+		}
+		summary, err := findings.CheckSummary(observer.takeFinalText(), count)
+		if err == nil {
+			coordinatorErr = findings.AppendSummary(req.FindingsPath, summary)
+			break
+		}
+		if attempt == maxSummaryCorrections {
+			coordinatorErr = fmt.Errorf("summary breaks the contract: %w", err)
+			break
+		}
+		coordinatorErr = s.turn(runCtx, inbox.ID(uuid.New().String()), summaryCorrection(err))
+	}
+	if observerErr := observer.Err(); observerErr != nil {
+		coordinatorErr = observerErr
+	}
+
+	return review.AgentResult{Cost: observer.Cost()}, coordinatorErr
 }
 
-func (r Runner) environ(model string) []string {
-	keep := map[string]string{}
-	for _, name := range []string{
-		"PATH", "HOME", "USER", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM",
-		"SSL_CERT_FILE", "SSL_CERT_DIR", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-		"http_proxy", "https_proxy", "no_proxy",
-		"UNREAL_HARNESS_LLM_BASE_URL", "UNREAL_HARNESS_LLM_MAX_ATTEMPTS",
-		"XDG_STATE_HOME",
+type harnessSession struct {
+	id           session.ID
+	store        *localfile.Store
+	llm          llm.Adapter
+	registry     tool.Registry
+	model        llm.Model
+	systemPrompt string
+}
+
+func (s harnessSession) turn(ctx context.Context, messageID inbox.ID, message string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	restored, err := openSession(ctx, s.store, s.id)
+	if err != nil {
+		return err
+	}
+	inputs, err := inbox.New(ctx, restored.ExternalInputIDs)
+	if err != nil {
+		return fmt.Errorf("open inbox: %w", err)
+	}
+	settings, err := json.Marshal(inbox.ControlMessage{
+		Mode:       inbox.UpdateSettings,
+		Parameters: inbox.Settings{ReasoningEffort: s.model.ReasoningEffort},
+	})
+	if err != nil {
+		return fmt.Errorf("encode settings: %w", err)
+	}
+	payload, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("encode message: %w", err)
+	}
+	stop, err := json.Marshal(inbox.ControlMessage{Mode: inbox.StopWhenIdle})
+	if err != nil {
+		return fmt.Errorf("encode stop request: %w", err)
+	}
+	for _, input := range []inbox.Input{
+		{ID: inbox.ID(uuid.New().String()), Kind: inbox.InputControl, Payload: settings},
+		{ID: messageID, Kind: inbox.InputExternal, Payload: payload},
+		{ID: inbox.ID(uuid.New().String()), Kind: inbox.InputControl, Payload: stop},
 	} {
-		if value, ok := os.LookupEnv(name); ok {
-			keep[name] = value
+		if err := inputs.Submit(ctx, input); err != nil {
+			return fmt.Errorf("submit input: %w", err)
 		}
 	}
-	provider := r.Provider
-	if provider == "" {
-		provider = os.Getenv("UNREAL_HARNESS_LLM_PROVIDER")
+	builder := contextbuilder.NewBuilder()
+	builder.SetModel(s.model)
+	builder.SetSystemPrompt(s.systemPrompt)
+	for _, definition := range s.registry.StaticDefinitions() {
+		builder.AddTool(definition.Tool)
 	}
-	if provider == "" {
-		provider = "openrouter"
+	err = coordinator.New(coordinator.Dependencies{
+		ToolHeartbeatInterval: toolHeartbeatInterval,
+		SessionID:             s.id,
+		Inbox:                 inputs,
+		Restored:              restored,
+		Sessions:              s.store,
+		ContextBuilder:        builder,
+		LLM:                   s.llm,
+		Tools:                 s.registry,
+		Operations:            operation.NewLocalOperationManager(ctx),
+	}).Run(ctx)
+	if err != nil {
+		return fmt.Errorf("run coordinator: %w", err)
 	}
-	keep["UNREAL_HARNESS_LLM_PROVIDER"] = provider
-	if model != "" {
-		keep["UNREAL_HARNESS_LLM_MODEL"] = model
-	} else if value := os.Getenv("UNREAL_HARNESS_LLM_MODEL"); value != "" {
-		keep["UNREAL_HARNESS_LLM_MODEL"] = value
-	}
-	if r.APIKey != "" {
-		keep["OPENROUTER_API_KEY"] = r.APIKey
-	} else if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
-		keep["OPENROUTER_API_KEY"] = key
-	} else if key := os.Getenv("UNREAL_HARNESS_LLM_API_KEY"); key != "" {
-		keep["OPENROUTER_API_KEY"] = key
-	}
-	env := make([]string, 0, len(keep))
-	for name, value := range keep {
-		env = append(env, name+"="+value)
-	}
-	return env
+	return nil
 }
 
-func LookPath(runner string) (string, error) {
-	if runner == "" {
-		runner = defaultRunner
+func findingCount(findingsPath string) (int, error) {
+	report, err := findings.ReadFile(findingsPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
 	}
-	if filepath.IsAbs(runner) {
-		return runner, nil
+	return len(report.Findings), err
+}
+
+func summaryCorrection(err error) string {
+	return fmt.Sprintf("Your final message is the review summary, and it breaks the summary contract: %v. Reply with only the corrected summary.", err)
+}
+
+func openSession(ctx context.Context, store *localfile.Store, id session.ID) (sessionstore.ResumeState, error) {
+	restored, err := store.Resume(ctx, id)
+	if err == nil {
+		return restored, nil
 	}
-	path, err := exec.LookPath(runner)
+	if !errors.Is(err, fs.ErrNotExist) {
+		return sessionstore.ResumeState{}, fmt.Errorf("open session %q: %w", id, err)
+	}
+	if _, err := store.Create(ctx, id); err != nil {
+		return sessionstore.ResumeState{}, fmt.Errorf("create session %q: %w", id, err)
+	}
+	return sessionstore.ResumeState{}, nil
+}
+
+func sessionDirectory() (string, error) {
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("find %s: %w; install github.com/unreallabsai/unreal-agent/cmd/unreal-agent-runner", runner, err)
+		return "", fmt.Errorf("find home directory: %w", err)
 	}
-	return path, nil
+	return filepath.Join(home, sessionDirectoryName), nil
 }
 
 func SanitizeLevel(level string) (string, error) {

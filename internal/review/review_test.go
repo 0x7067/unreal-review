@@ -39,7 +39,7 @@ func TestReportedSectionListsEachFindingOnce(t *testing.T) {
 }
 
 func TestReviewPromptCarriesTheReportedList(t *testing.T) {
-	prompt := reviewPrompt("abc123", "def456", "/tmp/f.jsonl", "diff --git a/x b/x\n", []findings.Finding{
+	prompt := reviewPrompt("abc123", "def456", "diff --git a/x b/x\n", []findings.Finding{
 		{Path: "x", StartLine: 1, EndLine: 1, Severity: findings.SeverityError, Body: "Boom."},
 	})
 	if !strings.Contains(prompt, "From: abc123\nTo: def456\n") {
@@ -53,7 +53,7 @@ func TestReviewPromptCarriesTheReportedList(t *testing.T) {
 }
 
 func TestReviewPromptWithoutReportedFindings(t *testing.T) {
-	prompt := reviewPrompt("main", "", "/tmp/f.jsonl", "diff --git a/x b/x\n", nil)
+	prompt := reviewPrompt("main", "", "diff --git a/x b/x\n", nil)
 	if strings.Contains(prompt, "Already reported") {
 		t.Fatalf("prompt:\n%s", prompt)
 	}

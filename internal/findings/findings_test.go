@@ -129,3 +129,52 @@ func TestAppendSummaryRequiresBody(t *testing.T) {
 		t.Fatal("accepted empty summary")
 	}
 }
+
+func TestNormalizeRejectsInvalidFindings(t *testing.T) {
+	cases := []struct {
+		name    string
+		finding Finding
+	}{
+		{"bad severity", Finding{Path: "a.go", StartLine: 1, Severity: "critical", Body: "body"}},
+		{"blank path", Finding{Path: " ", StartLine: 1, Severity: SeverityNote, Body: "body"}},
+		{"end before start", Finding{Path: "a.go", StartLine: 3, EndLine: 1, Severity: SeverityNote, Body: "body"}},
+		{"blank body", Finding{Path: "a.go", StartLine: 1, Severity: SeverityNote, Body: "   "}},
+	}
+	for _, c := range cases {
+		if _, err := Normalize(c.finding); err == nil {
+			t.Fatalf("%s: accepted %+v", c.name, c.finding)
+		}
+	}
+}
+
+func TestCheckSummaryMatchesVerdictToFindings(t *testing.T) {
+	if _, err := CheckSummary("No material issues; the retry path keeps its backoff.", 0); err != nil {
+		t.Fatalf("clean summary without findings: %v", err)
+	}
+	if _, err := CheckSummary("The cache write races with the reader, so readers can see torn entries.", 2); err != nil {
+		t.Fatalf("verdict summary with findings: %v", err)
+	}
+	if _, err := CheckSummary("No material issues.", 1); err == nil {
+		t.Fatal("accepted a clean verdict over a finding")
+	}
+	if _, err := CheckSummary("Looks fine overall.", 0); err == nil {
+		t.Fatal("accepted a summary without the clean verdict when nothing was found")
+	}
+}
+
+func TestCheckSummaryRejectsStructuredText(t *testing.T) {
+	cases := []string{
+		"",
+		"The map write races.\n\nSummary: one error.",
+		"- Error: the map write races.",
+		"## Review",
+		"1. The map write races.",
+		"The map write races. ```go\nx\n```",
+		strings.Repeat("a", MaxSummaryLength+1),
+	}
+	for _, body := range cases {
+		if _, err := CheckSummary(body, 1); err == nil {
+			t.Fatalf("accepted %q", body)
+		}
+	}
+}

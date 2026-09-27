@@ -52,13 +52,7 @@ else
 	fail=1
 fi
 
-if command -v unreal-agent-runner >/dev/null; then
-	note "ok  unreal-agent-runner=$(command -v unreal-agent-runner)"
-else
-	note "info unreal-agent-runner missing (required for a live review of a non-empty diff)"
-fi
-
-if [ -n "${OPENROUTER_API_KEY:-}${UNREAL_HARNESS_LLM_API_KEY:-}" ]; then
+if [ -n "${OPENROUTER_API_KEY:-}" ]; then
 	note "ok  OPENROUTER_API_KEY is set"
 else
 	note "info OPENROUTER_API_KEY unset (required for run)"
@@ -73,9 +67,9 @@ fi
 if [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
 	note "info GitHub token env is set (dry-run with env token GETs the pull request)"
 elif command -v gh >/dev/null && gh auth token >/dev/null 2>&1; then
-	note "info gh auth token is available (posting without --token uses it; --dry-run does not)"
+	note "info gh auth token is available (posting without GH_TOKEN/GITHUB_TOKEN uses it; --dry-run does not)"
 else
-	note "info no GitHub token (posting fails; --dry-run without --token does not call the API)"
+	note "info no GitHub token (posting fails; --dry-run does not call the API)"
 fi
 
 if [ "$fail" -ne 0 ]; then

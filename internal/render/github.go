@@ -53,7 +53,7 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 	var placed []findings.Finding
 	for _, finding := range report.Findings {
 		switch {
-		case posted[fingerprint(finding)]:
+		case posted[finding.ID]:
 			result.Duplicates = append(result.Duplicates, finding)
 		case opts.HasLines && !commentable(opts.Lines, finding):
 			result.Dropped = append(result.Dropped, DroppedFinding{
@@ -94,13 +94,6 @@ func postedFingerprints(comments []github.PostedComment) map[string]bool {
 		}
 	}
 	return out
-}
-
-func fingerprint(finding findings.Finding) string {
-	if finding.ID != "" {
-		return finding.ID
-	}
-	return findings.Fingerprint(finding)
 }
 
 func ReportedFindings(comments []github.PostedComment) []findings.Finding {
@@ -194,7 +187,7 @@ func githubComment(finding findings.Finding) github.ReviewComment {
 	}
 	comment := github.ReviewComment{
 		Path: finding.Path,
-		Body: fmt.Sprintf("**%s**\n\n%s\n\n%s", finding.Severity, finding.Body, github.FindingMarker(fingerprint(finding))),
+		Body: fmt.Sprintf("**%s**\n\n%s\n\n%s", finding.Severity, finding.Body, github.FindingMarker(finding.ID)),
 		Line: finding.EndLine,
 		Side: side,
 	}

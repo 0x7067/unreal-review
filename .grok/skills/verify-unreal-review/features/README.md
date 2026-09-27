@@ -11,14 +11,14 @@ This directory is the maintained source for verifying the user-facing behavior o
 - Drive every command through `scripts/cli.sh --name <step> -- …`. `cli.sh` exits 0 after capture; read `exit.txt` for the CLI status.
 - `run` uses `--workspace` from `scripts/fixture-repo.sh`, not the product checkout.
 - Dummy `OPENROUTER_API_KEY` and `--model x` are enough when the agent will not start.
-- Live review of a non-empty diff needs a real key, `UNREAL_HARNESS_LLM_MODEL` or `--model`, and `unreal-agent-runner`. Skip that sub-feature when any of those is missing.
+- Live review of a non-empty diff needs a real key and `UNREAL_HARNESS_LLM_MODEL` or `--model`. Skip that sub-feature when either is missing.
 - Do not post a GitHub review unless the user names a disposable pull request.
 
 ## Driving conventions
 
 - Start every recipe from the baseline unless its preconditions say otherwise.
 - Treat every command as literal. Keep flag names and example paths unchanged.
-- Isolate GitHub auth with `cli.sh --no-github-auth` when the recipe must not send `GH_TOKEN`/`GITHUB_TOKEN` or succeed at `gh auth token`. `--dry-run` still GETs if `--token` is passed.
+- Isolate GitHub auth with `cli.sh --no-github-auth` when the recipe must not send `GH_TOKEN`/`GITHUB_TOKEN` or succeed at `gh auth token`.
 - Restore nothing in the product repo. Fixture repos are disposable.
 - Keep proof artifacts; `scripts/cleanup.sh` removes scratch only.
 
