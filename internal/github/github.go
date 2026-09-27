@@ -28,14 +28,11 @@ type PullRequest struct {
 	BaseRef string
 	BaseSHA string
 	HeadSHA string
-	Title   string
 }
 
 type PullFile struct {
-	Path     string
-	Patch    string
-	Status   string
-	PrevPath string
+	Path  string
+	Patch string
 }
 
 type PostedComment struct {
@@ -100,8 +97,7 @@ func (c *Client) http() *http.Client {
 
 func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (PullRequest, error) {
 	var raw struct {
-		Number int    `json:"number"`
-		Title  string `json:"title"`
+		Number int `json:"number"`
 		Base   struct {
 			Ref string `json:"ref"`
 			SHA string `json:"sha"`
@@ -121,7 +117,6 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 		BaseRef: raw.Base.Ref,
 		BaseSHA: raw.Base.SHA,
 		HeadSHA: raw.Head.SHA,
-		Title:   raw.Title,
 	}, nil
 }
 
@@ -249,10 +244,8 @@ func (c *Client) ListPullFiles(ctx context.Context, owner, repo string, number i
 	page := 1
 	for {
 		var raw []struct {
-			Filename         string `json:"filename"`
-			PreviousFilename string `json:"previous_filename"`
-			Status           string `json:"status"`
-			Patch            string `json:"patch"`
+			Filename string `json:"filename"`
+			Patch    string `json:"patch"`
 		}
 		path := fmt.Sprintf("/repos/%s/%s/pulls/%d/files?per_page=100&page=%d", owner, repo, number, page)
 		if err := c.get(ctx, path, &raw); err != nil {
@@ -260,10 +253,8 @@ func (c *Client) ListPullFiles(ctx context.Context, owner, repo string, number i
 		}
 		for _, item := range raw {
 			files = append(files, PullFile{
-				Path:     item.Filename,
-				PrevPath: item.PreviousFilename,
-				Status:   item.Status,
-				Patch:    item.Patch,
+				Path:  item.Filename,
+				Patch: item.Patch,
 			})
 		}
 		if len(raw) < 100 {
@@ -387,23 +378,6 @@ func SplitRepo(name string) (string, string, error) {
 		return "", "", fmt.Errorf("repository %q: want owner/repo", name)
 	}
 	return owner, strings.TrimSuffix(repo, ".git"), nil
-}
-
-func ParseRemoteURL(remote string) (string, string, error) {
-	remote = strings.TrimSpace(remote)
-	remote = strings.TrimSuffix(remote, ".git")
-	if strings.HasPrefix(remote, "git@") {
-		_, path, ok := strings.Cut(remote, ":")
-		if !ok {
-			return "", "", fmt.Errorf("git remote %q: missing path", remote)
-		}
-		return SplitRepo(path)
-	}
-	u, err := url.Parse(remote)
-	if err != nil {
-		return "", "", fmt.Errorf("git remote %q: %w", remote, err)
-	}
-	return SplitRepo(strings.Trim(u.Path, "/"))
 }
 
 func NewHTTPClient() *http.Client {
