@@ -24,5 +24,5 @@ func main() {
 }
 
 func usage() string {
-	return "usage: livetest NAME..."
+	return "usage: livetest NAME [NAME...]"
 }
