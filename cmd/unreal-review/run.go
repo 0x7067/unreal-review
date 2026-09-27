@@ -24,7 +24,6 @@ func cmdRun(args []string) error {
 	spec := addSpecFlags(fs)
 	pr := fs.String("pr", "", "pull request to review: owner/repo#n, a URL, or a number")
 	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repo when --pr is a number")
-	tokenFlag := fs.String("token", "", "GitHub token for --pr (default GH_TOKEN or GITHUB_TOKEN)")
 	var exclude stringList
 	fs.Var(&exclude, "exclude", "git glob to omit from the diff; repeatable")
 	outPath := fs.String("out", "findings.jsonl", "findings JSONL path, or - for stdout")
@@ -54,7 +53,7 @@ func cmdRun(args []string) error {
 	selected.Pull = *pr
 	var resolver review.PullResolver
 	if *pr != "" {
-		resolver, err = newPullResolver(resolveToken(*tokenFlag, true), *repo)
+		resolver, err = newPullResolver(resolveToken(true), *repo)
 		if err != nil {
 			return err
 		}

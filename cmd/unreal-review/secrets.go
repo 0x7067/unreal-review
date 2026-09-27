@@ -12,7 +12,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const secretsFDEnv = "UNREAL_REVIEW_SECRETS_FD"
+const (
+	secretsFDEnv   = "UNREAL_REVIEW_SECRETS_FD"
+	maxSecretBytes = 4096
+)
 
 var secretNames = []string{"OPENROUTER_API_KEY", "UNREAL_HARNESS_LLM_API_KEY", "GH_TOKEN", "GITHUB_TOKEN"}
 
@@ -59,6 +62,9 @@ func reexecWithout(held map[string]string) error {
 	encoded, err := json.Marshal(held)
 	if err != nil {
 		return fmt.Errorf("encode secrets: %w", err)
+	}
+	if len(encoded) > maxSecretBytes {
+		return fmt.Errorf("credentials in %s total %d bytes; at most %d fit in the startup pipe", strings.Join(secretNames, ", "), len(encoded), maxSecretBytes)
 	}
 	read, write, err := os.Pipe()
 	if err != nil {

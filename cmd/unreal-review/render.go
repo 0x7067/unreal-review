@@ -64,7 +64,6 @@ func renderGitHub(args []string) error {
 	prSpec := fs.String("pr", "", "pull request: owner/repo#n, a URL, or a number")
 	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repo when --pr is a number")
 	commit := fs.String("commit", "", "commit SHA for inline comments (default: PR head)")
-	tokenFlag := fs.String("token", "", "GitHub token (default GH_TOKEN or GITHUB_TOKEN)")
 	dryRun := fs.Bool("dry-run", false, "print the review payload instead of posting")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -87,7 +86,7 @@ func renderGitHub(args []string) error {
 	if err != nil {
 		return err
 	}
-	token := resolveToken(*tokenFlag, !*dryRun)
+	token := resolveToken(!*dryRun)
 	client := &github.Client{Token: token, HTTP: github.NewHTTPClient()}
 	opts := render.GitHubOptions{
 		Owner:      owner,
@@ -134,7 +133,7 @@ func renderGitHub(args []string) error {
 		return enc.Encode(result.Payload)
 	}
 	if token == "" {
-		return fmt.Errorf("set GH_TOKEN, GITHUB_TOKEN, or --token to post a review")
+		return fmt.Errorf("set GH_TOKEN or GITHUB_TOKEN to post a review")
 	}
 	ctx := context.Background()
 	if result.PostReview() {

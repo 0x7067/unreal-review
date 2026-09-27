@@ -53,6 +53,6 @@ These came out of the review-loop assessment. They are not scheduled yet.
 
 Fallbacks still in code this branch did not touch:
 
-- `resolveToken` (`cmd/unreal-review/pull.go`): `--token`, then `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token`.
+- `resolveToken` (`cmd/unreal-review/pull.go`): `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token`.
 - `pullFullBase` (`internal/review/git.go`): `origin/<base ref>`, then the base SHA.
 - `resolvePR` (`cmd/unreal-review/render.go`): `--pr`, then the Actions event file through `actionsPR`.
