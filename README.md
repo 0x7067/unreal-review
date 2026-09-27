@@ -18,7 +18,7 @@ make fmt
 make check
 ```
 
-`make check` includes `make prove` (`bend PROOF.bend --check-only`). Product invariants live in `LAWS.bend`. Install Bend from https://bend-lang.com (`bend version` 2.0.27 is the local toolchain).
+`make check` includes `make prove` (`tools/prove.sh`: checks `PROOF.bend` with Bend and enforces `spec/unsafe-allow.txt`). Product invariants live in `LAWS.bend`. Install Bend from https://bend-lang.com (`bend version` 2.0.27 is the local toolchain).
 
 ## Review a local change
 
@@ -28,7 +28,7 @@ From a git repository:
 unreal-review run --out findings.jsonl
 ```
 
-With no range flags, `run` reviews staged, unstaged, and untracked changes against `HEAD`. `run` takes a git checkout (`--workspace`, default `.`). `--from` and `--to` select `git diff --merge-base` of those refs (branch, tag, or SHA); omit `--to` to include the working tree. `--commit` reviews one commit against its first parent. `--branch` reviews a branch since it diverged from `main` or `master`. Pathspecs limit the range; `--exclude` omits globs. The selected range is sent in full to the agent with cwd at the checkout. It writes [findings.jsonl](schema/findings-v1.md). Every run records cost. Every finding has a severity: `error`, `warning`, or `note`.
+With no range flags, `run` reviews staged, unstaged, and untracked changes against `HEAD`. `run` takes a git checkout (`--workspace`, default `.`). `--from` and `--to` select `git diff --merge-base` of those refs (branch, tag, or SHA); omit `--to` to include the working tree. `--commit` reviews one commit against its first parent. `--branch` reviews a branch since it diverged from `main` or `master`. Pathspecs limit the range; `--exclude` omits globs. The selected range is sent in full to the agent with cwd at the checkout. It writes [findings.jsonl](schema/findings-v1.md).
 
 ```sh
 unreal-review run --from origin/main --to HEAD --out findings.jsonl
@@ -37,21 +37,19 @@ unreal-review run --commit abc1234 --out findings.jsonl
 unreal-review run --from abc1234 --to def5678 --exclude '*.lock' -- cmd/
 ```
 
-`--out` is the checkpoint. The `run` record stores completeness (`status`) and the reviewed commit SHAs plus a hash of the exact diff. Interrupt the process to pause. The same command continues that review if the diff is unchanged. `--fresh` starts over. GitHub rendering refuses a file that is not `complete`. The checkpoint is the findings file; it does not name an agent backend.
+`--out` names the checkpoint file; see [schema/findings-v1.md](schema/findings-v1.md) for the `run` record, resume rules, and `--fresh`.
 
-To review a large change in pieces, run `group` on the same git range. It prints related file groups and a `run` command for each:
+To review a large change in pieces, run `group` on the same git range. It prints related file groups and a `run` command for each (`unreal-review group -h` for range flags):
 
 ```sh
 unreal-review group --from origin/main --to HEAD
 ```
 
-Files in one directory stay together. Files that share a stem in the same directory (`Button.tsx` with `Button.module.css`, `foo.go` with `foo_linux.go`) share a group. A test file that names an implementation (`foo_test.go`, `foo.test.ts`, `test_foo.py`, `FooTest.java`) joins that implementation's group when the paths are in different directories. Locale variants (`messages_en.properties` with `messages_zh.properties`, `locales/en/auth.json` with `locales/zh/auth.json`, or `docs/en/guide.md` with `docs/zh/guide.md`) share a group. A header and its source (`foo.h` with `foo.c`) do too. `go.mod` stays with `go.sum`. Files that import each other across directories join when the import matches exactly one changed path (Go, JavaScript/TypeScript, Python, Java, Kotlin, Rust, PHP, C#, Swift, Vue). A directory group larger than 25 files or 2000 changed lines splits on the next path component, then into size-capped chunks. Each `run` writes its own findings file and `diff_sha`.
+Each `run` writes its own findings file and `diff_sha`.
 
 ```sh
 unreal-review render markdown findings.jsonl
 ```
-
-The agent records each finding with the `record_finding` tool built into the embedded harness rather than writing the findings file by hand; `internal/agent` validates it and appends it to the findings file. The agent's final message is the summary. It must follow the summary contract in [schema/findings-v1.md](schema/findings-v1.md#summary): one line, a verdict that matches the findings, and no restated list. A summary that breaks it goes back to the agent for correction.
 
 ## Post inline comments on a GitHub pull request
 
