@@ -1,0 +1,19 @@
+internal/review/review.go
+  s_bf52f838c5f51c::t_6520b37b1ed93c 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17ef7ac5baf97f4644d048206ec88e32b2fc0f1b",
+  "prompts": {},
+  "sessions": {
+    "s_bf52f838c5f51c": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0dba2-d940-7260-b968-f3d32f0784f4",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
