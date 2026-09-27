@@ -1,0 +1,43 @@
+.grok/skills/verify-unreal-review/SKILL.md
+  s_2469fd92ef607c::t_4a92646a6697f4 44,58,88
+cmd/unreal-review/main.go
+  s_2469fd92ef607c::t_771562944f31dd 75
+internal/review/git.go
+  s_2469fd92ef607c::t_df56db82cb24fc 191,206,211
+  s_2469fd92ef607c::t_771562944f31dd 210
+  s_2469fd92ef607c::t_fb138cf6471678 212
+cmd/unreal-review/run.go
+  s_2469fd92ef607c::t_771562944f31dd 56
+internal/github/github.go
+  s_2469fd92ef607c::t_771562944f31dd 135
+internal/github/github_test.go
+  s_2469fd92ef607c::t_771562944f31dd 127
+internal/review/git_test.go
+  s_2469fd92ef607c::t_6ee7d3ec446a20 603,605-613
+.grok/skills/verify-unreal-review/features/README.md
+  s_2469fd92ef607c::t_4a92646a6697f4 21
+cmd/unreal-review/render.go
+  s_2469fd92ef607c::t_771562944f31dd 89,137
+cmd/unreal-review/pull.go
+  s_2469fd92ef607c::t_771562944f31dd 60
+.grok/skills/verify-unreal-review/features/render-github.md
+  s_2469fd92ef607c::t_4a92646a6697f4 15,42-43,49
+.grok/skills/verify-unreal-review/scripts/doctor.sh
+  s_2469fd92ef607c::t_4a92646a6697f4 67-68,70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "220324d775e00e471206f48181a3b2c6df7e8e1a",
+  "prompts": {},
+  "sessions": {
+    "s_2469fd92ef607c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f18303d9-c8bb-4d3b-9973-64924ba62fd3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
