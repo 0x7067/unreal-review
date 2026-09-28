@@ -15,11 +15,10 @@ import (
 
 type recordRegistry struct {
 	tool.Registry
-	identify func(findings.Finding) (findings.Finding, error)
 }
 
-func newRecordRegistry(inner tool.Registry, identify func(findings.Finding) (findings.Finding, error)) tool.Registry {
-	return recordRegistry{Registry: inner, identify: identify}
+func newRecordRegistry(inner tool.Registry) tool.Registry {
+	return recordRegistry{Registry: inner}
 }
 
 func (r recordRegistry) StaticDefinitions() []tool.Definition {
@@ -30,7 +29,7 @@ func (r recordRegistry) StaticDefinitions() []tool.Definition {
 func (r recordRegistry) Resolve(name string) (tool.Translator, bool) {
 	switch name {
 	case review.RecordFindingTool:
-		return recordFindingTranslator{identify: r.identify}, true
+		return recordFindingTranslator{}, true
 	default:
 		return r.Registry.Resolve(name)
 	}
@@ -92,11 +91,9 @@ type recordFindingArgs struct {
 	DuplicateOf string `json:"duplicate_of"`
 }
 
-type recordFindingTranslator struct {
-	identify func(findings.Finding) (findings.Finding, error)
-}
+type recordFindingTranslator struct{}
 
-func (t recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
+func (recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
 	var args recordFindingArgs
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
 		return tool.ErrorStatus(fmt.Sprintf("decode arguments: %v", err), 0)
@@ -110,10 +107,6 @@ func (t recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) 
 		Body:        args.Body,
 		DuplicateOf: args.DuplicateOf,
 	})
-	if err != nil {
-		return tool.ErrorStatus(err.Error(), 0)
-	}
-	finding, err = t.identify(finding)
 	if err != nil {
 		return tool.ErrorStatus(err.Error(), 0)
 	}

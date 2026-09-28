@@ -139,9 +139,6 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	if sessionID == "" {
 		return review.AgentResult{}, fmt.Errorf("review ID must be set")
 	}
-	if req.Identify == nil {
-		return review.AgentResult{}, fmt.Errorf("identify is required")
-	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -153,7 +150,7 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	registry := newRecordRegistry(tool.NewRegistry(tool.StaticTranslators{
 		Bash:      bash.New(bash.Config{Shell: "/bin/sh", Directory: req.Workspace, BaseDirectory: operationDirectory}),
 		ViewImage: viewimage.New(viewimage.Config{Directory: req.Workspace}),
-	}, tool.BashName, tool.ViewImageName), req.Identify)
+	}, tool.BashName, tool.ViewImageName))
 
 	observer := newSessionObserver(sessionID, req.FindingsPath, h.Log, cancel)
 	observerID := store.AddObserver(observer.Observe)

@@ -317,7 +317,7 @@ func parseFinding(rec record) (Finding, error) {
 	if err != nil {
 		return Finding{}, fmt.Errorf("end_line: %w", err)
 	}
-	finding, err := Normalize(Finding{
+	return Normalize(Finding{
 		ID:          rec.ID,
 		Path:        rec.Path,
 		StartLine:   start,
@@ -327,13 +327,6 @@ func parseFinding(rec record) (Finding, error) {
 		Body:        rec.Body,
 		DuplicateOf: rec.DuplicateOf,
 	})
-	if err != nil {
-		return Finding{}, err
-	}
-	if finding.ID == "" {
-		return Finding{}, fmt.Errorf("id must be set")
-	}
-	return finding, nil
 }
 
 func Normalize(finding Finding) (Finding, error) {
@@ -368,6 +361,9 @@ func Normalize(finding Finding) (Finding, error) {
 		return Finding{}, fmt.Errorf("body must be set")
 	}
 	finding.DuplicateOf = strings.TrimSpace(finding.DuplicateOf)
+	if finding.ID == "" {
+		finding.ID = Fingerprint(finding)
+	}
 	return finding, nil
 }
 
@@ -382,31 +378,21 @@ func parseLine(raw json.RawMessage) (int, error) {
 	return n, nil
 }
 
-func Fingerprint(finding Finding, code []string, occurrence int) string {
+func Fingerprint(finding Finding) string {
 	sum := sha256.Sum256([]byte(strings.Join([]string{
 		finding.Path,
+		strconv.Itoa(finding.StartLine),
+		strconv.Itoa(finding.EndLine),
 		string(finding.Anchor),
-		strings.Join(TrimLines(code), "\n"),
-		strconv.Itoa(occurrence),
+		finding.Body,
 	}, "\x1f")))
 	return hex.EncodeToString(sum[:8])
-}
-
-func TrimLines(lines []string) []string {
-	trimmed := make([]string, len(lines))
-	for i, line := range lines {
-		trimmed[i] = strings.TrimSpace(line)
-	}
-	return trimmed
 }
 
 func AppendFinding(path string, finding Finding) (Finding, error) {
 	finding, err := Normalize(finding)
 	if err != nil {
 		return Finding{}, err
-	}
-	if finding.ID == "" {
-		return Finding{}, fmt.Errorf("id must be set")
 	}
 	start, err := json.Marshal(finding.StartLine)
 	if err != nil {

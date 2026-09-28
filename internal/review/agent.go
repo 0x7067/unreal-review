@@ -17,7 +17,6 @@ type AgentRequest struct {
 	Prompt       string
 	SystemPrompt string
 	Model        string
-	Identify     func(findings.Finding) (findings.Finding, error)
 }
 
 type AgentResult struct {
