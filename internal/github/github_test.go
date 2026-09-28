@@ -51,21 +51,6 @@ func TestFindingMarkerRoundTrip(t *testing.T) {
 	}
 }
 
-func TestFindingIDsReadsEveryMarker(t *testing.T) {
-	body := "Summary.\n\n2 finding(s) were not posted as inline comments:\n" +
-		"- `a.go` L9: line is not in the pull request diff " + FindingMarker("1111aaaa") + "\n" +
-		"- `b.go` L3: review already has 50 inline comments\n" +
-		"- `c.go` L4: line is not in the pull request diff " + FindingMarker("2222bbbb") + "\n" +
-		StatusMarker(Status{Head: "abc", Runs: 1})
-	got := FindingIDs(body)
-	if len(got) != 2 || got[0] != "1111aaaa" || got[1] != "2222bbbb" {
-		t.Fatalf("FindingIDs = %v, want [1111aaaa 2222bbbb]", got)
-	}
-	if got := FindingIDs("LGTM - no findings in abc..def."); len(got) != 0 {
-		t.Fatalf("FindingIDs on a plain body = %v", got)
-	}
-}
-
 func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repos/o/r/pulls/3", func(w http.ResponseWriter, _ *http.Request) {
@@ -125,8 +110,12 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(state.ReviewBodies) != 2 || state.ReviewBodies[1] != "Dropped.\n"+FindingMarker("cccc3333") {
-		t.Fatalf("review bodies: %q", state.ReviewBodies)
+	wantReviews := []PostedReview{
+		{CommitID: "7c81b2c", Body: "a human review"},
+		{CommitID: "dab3e1c", Body: "Dropped.\n" + FindingMarker("cccc3333")},
+	}
+	if len(state.Reviews) != 2 || state.Reviews[0] != wantReviews[0] || state.Reviews[1] != wantReviews[1] {
+		t.Fatalf("reviews: %+v", state.Reviews)
 	}
 	if state.BaseRef != "main" || state.BaseSHA != "8ad9a39" || state.HeadSHA != "42227a3" {
 		t.Fatalf("pull request: %+v", state)
@@ -141,13 +130,13 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 		t.Fatalf("comments: %+v", state.Comments)
 	}
 	current, outdated, human := state.Comments[0], state.Comments[1], state.Comments[2]
-	if current.StartLine != 155 || current.EndLine != 155 || current.Side != "RIGHT" {
+	if current.StartLine != 155 || current.EndLine != 155 || current.Side != "RIGHT" || current.Outdated {
 		t.Fatalf("single-line comment should start where it ends: %+v", current)
 	}
 	if id, ok := ParseFinding(current.Body); !ok || id != "aaaa1111" {
 		t.Fatalf("marker: %q %v", id, ok)
 	}
-	if outdated.StartLine != 35 || outdated.EndLine != 37 || outdated.Side != "RIGHT" {
+	if outdated.StartLine != 35 || outdated.EndLine != 37 || outdated.Side != "RIGHT" || !outdated.Outdated {
 		t.Fatalf("outdated comment lost its original position: %+v", outdated)
 	}
 	if _, ok := ParseFinding(human.Body); ok {

@@ -119,8 +119,7 @@ func renderGitHub(args []string) error {
 		}
 		opts.Lines = lines
 		opts.HasLines = true
-		opts.Posted = state.Comments
-		opts.PostedReviews = state.ReviewBodies
+		opts.History = render.HistoryOf(state)
 	}
 	result := render.GitHub(report, opts)
 	if *dryRun {
@@ -134,18 +133,8 @@ func renderGitHub(args []string) error {
 	}
 	ctx := context.Background()
 	if result.PostReview() {
-		posted := true
-		if result.LGTM {
-			exists, err := client.HasLGTMReview(ctx, owner, name, number, opts.CommitID)
-			if err != nil {
-				return err
-			}
-			posted = !exists
-		}
-		if posted {
-			if err := client.CreateReview(ctx, result.Payload); err != nil {
-				return err
-			}
+		if err := client.CreateReview(ctx, result.Payload); err != nil {
+			return err
 		}
 	}
 	cost := runCost(report)
