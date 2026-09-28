@@ -270,3 +270,19 @@ law post_new_true_dropped:
 
 law post_new_false_all_reported:
   {G.postNew(1n, 0n, 0n) == False{} : Bool}
+
+law dropped_counts_unposted_off_patch:
+  {G.dropped([G.Flags{False{}, False{}}, G.Flags{False{}, True{}}]) == 1n : Nat}
+
+law dropped_already_posted_not_repeated:
+  {G.postNew(1n, G.comments([G.Flags{True{}, False{}}]), G.dropped([G.Flags{True{}, False{}}])) == False{} : Bool}
+
+law receipt_without_drops:
+  {G.receipt([]) == True{} : Bool}
+
+law receipt_outside_patch_ok:
+  {G.receipt([G.OutsidePatch{}]) == True{} : Bool}
+
+law receipt_over_cap_blocks:
+  for +ds: List<&2, G.Drop>
+  {G.receipt(G.OverCap{} <> ds) == False{} : Bool}

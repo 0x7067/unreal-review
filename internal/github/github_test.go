@@ -51,6 +51,21 @@ func TestFindingMarkerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFindingIDsReadsEveryMarker(t *testing.T) {
+	body := "Summary.\n\n2 finding(s) were not posted as inline comments:\n" +
+		"- `a.go` L9: line is not in the pull request diff " + FindingMarker("1111aaaa") + "\n" +
+		"- `b.go` L3: review already has 50 inline comments\n" +
+		"- `c.go` L4: line is not in the pull request diff " + FindingMarker("2222bbbb") + "\n" +
+		StatusMarker(Status{Head: "abc", Runs: 1})
+	got := FindingIDs(body)
+	if len(got) != 2 || got[0] != "1111aaaa" || got[1] != "2222bbbb" {
+		t.Fatalf("FindingIDs = %v, want [1111aaaa 2222bbbb]", got)
+	}
+	if got := FindingIDs("LGTM - no findings in abc..def."); len(got) != 0 {
+		t.Fatalf("FindingIDs on a plain body = %v", got)
+	}
+}
+
 func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repos/o/r/pulls/3", func(w http.ResponseWriter, _ *http.Request) {
@@ -73,6 +88,12 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 			{"id": 11, "body": "a human comment"},
 			{"id": 12, "body": StatusMarker(Status{Head: "7c81b2c", Runs: 1, CostUSD: 0.5})},
 			{"id": 13, "body": StatusMarker(Status{Head: "dab3e1c", Runs: 2, CostUSD: 1.25})},
+		})
+	})
+	mux.HandleFunc("/repos/o/r/pulls/3/reviews", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, []map[string]any{
+			{"commit_id": "7c81b2c", "body": "a human review"},
+			{"commit_id": "dab3e1c", "body": "Dropped.\n" + FindingMarker("cccc3333")},
 		})
 	})
 	mux.HandleFunc("/repos/o/r/pulls/3/comments", func(w http.ResponseWriter, _ *http.Request) {
@@ -103,6 +124,9 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	state, err := client.PullState(context.Background(), "o", "r", 3)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(state.ReviewBodies) != 2 || state.ReviewBodies[1] != "Dropped.\n"+FindingMarker("cccc3333") {
+		t.Fatalf("review bodies: %q", state.ReviewBodies)
 	}
 	if state.BaseRef != "main" || state.BaseSHA != "8ad9a39" || state.HeadSHA != "42227a3" {
 		t.Fatalf("pull request: %+v", state)
