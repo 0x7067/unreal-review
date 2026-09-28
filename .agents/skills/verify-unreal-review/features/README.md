@@ -7,7 +7,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 - `scripts/launch.sh` has built `$VERIFY_REPO/bin/unreal-review`.
 - `scripts/doctor.sh` printed `doctor: ok`.
 - Evidence and scratch live under `$VERIFY_ROOT` (`/tmp/verify-unreal-review` by default).
-- Paths named `scripts/…` are relative to `.grok/skills/verify-unreal-review/`.
+- Paths named `scripts/…` are relative to `.agents/skills/verify-unreal-review/`.
 - Drive every command through `scripts/cli.sh --name <step> -- …`. `cli.sh` exits 0 after capture; read `exit.txt` for the CLI status.
 - `run` uses `--workspace` from `scripts/fixture-repo.sh`, not the product checkout.
 - Dummy `OPENROUTER_API_KEY` and `--model x` are enough when the agent will not start.
