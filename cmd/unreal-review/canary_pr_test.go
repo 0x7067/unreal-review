@@ -23,7 +23,23 @@ const (
 	canaryOwner = "canary"
 	canaryRepo  = "fixture"
 	emptyDiff   = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	// Nothing listens here. A run --pr that starts the agent dials this origin
+	// and cannot reach openrouter.ai. make canary starts the shell stub in a
+	// separate process, so this env has to be set on the test's own exec.
+	canaryOpenRouterAPI = "http://127.0.0.1:9/api/v1"
 )
+
+func TestCanaryCLIEnvPinsOpenRouterLocal(t *testing.T) {
+	var got string
+	for _, entry := range cliEnv("http://127.0.0.1:1", "canary-token") {
+		if strings.HasPrefix(entry, "UNREAL_REVIEW_OPENROUTER_API=") {
+			got = strings.TrimPrefix(entry, "UNREAL_REVIEW_OPENROUTER_API=")
+		}
+	}
+	if got != canaryOpenRouterAPI || !strings.HasPrefix(got, "http://127.0.0.1:") || strings.Contains(got, "openrouter.ai") {
+		t.Fatalf("UNREAL_REVIEW_OPENROUTER_API=%q", got)
+	}
+}
 
 func TestCanaryRunPRRequiresToken(t *testing.T) {
 	bin := canaryBinary(t)
@@ -579,11 +595,25 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
+func requireLocalOpenRouter(t *testing.T, env []string) {
+	t.Helper()
+	var got string
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "UNREAL_REVIEW_OPENROUTER_API=") {
+			got = strings.TrimPrefix(entry, "UNREAL_REVIEW_OPENROUTER_API=")
+		}
+	}
+	if !strings.HasPrefix(got, "http://127.0.0.1:") || strings.Contains(got, "openrouter.ai") {
+		t.Fatalf("exec env UNREAL_REVIEW_OPENROUTER_API=%q can reach openrouter.ai", got)
+	}
+}
+
 func cliEnv(api, token string) []string {
 	env := []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + os.Getenv("HOME"),
 		"OPENROUTER_API_KEY=dummy",
+		"UNREAL_REVIEW_OPENROUTER_API=" + canaryOpenRouterAPI,
 	}
 	if v := os.Getenv("TMPDIR"); v != "" {
 		env = append(env, "TMPDIR="+v)
@@ -599,6 +629,7 @@ func cliEnv(api, token string) []string {
 
 func runCLI(t *testing.T, bin string, env []string, args ...string) (string, string, int) {
 	t.Helper()
+	requireLocalOpenRouter(t, env)
 	cmd := exec.CommandContext(context.Background(), bin, args...)
 	cmd.Env = env
 	var stdout, stderr bytes.Buffer
