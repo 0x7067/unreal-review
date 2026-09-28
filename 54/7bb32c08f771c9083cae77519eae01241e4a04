@@ -1,0 +1,32 @@
+FOLLOWUP.md
+  h_29be57c0addd47 24
+internal/agent/registry.go
+  h_29be57c0addd47 74,85-91,102-108
+internal/agent/registry_test.go
+  h_29be57c0addd47 106,124-131
+internal/findings/findings.go
+  h_29be57c0addd47 115-121,138-152,319-325,360,403-411,527-535
+internal/findings/findings_test.go
+  h_29be57c0addd47 164,168
+internal/render/github.go
+  h_29be57c0addd47 171
+internal/render/github_test.go
+  h_29be57c0addd47 183,187,189,193,197
+internal/review/review.go
+  h_29be57c0addd47 264
+internal/review/review_test.go
+  h_29be57c0addd47 35
+schema/findings-v1.md
+  h_29be57c0addd47 36,57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "547bb32c08f771c9083cae77519eae01241e4a04",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
