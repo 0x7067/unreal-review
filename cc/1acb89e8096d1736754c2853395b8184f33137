@@ -1,0 +1,18 @@
+cmd/unreal-review/canary_pr_test.go
+  h_29be57c0addd47 58
+cmd/unreal-review/secrets.go
+  h_29be57c0addd47 20
+tools/canary.sh
+  h_29be57c0addd47 37,739
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cc1acb89e8096d1736754c2853395b8184f33137",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
