@@ -1,0 +1,22 @@
+cmd/unreal-review/api_origin_test.go
+  h_29be57c0addd47 6-7,65-96
+internal/render/github.go
+  h_29be57c0addd47 4-5,15-18,183,187,191-193,233-262
+internal/render/github_test.go
+  h_29be57c0addd47 225-226,240-241
+internal/review/review.go
+  h_29be57c0addd47 217,219,222
+internal/review/review_test.go
+  h_29be57c0addd47 74-77,79-81,86-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6897793ea5fb09691161c6e3f65706210a20e6eb",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
