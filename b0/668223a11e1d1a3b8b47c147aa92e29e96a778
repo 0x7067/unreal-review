@@ -1,0 +1,14 @@
+FOLLOWUP.md
+  h_29be57c0addd47 3,22,25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b0668223a11e1d1a3b8b47c147aa92e29e96a778",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
