@@ -1,23 +1,10 @@
 # Follow-up: pull request review loop
 
-Open work from the session that moved the agent onto the embedded unreal-agent harness. Do these in order. Delete this file once all three are done.
+Open work from the session that moved the agent onto the embedded unreal-agent harness. Do these in order. Delete this file once all remaining items are done.
 
 The user wants no fallbacks: one source per value, and a clear error when it is missing.
 
-## 1. Build the reviewer from the base commit in CI
-
-`.github/workflows/review.yml` builds `unreal-review` from the PR checkout with `go install ./cmd/unreal-review`. It then runs that binary with `OPENROUTER_API_KEY` and a `pull-requests: write` `GH_TOKEN`. A same-repository PR can edit `internal/agent` to send either value anywhere.
-
-Change:
-
-- Keep checking out the PR head as the workspace; the diff and file reads need it.
-- Build the binary from `github.event.pull_request.base.sha` in a separate worktree, for example `git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"`, then `go install ./cmd/unreal-review` from there.
-- Pass the SHA through `env:` as `BASE_SHA`. Do not interpolate `${{ }}` into the shell; see commit `7c81b2c`.
-- Apply the same change to `examples/github-actions/review.yml`.
-
-Done when a PR that edits `cmd/unreal-review` is still reviewed by the base binary. Check the Actions log for the worktree build.
-
-## 2. Stop one dropped finding from blocking the review receipt
+## 1. Stop one dropped finding from blocking the review receipt
 
 A finding whose lines are outside the PR patch turns incremental review back into full-range review, and a new review is posted on every push:
 
@@ -30,7 +17,7 @@ Decide the rule first. `spec/github.bend` `postNew` and the law `post_new_true_d
 
 Done when two consecutive `render github` calls on the same head, with one out-of-patch finding, post one review and create the check run.
 
-## 3. Run a live multi-push test PR
+## 2. Run a live multi-push test PR
 
 Nothing has exercised the current loop on a real PR with several pushes. Use a disposable repository or branch, not this repo's own PRs:
 
