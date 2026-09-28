@@ -1,0 +1,14 @@
+.github/workflows/review.yml
+  h_29be57c0addd47 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9f85fcaabaf427477e393eaa2dbd0f8a914b3427",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
