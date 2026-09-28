@@ -11,6 +11,13 @@ func New() *Cache {
 	return &Cache{items: map[string]string{}}
 }
 
+func (c *Cache) Has(key string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, ok := c.items[key]
+	return ok
+}
+
 func (c *Cache) Get(key string) (string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
