@@ -27,9 +27,22 @@ A checkout with `core.symlinks` false writes those three links as text files. Ru
 
 ## Checks
 
-`make check` (fmt, lint, vet, test, prove). `make prove` runs `tools/prove.sh`: Bend checks `PROOF.bend` and the script enforces `spec/unsafe-allow.txt` for laws that lean on `@unsafe` code (running `bend PROOF.bend --check-only` alone is not enough). `hooks/prove-stop.sh` runs the same gate when a turn ends and refuses the stop while the proof is red, for up to three consecutive failures before it stands down. It is registered project-level in `.claude/`, `.cursor/`, `.codex/` and `.grok/`; OpenCode (`.opencode/plugin/`) and Pi (`.pi/`) can only nudge, not block. For a one-shot verdict run `hooks/prove-stop.sh --check`.
+- `make check` (fmt, lint, vet, test, prove).
+- `make prove` runs `tools/prove.sh`: Bend checks `PROOF.bend` and the script enforces `spec/unsafe-allow.txt` for laws that lean on `@unsafe` code (running `bend PROOF.bend --check-only` alone is not enough).
+- `hooks/prove-stop.sh` runs the same gate when a turn ends and refuses the stop while the proof is red, for up to three consecutive failures before it stands down.
+- It is registered project-level in `.claude/`, `.cursor/`, `.codex/` and `.grok/`; OpenCode (`.opencode/plugin/`) and Pi (`.pi/`) can only nudge, not block.
+- For a one-shot verdict run `hooks/prove-stop.sh --check`.
 
-`make canary` is the CLI regression run. It builds `bin/unreal-review` from the checkout under test and asserts the offline recipes in [.agents/skills/verify-unreal-review](.agents/skills/verify-unreal-review/SKILL.md), then execs that binary against a local GitHub stand-in for `run --pr` and `render github`. The canary needs no API secret and does not call openrouter.ai. A dummy `OPENROUTER_API_KEY` stays on the `run` steps whose recipe expects `401`, and `UNREAL_REVIEW_OPENROUTER_API` points those calls at a local stand-in that returns that status. The release binary honors `UNREAL_REVIEW_OPENROUTER_API` and `UNREAL_REVIEW_GITHUB_API` only when the URL host is loopback (`127.0.0.1`, `::1`, or `localhost`). Any other value is an error. CI jobs `check` and `canary` are the pair that must pass on pull requests and on pushes to `main` (both also run on `workflow_dispatch`). Marking those two checks required is a GitHub branch-protection setting. Workflow `Review` (`.github/workflows/review.yml`) is live dogfood: it reviews a same-repo pull request with the base commit's binary and posts to GitHub. `eval` stays outside both jobs.
+- `make canary` is the CLI regression run.
+- It builds `bin/unreal-review` from the checkout under test and asserts the offline recipes in [.agents/skills/verify-unreal-review](.agents/skills/verify-unreal-review/SKILL.md), then execs that binary against a local GitHub stand-in for `run --pr` and `render github`.
+- The canary needs no API secret and does not call openrouter.ai.
+- A dummy `OPENROUTER_API_KEY` stays on the `run` steps whose recipe expects `401`, and `UNREAL_REVIEW_OPENROUTER_API` points those calls at a local stand-in that returns that status.
+- The release binary honors `UNREAL_REVIEW_OPENROUTER_API` and `UNREAL_REVIEW_GITHUB_API` only when the URL host is loopback (`127.0.0.1`, `::1`, or `localhost`).
+- Any other value is an error.
+- CI jobs `check` and `canary` are the pair that must pass on pull requests and on pushes to `main` (both also run on `workflow_dispatch`).
+- Marking those two checks required is a GitHub branch-protection setting.
+- Workflow `Review` (`.github/workflows/review.yml`) is live dogfood: it reviews a same-repo pull request with the base commit's binary and posts to GitHub.
+- `eval` stays outside both jobs.
 
 Five of the six gate project-local hooks behind one-time trust, so a fresh clone is ungated until it is granted: Claude Code's workspace trust dialog, Codex `[hooks.state]` in `~/.codex/config.toml`, Cursor `--trust`, Pi `--approve`, Grok's `trusted_folders.toml`. An untrusted hook does not error, it just never runs.
 
