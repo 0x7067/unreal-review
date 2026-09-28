@@ -3,10 +3,12 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +20,9 @@ import (
 	"github.com/unreallabsai/unreal-agent/harness/inbox"
 	"github.com/unreallabsai/unreal-agent/harness/llm"
 	"github.com/unreallabsai/unreal-agent/harness/llm/clients/openrouter"
+	"github.com/unreallabsai/unreal-agent/harness/llm/responsesapi"
 	"github.com/unreallabsai/unreal-agent/harness/operation"
+	"github.com/unreallabsai/unreal-agent/harness/primitives"
 	"github.com/unreallabsai/unreal-agent/harness/session"
 	"github.com/unreallabsai/unreal-agent/harness/sessionstore"
 	"github.com/unreallabsai/unreal-agent/harness/sessionstore/localfile"
@@ -74,12 +78,51 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 	if err != nil {
 		return review.AgentResult{}, err
 	}
-	client, err := openrouter.NewClient(openrouter.Config{APIKey: h.APIKey, BaseURL: base})
+	adapter, closeAdapter, err := newModelAdapter(h.APIKey, base)
 	if err != nil {
 		return review.AgentResult{}, fmt.Errorf("create openrouter client: %w", err)
 	}
-	defer func() { _ = client.Close() }()
-	return h.run(ctx, client, req)
+	defer func() { _ = closeAdapter() }()
+	return h.run(ctx, adapter, req)
+}
+
+// newModelAdapter uses the stock OpenRouter client for the public API. A
+// loopback base gets a client that refuses redirects off 127.0.0.1, ::1, and
+// localhost, so the bearer stays on the stand-in.
+func newModelAdapter(apiKey, base string) (llm.Adapter, func() error, error) {
+	u, err := url.Parse(base)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !loopbackHost(u.Hostname()) {
+		client, err := openrouter.NewClient(openrouter.Config{APIKey: apiKey, BaseURL: base})
+		if err != nil {
+			return nil, nil, err
+		}
+		return client, client.Close, nil
+	}
+	return newLoopbackModelAdapter(apiKey, base)
+}
+
+func newLoopbackModelAdapter(apiKey, base string) (llm.Adapter, func() error, error) {
+	baseURL := strings.TrimRight(strings.TrimSpace(base), "/")
+	remote := primitives.NewRemoteClientWithHTTPClient(LoopbackHTTPClient())
+	adapter, err := responsesapi.NewAdapter(remote, responsesapi.Config{
+		Endpoint: baseURL + "/responses",
+		Headers: map[string][]string{
+			"Authorization": {"Bearer " + apiKey},
+			"Content-Type":  {"application/json"},
+		},
+		CacheKeyPlacement: responsesapi.CacheKeyPlacement{Header: "x-session-id"},
+		Extensions: map[string]jsontext.Value{
+			"cache_control": jsontext.Value(`{"type":"ephemeral","ttl":"1h"}`),
+		},
+	})
+	if err != nil {
+		_ = remote.Close()
+		return nil, nil, err
+	}
+	return adapter, remote.Close, nil
 }
 
 func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentRequest) (review.AgentResult, error) {

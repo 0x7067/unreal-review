@@ -253,6 +253,81 @@ func TestRunRecordsCleanSummaryWithoutFindings(t *testing.T) {
 	}
 }
 
+func TestLoopbackHTTPClientRejectsOffHostRedirect(t *testing.T) {
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://example.com/steal", http.StatusFound)
+	}))
+	t.Cleanup(stub.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, stub.URL+"/v1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := LoopbackHTTPClient().Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("off-host redirect was followed")
+	}
+	if !strings.Contains(err.Error(), "not loopback") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestLoopbackHTTPClientAllowsLoopbackRedirect(t *testing.T) {
+	next := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Errorf("authorization %q", r.Header.Get("Authorization"))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(next.Close)
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, next.URL+"/ok", http.StatusFound)
+	}))
+	t.Cleanup(stub.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, stub.URL+"/v1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := LoopbackHTTPClient().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status %s", resp.Status)
+	}
+}
+
+func TestLoopbackModelAdapterRefusesOffHostRedirect(t *testing.T) {
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Errorf("authorization %q", r.Header.Get("Authorization"))
+		}
+		http.Redirect(w, r, "https://example.com/steal", http.StatusFound)
+	}))
+	t.Cleanup(stub.Close)
+
+	adapter, closeAdapter, err := newLoopbackModelAdapter("secret", stub.URL+"/api/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = closeAdapter() })
+	_, err = adapter.Respond(t.Context(), llm.Request{
+		Model: llm.Model{ID: "test"},
+		Input: []llm.Item{{
+			Type: llm.ItemMessage,
+			Data: llm.Message{Role: llm.RoleUser, Text: "hi"},
+		}},
+	}, llm.RequestOptions{})
+	if err == nil || !strings.Contains(err.Error(), "not loopback") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestOpenRouterBase(t *testing.T) {
 	t.Setenv(openRouterBaseEnv, "")
 	got, err := openRouterBase()

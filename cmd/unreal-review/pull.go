@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"unreal-review/internal/agent"
 	"unreal-review/internal/github"
@@ -93,10 +94,15 @@ func githubClient(token string) (*github.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	httpClient := github.NewHTTPClient()
+	if base != "" {
+		httpClient = agent.LoopbackHTTPClient()
+		httpClient.Timeout = 30 * time.Second
+	}
 	return &github.Client{
 		Token:   token,
 		BaseURL: base,
-		HTTP:    github.NewHTTPClient(),
+		HTTP:    httpClient,
 	}, nil
 }
 

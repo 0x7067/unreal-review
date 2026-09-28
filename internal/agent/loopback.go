@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 )
@@ -26,10 +27,38 @@ func LoopbackBaseURL(envName, raw string) (string, error) {
 	if !schemeOK || host == "" {
 		return "", fmt.Errorf("%s must be an http or https URL on 127.0.0.1, ::1, or localhost", envName)
 	}
-	switch host {
-	case "127.0.0.1", "::1", "localhost":
+	if loopbackHost(host) {
 		return raw, nil
-	default:
-		return "", fmt.Errorf("%s host %q is not loopback; use 127.0.0.1, ::1, or localhost", envName, u.Hostname())
 	}
+	return "", fmt.Errorf("%s host %q is not loopback; use 127.0.0.1, ::1, or localhost", envName, u.Hostname())
+}
+
+func loopbackHost(host string) bool {
+	switch strings.ToLower(host) {
+	case "127.0.0.1", "::1", "localhost":
+		return true
+	default:
+		return false
+	}
+}
+
+// LoopbackHTTPClient follows redirects only while the next URL stays on
+// 127.0.0.1, ::1, or localhost. A loopback stand-in that redirects off-host
+// must not receive the bearer on that next request.
+func LoopbackHTTPClient() *http.Client {
+	return &http.Client{CheckRedirect: refuseOffLoopbackRedirect}
+}
+
+func refuseOffLoopbackRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return fmt.Errorf("stopped after 10 redirects")
+	}
+	if req.URL == nil || !loopbackHost(req.URL.Hostname()) {
+		host := ""
+		if req.URL != nil {
+			host = req.URL.Host
+		}
+		return fmt.Errorf("refusing redirect to %s: not loopback", host)
+	}
+	return nil
 }
