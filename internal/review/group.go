@@ -162,8 +162,11 @@ func clusterFilesEdges(files []ChangedFile, edges []importEdge) []FileGroup {
 	mergeFamilies(files, groupKey, headerFamilyKey, 4)
 	mergeFamilies(files, groupKey, stemFamilyKey, 0)
 	mergeFamilies(files, groupKey, lockFamilyKey, 0)
-	attachTests(files, groupKey)
+	// Imports first so a cross-directory test copies the importer's key after
+	// that file has joined its imported package. Same-directory tests are not
+	// rekeyed here; they already share a directory or stem key.
 	applyImportEdges(files, groupKey, edges)
+	attachTests(files, groupKey)
 	buckets := make(map[string][]ChangedFile)
 	for i, file := range files {
 		key := groupKey[i]

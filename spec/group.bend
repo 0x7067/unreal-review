@@ -768,7 +768,7 @@ def splitAll(gs: List<&2, Group>) -> List<&2, Group>:
       List.append(&2, Group, splitOne(h), splitAll(t))
 
 def cluster(fs: List<&2, ChangedFile>, es: List<&2, Edge>) -> List<&2, Group>:
-  splitAll(bucket(applyEdges(es, attachAll(mergeAll(initItems(fs))))))
+  splitAll(bucket(attachAll(applyEdges(es, mergeAll(initItems(fs))))))
 
 def CappedTail(h: ChangedFile, t: List<&2, ChangedFile>) -> Type:
   match t:
@@ -1159,14 +1159,14 @@ def clusterPerm2(+id: Nat, +xs: List<&2, Item>) -> {countId(id, filesOf(xs)) == 
   %Equal.sym(Nat, countIdGroups(id, splitAll(bucket(xs))), countIdGroups(id, bucket(xs)), splitAllCount(id, bucket(xs))) : {countId(id, filesOf(xs)) == _ : Nat}
   Equal.sym(Nat, countIdGroups(id, bucket(xs)), countId(id, filesOf(xs)), bucketCount(id, xs))
 
-def clusterPerm1(+id: Nat, +es: List<&2, Edge>, +xs0: List<&2, Item>) -> {countId(id, filesOf(xs0)) == countIdGroups(id, splitAll(bucket(applyEdges(es, attachAll(mergeAll(xs0)))))) : Nat}:
-  %countCong(id, filesOf(mergeAll(xs0)), filesOf(xs0), mergeAllFiles(xs0)) : {_ == countIdGroups(id, splitAll(bucket(applyEdges(es, attachAll(mergeAll(xs0)))))) : Nat}
-  %countCong(id, filesOf(attachAll(mergeAll(xs0))), filesOf(mergeAll(xs0)), attachAllFiles(mergeAll(xs0))) : {_ == countIdGroups(id, splitAll(bucket(applyEdges(es, attachAll(mergeAll(xs0)))))) : Nat}
-  %countCong(id, filesOf(applyEdges(es, attachAll(mergeAll(xs0)))), filesOf(attachAll(mergeAll(xs0))), applyEdgesFiles(es, attachAll(mergeAll(xs0)))) : {_ == countIdGroups(id, splitAll(bucket(applyEdges(es, attachAll(mergeAll(xs0)))))) : Nat}
-  clusterPerm2(id, applyEdges(es, attachAll(mergeAll(xs0))))
+def clusterPerm1(+id: Nat, +es: List<&2, Edge>, +xs0: List<&2, Item>) -> {countId(id, filesOf(xs0)) == countIdGroups(id, splitAll(bucket(attachAll(applyEdges(es, mergeAll(xs0)))))) : Nat}:
+  %countCong(id, filesOf(mergeAll(xs0)), filesOf(xs0), mergeAllFiles(xs0)) : {_ == countIdGroups(id, splitAll(bucket(attachAll(applyEdges(es, mergeAll(xs0)))))) : Nat}
+  %countCong(id, filesOf(applyEdges(es, mergeAll(xs0))), filesOf(mergeAll(xs0)), applyEdgesFiles(es, mergeAll(xs0))) : {_ == countIdGroups(id, splitAll(bucket(attachAll(applyEdges(es, mergeAll(xs0)))))) : Nat}
+  %countCong(id, filesOf(attachAll(applyEdges(es, mergeAll(xs0)))), filesOf(applyEdges(es, mergeAll(xs0))), attachAllFiles(applyEdges(es, mergeAll(xs0)))) : {_ == countIdGroups(id, splitAll(bucket(attachAll(applyEdges(es, mergeAll(xs0)))))) : Nat}
+  clusterPerm2(id, attachAll(applyEdges(es, mergeAll(xs0))))
 
-def clusterPermGo(+id: Nat, fs: List<&2, ChangedFile>, +es: List<&2, Edge>, +xs0: List<&2, Item>, e0: {filesOf(xs0) == fs : List<&2, ChangedFile>}) -> {countId(id, fs) == countIdGroups(id, splitAll(bucket(applyEdges(es, attachAll(mergeAll(xs0)))))) : Nat}:
-  %countCong(id, filesOf(xs0), fs, e0) : {_ == countIdGroups(id, splitAll(bucket(applyEdges(es, attachAll(mergeAll(xs0)))))) : Nat}
+def clusterPermGo(+id: Nat, fs: List<&2, ChangedFile>, +es: List<&2, Edge>, +xs0: List<&2, Item>, e0: {filesOf(xs0) == fs : List<&2, ChangedFile>}) -> {countId(id, fs) == countIdGroups(id, splitAll(bucket(attachAll(applyEdges(es, mergeAll(xs0)))))) : Nat}:
+  %countCong(id, filesOf(xs0), fs, e0) : {_ == countIdGroups(id, splitAll(bucket(attachAll(applyEdges(es, mergeAll(xs0)))))) : Nat}
   clusterPerm1(id, es, xs0)
 
 def clusterPerm(+id: Nat, +fs: List<&2, ChangedFile>, +es: List<&2, Edge>) -> {countId(id, fs) == countIdGroups(id, cluster(fs, es)) : Nat}:
@@ -1348,7 +1348,7 @@ def splitAllCapped(gs: List<&2, Group>) -> AllCapped(splitAll(gs)):
       allCappedAppend(splitOne(h), splitAll(t), splitOneCapped(h), splitAllCapped(t))
 
 def clusterCaps(+fs: List<&2, ChangedFile>, +es: List<&2, Edge>) -> AllCapped(cluster(fs, es)):
-  splitAllCapped(bucket(applyEdges(es, attachAll(mergeAll(initItems(fs))))))
+  splitAllCapped(bucket(attachAll(applyEdges(es, mergeAll(initItems(fs))))))
 
 
 
