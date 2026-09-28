@@ -1,0 +1,44 @@
+.agents/skills/verify-unreal-review/features/render-github.md
+  h_29be57c0addd47 50
+FOLLOWUP.md
+  h_29be57c0addd47 24
+LAWS.bend
+  h_29be57c0addd47 290-291,294,297
+PROOF.bend
+  h_29be57c0addd47 239
+cmd/unreal-review/canary_pr_test.go
+  h_29be57c0addd47 278-284
+cmd/unreal-review/render.go
+  h_29be57c0addd47 174-175
+cmd/unreal-review/secrets.go
+  h_29be57c0addd47 20
+internal/findings/findings.go
+  h_29be57c0addd47 406-415
+internal/findings/findings_test.go
+  h_29be57c0addd47 183,187
+internal/github/github_test.go
+  h_29be57c0addd47 133,139
+internal/render/github.go
+  h_29be57c0addd47 73,124,136,144,157,166
+internal/render/github_test.go
+  h_29be57c0addd47 147,150,152-155,159,161,164,167,171,177-179,185,191
+internal/review/review.go
+  h_29be57c0addd47 217,219,222
+internal/review/review_test.go
+  h_29be57c0addd47 76-78,80
+schema/findings-v1.md
+  h_29be57c0addd47 57
+spec/github.bend
+  h_29be57c0addd47 122-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "680c621acee5b9afe3ed438dc3b4732213870092",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
