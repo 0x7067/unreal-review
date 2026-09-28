@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -40,9 +39,6 @@ func cmdEval(args []string) error {
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
 	asJSON := fs.Bool("json", false, "print machine-readable JSON instead of a table")
 	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
 		return err
 	}
 	if *model == "" {

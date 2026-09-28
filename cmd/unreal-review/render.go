@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -41,9 +40,6 @@ func renderMarkdown(args []string) error {
 	fs.SetOutput(os.Stderr)
 	outPath := fs.String("out", "-", "output path, or - for stdout")
 	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
 		return err
 	}
 	report, err := loadReport(fs.Arg(0))
@@ -66,9 +62,6 @@ func renderGitHub(args []string) error {
 	commit := fs.String("commit", "", "commit SHA for inline comments (default: PR head)")
 	dryRun := fs.Bool("dry-run", false, "print the review payload instead of posting")
 	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
 		return err
 	}
 	report, err := loadReport(fs.Arg(0))
