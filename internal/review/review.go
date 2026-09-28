@@ -69,7 +69,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	if len(diff) > maxBriefDiff {
-		return Result{Diff: diff}, fmt.Errorf(
+		return Result{}, fmt.Errorf(
 			"diff is %d bytes, over the %d-byte review limit; narrow it with pathspecs or split it with unreal-review group",
 			len(diff), maxBriefDiff,
 		)
