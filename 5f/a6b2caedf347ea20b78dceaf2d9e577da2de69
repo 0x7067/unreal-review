@@ -1,0 +1,14 @@
+internal/review/review.go
+  h_29be57c0addd47 72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5fa6b2caedf347ea20b78dceaf2d9e577da2de69",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
