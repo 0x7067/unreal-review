@@ -293,27 +293,6 @@ while i < len(checks):
 PY
 }
 
-separate_groups() {
-	local file=$1
-	shift
-	python3 - "$file" "$@" <<'PY'
-import re, sys
-text = open(sys.argv[1]).read()
-names = sys.argv[2:]
-parts = re.split(r"(?m)^(?=\d+  )", text)
-found = {name: 0 for name in names}
-for part in parts:
-    hits = [name for name in names if name in part]
-    if len(hits) > 1:
-        sys.exit("grouped together: " + ", ".join(hits) + "\n" + part)
-    for name in hits:
-        found[name] += 1
-for name, count in found.items():
-    if count != 1:
-        sys.exit(f"{name} appears in {count} groups\n" + text)
-PY
-}
-
 run_line_ends() {
 	local file=$1 suffix=$2 label=$3
 	python3 - "$file" "$suffix" "$label" <<'PY'
@@ -572,6 +551,7 @@ run_line_has_both "$(stdout_of group-lock)" "go.mod" "go.sum" "group-lock"
 run_line_ends "$(stdout_of group-lock)" "-- main.go" "group-lock"
 
 imports=$(new_repo imports)
+write_file "$imports/go.mod" <<<'module example'
 write_file "$imports/internal/api/billing.go" <<'EOF'
 package api
 
@@ -592,9 +572,9 @@ EOF
 commit_all "$imports"
 cli --name group-imports -- group --workspace "$imports" --from HEAD~1 --to HEAD
 require_exit group-imports 0
-feature_has group-files.md "in separate groups"
-separate_groups "$(stdout_of group-imports)" \
-	"internal/api/billing.go" "internal/billing/charge.go" "internal/other/x.go"
+feature_has group-files.md "with the unique package it imports across directories"
+run_line_has_both "$(stdout_of group-imports)" "internal/api/billing.go" "internal/billing/charge.go" "group-imports"
+run_line_ends "$(stdout_of group-imports)" "-- internal/other" "group-imports"
 
 cli --name group-workspace -- group --workspace "$VERIFY_FIXTURE"
 require_exit group-workspace 0

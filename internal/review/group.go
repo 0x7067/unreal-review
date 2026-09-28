@@ -57,7 +57,7 @@ func Groups(ctx context.Context, workspace string, spec Spec, paths, exclude []s
 	if err != nil {
 		return GroupResult{}, err
 	}
-	return GroupResult{Spec: spec, From: r.base, To: r.head, Groups: clusterFiles(files)}, nil
+	return GroupResult{Spec: spec, From: r.base, To: r.head, Groups: clusterFilesEdges(files, goImportEdges(workspace, files))}, nil
 }
 
 func parseNumstat(raw string) ([]ChangedFile, error) {
@@ -134,6 +134,10 @@ const (
 )
 
 func clusterFiles(files []ChangedFile) []FileGroup {
+	return clusterFilesEdges(files, nil)
+}
+
+func clusterFilesEdges(files []ChangedFile, edges []importEdge) []FileGroup {
 	if len(files) == 0 {
 		return nil
 	}
@@ -155,6 +159,7 @@ func clusterFiles(files []ChangedFile) []FileGroup {
 	mergeFamilies(files, groupKey, stemFamilyKey, 0)
 	mergeFamilies(files, groupKey, lockFamilyKey, 0)
 	attachTests(files, groupKey)
+	applyImportEdges(files, groupKey, edges)
 	buckets := make(map[string][]ChangedFile)
 	for i, file := range files {
 		key := groupKey[i]
