@@ -100,6 +100,31 @@ func TestGroupsWorkspaceReadsDiskImports(t *testing.T) {
 	}
 }
 
+func TestGroupsImportLeavesDirectorySibling(t *testing.T) {
+	dir := gitRepo(t)
+	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")
+	writeRepoFile(t, dir, "go.mod", "module example\n")
+	writeRepoFile(t, dir, "internal/api/a.go", "package api\n\nimport \"example/internal/billing\"\n")
+	writeRepoFile(t, dir, "internal/api/helper.go", "package api\n\nfunc Help() {}\n")
+	writeRepoFile(t, dir, "internal/billing/charge.go", "package billing\n\nfunc Charge() {}\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "head")
+
+	result, err := Groups(context.Background(), dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := groupPaths(result.Groups)
+	want := [][]string{
+		{"go.mod"},
+		{"internal/api/a.go", "internal/billing/charge.go"},
+		{"internal/api/helper.go"},
+	}
+	if strings.Join(flatten(got), " | ") != strings.Join(flatten(want), " | ") {
+		t.Fatalf("groups:\n got %v\nwant %v", got, want)
+	}
+}
+
 func TestGoImportEdgesUsePackageRepresentative(t *testing.T) {
 	dir := gitRepo(t)
 	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")

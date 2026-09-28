@@ -593,10 +593,19 @@ def unionKeys(xs: List<&2, Item>, ka: Maybe<&2, GKey>, kb: Maybe<&2, GKey>) -> L
     case Some{a} Some{b}:
       remapKey(b, a, xs)
 
+# An edge moves only the importing file onto the representative's key.
+# Directory siblings that still share the importer's old key stay there.
+def applyEdgeB(+id: Nat, k: Maybe<&2, GKey>, xs: List<&2, Item>) -> List<&2, Item>:
+  match k:
+    case None{}:
+      xs
+    case Some{key}:
+      remapId(id, key, xs)
+
 def applyEdge(+xs: List<&2, Item>, e: Edge) -> List<&2, Item>:
   match e:
     case Edge{+a, +b}:
-      unionKeys(xs, keyOf(a, xs), keyOf(b, xs))
+      applyEdgeB(a, keyOf(b, xs), xs)
 
 def applyEdges(es: List<&2, Edge>, xs: List<&2, Item>) -> List<&2, Item>:
   match es:
@@ -878,10 +887,17 @@ def unionKeysFiles(+xs: List<&2, Item>, ka: Maybe<&2, GKey>, kb: Maybe<&2, GKey>
     case Some{a} Some{b}:
       remapKeyFiles(b, a, xs)
 
+def applyEdgeBFiles(+id: Nat, k: Maybe<&2, GKey>, xs: List<&2, Item>) -> {filesOf(applyEdgeB(id, k, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
+  match k:
+    case None{}:
+      {==}
+    case Some{key}:
+      remapIdFiles(id, key, xs)
+
 def applyEdgeFiles(+xs: List<&2, Item>, e: Edge) -> {filesOf(applyEdge(xs, e)) == filesOf(xs) : List<&2, ChangedFile>}:
   match e:
     case Edge{+a, +b}:
-      unionKeysFiles(xs, keyOf(a, xs), keyOf(b, xs))
+      applyEdgeBFiles(a, keyOf(b, xs), xs)
 
 def applyEdgesFiles(es: List<&2, Edge>, +xs: List<&2, Item>) -> {filesOf(applyEdges(es, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
   match es:

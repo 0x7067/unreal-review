@@ -10,9 +10,10 @@ import (
 	"strings"
 )
 
-// importEdge joins an importer to one representative file of the package it
-// imports. The representative stands for every changed file that still shares
-// that file's group, so a package of many files does not become one edge each.
+// importEdge joins the importing file to one representative of the package it
+// imports. Only that file's group key changes; directory siblings stay in
+// their own group. The representative stands for every changed file that
+// still shares its key, so a package of many files does not become one edge each.
 type importEdge struct {
 	from string
 	to   string
@@ -26,33 +27,13 @@ func applyImportEdges(files []ChangedFile, groupKey []string, edges []importEdge
 	for i, file := range files {
 		index[file.Path] = i
 	}
-	parent := make(map[string]string, len(groupKey))
-	for _, key := range groupKey {
-		parent[key] = key
-	}
-	var find func(string) string
-	find = func(key string) string {
-		seen, ok := parent[key]
-		if !ok || seen == key {
-			parent[key] = key
-			return key
-		}
-		parent[key] = find(seen)
-		return parent[key]
-	}
 	for _, edge := range edges {
 		from, okFrom := index[edge.from]
 		to, okTo := index[edge.to]
 		if !okFrom || !okTo || from == to {
 			continue
 		}
-		a, b := find(groupKey[from]), find(groupKey[to])
-		if a != b {
-			parent[b] = a
-		}
-	}
-	for i, key := range groupKey {
-		groupKey[i] = find(key)
+		groupKey[from] = groupKey[to]
 	}
 }
 
