@@ -222,7 +222,8 @@ func TestHistoryReportedReadsBackWhatWasPosted(t *testing.T) {
 	outside.Severity = findings.SeverityError
 	outsideOld := newFinding("src/far.go", 5, 5, "A deleted guard.")
 	outsideOld.Anchor = findings.AnchorOld
-	body := reviewBody("Summary.", nil, []DroppedFinding{{Finding: outside}, {Finding: outsideOld}}, nil)
+	outsideOdd := newFinding("src/`odd\nname.go", 9, 9, "A problem in an unusual path.")
+	body := reviewBody("Summary.", nil, []DroppedFinding{{Finding: outside}, {Finding: outsideOld}, {Finding: outsideOdd}}, nil)
 
 	got := History{
 		Comments: []github.PostedComment{
@@ -236,7 +237,8 @@ func TestHistoryReportedReadsBackWhatWasPosted(t *testing.T) {
 
 	wantOutside := findings.Finding{ID: outside.ID, Path: "src/far.go", StartLine: 40, EndLine: 42, Anchor: findings.AnchorNew, Severity: findings.SeverityError, Body: "A problem the patch does not show, across two lines."}
 	wantOld := findings.Finding{ID: outsideOld.ID, Path: "src/far.go", StartLine: 5, EndLine: 5, Anchor: findings.AnchorOld, Severity: findings.SeverityWarning, Body: "A deleted guard."}
-	if len(got) != 4 || got[2] != wantOutside || got[3] != wantOld {
+	wantOdd := findings.Finding{ID: outsideOdd.ID, Path: "src/`odd\nname.go", StartLine: 9, EndLine: 9, Anchor: findings.AnchorNew, Severity: findings.SeverityWarning, Body: "A problem in an unusual path."}
+	if len(got) != 5 || got[2] != wantOutside || got[3] != wantOld || got[4] != wantOdd {
 		t.Fatalf("reported: %+v", got)
 	}
 	if got[0] != right {

@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -58,5 +60,37 @@ func TestGitHubAPIOrigin(t *testing.T) {
 		if _, err = githubClient("token"); err == nil || !strings.Contains(err.Error(), "UNREAL_REVIEW_GITHUB_API") {
 			t.Fatalf("%q: got %v", raw, err)
 		}
+	}
+}
+
+func TestIsolateSecretsRemovesCredentialsFromChildEnvironment(t *testing.T) {
+	const helper = "UNREAL_REVIEW_TEST_ISOLATE_SECRETS"
+	values := map[string]string{
+		"OPENROUTER_API_KEY": "openrouter-secret",
+		"GH_TOKEN":           "github-secret",
+		"GITHUB_TOKEN":       "inherited-github-secret",
+	}
+	if os.Getenv(helper) == "1" {
+		if err := isolateSecrets(); err != nil {
+			t.Fatal(err)
+		}
+		for name, want := range values {
+			if _, ok := os.LookupEnv(name); ok {
+				t.Fatalf("%s remains in the child environment", name)
+			}
+			if got := secret(name); got != want {
+				t.Fatalf("secret(%q) = %q, want %q", name, got, want)
+			}
+		}
+		return
+	}
+
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestIsolateSecretsRemovesCredentialsFromChildEnvironment$")
+	cmd.Env = []string{helper + "=1"}
+	for name, value := range values {
+		cmd.Env = append(cmd.Env, name+"="+value)
+	}
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("secret isolation subprocess: %v\n%s", err, output)
 	}
 }

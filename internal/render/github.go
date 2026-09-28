@@ -1,6 +1,8 @@
 package render
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,7 +12,10 @@ import (
 	"unreal-review/internal/github"
 )
 
-const maxInlineComments = 50
+const (
+	maxInlineComments   = 50
+	droppedMarkerPrefix = "<!-- unreal-review dropped "
+)
 
 type GitHubOptions struct {
 	Owner      string
@@ -175,14 +180,17 @@ func droppedLine(finding findings.Finding) string {
 	if finding.Anchor == findings.AnchorOld {
 		anchor = " old"
 	}
-	return fmt.Sprintf("- **%s** `%s`%s %s: %s %s",
+	return fmt.Sprintf("- **%s** `%s`%s %s: %s %s %s",
 		finding.Severity, finding.Path, anchor,
 		formatLines(finding.StartLine, finding.EndLine),
 		strings.Join(strings.Fields(finding.Body), " "),
-		github.FindingMarker(finding.ID))
+		github.FindingMarker(finding.ID), droppedMarker(finding))
 }
 
 func parseDroppedLine(line string) (findings.Finding, bool) {
+	if finding, ok := parseDroppedMarker(line); ok {
+		return finding, true
+	}
 	id, ok := github.ParseFinding(line)
 	if !ok {
 		return findings.Finding{}, false
@@ -220,6 +228,36 @@ func parseDroppedLine(line string) (findings.Finding, bool) {
 		Severity:  findings.Severity(severity),
 		Body:      strings.TrimSpace(body),
 	}, true
+}
+
+func droppedMarker(finding findings.Finding) string {
+	finding.Body = strings.Join(strings.Fields(finding.Body), " ")
+	raw, err := json.Marshal(finding)
+	if err != nil {
+		return ""
+	}
+	return droppedMarkerPrefix + base64.RawURLEncoding.EncodeToString(raw) + " -->"
+}
+
+func parseDroppedMarker(line string) (findings.Finding, bool) {
+	at := strings.Index(line, droppedMarkerPrefix)
+	if at < 0 {
+		return findings.Finding{}, false
+	}
+	rest := line[at+len(droppedMarkerPrefix):]
+	encoded, _, ok := strings.Cut(rest, " -->")
+	if !ok {
+		return findings.Finding{}, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return findings.Finding{}, false
+	}
+	var finding findings.Finding
+	if err := json.Unmarshal(raw, &finding); err != nil || finding.ID == "" {
+		return findings.Finding{}, false
+	}
+	return finding, true
 }
 
 func parseLines(text string) (int, int, bool) {
