@@ -93,7 +93,7 @@ Do not treat `make check`, `go test`, or internal setters as a user-path proof.
 
 `make canary` runs the offline recipes in `features/` as assertions. It builds `bin/unreal-review` from this checkout, drives each command through `scripts/cli.sh`, and fails when the exit status, stdout, stderr, or JSONL disagree with the recipe. A second stage execs that same binary against a local GitHub stand-in for `run --pr` and `render github` (narrowing to the latest `unreal-review` check run, duplicate suppression, the status comment, and the check-run receipt).
 
-The canary sets a dummy `OPENROUTER_API_KEY` only on the `run` steps whose recipe expects a `401`. It does not read `GH_TOKEN` or `GITHUB_TOKEN`. `range-live`, `gh-post`, and `gh-dry-with-token` stay outside the canary: the first two are the skippable live steps, and `gh-dry-with-token` calls `api.github.com`.
+The canary keeps a dummy `OPENROUTER_API_KEY` on the `run` steps whose recipe expects a `401`, and points `UNREAL_REVIEW_OPENROUTER_API` at a local stand-in that returns that status. Those steps do not call openrouter.ai. It does not read `GH_TOKEN` or `GITHUB_TOKEN`. `range-live`, `gh-post`, and `gh-dry-with-token` stay outside the canary: the first two are the skippable live steps, and `gh-dry-with-token` calls `api.github.com`.
 
 CI jobs `check` and `canary` are the regression pair. Workflow `Review` is the live dogfood path.
 

@@ -4,10 +4,15 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/unreallabsai/unreal-agent/harness/llm"
 
@@ -245,6 +250,55 @@ func TestRunRecordsCleanSummaryWithoutFindings(t *testing.T) {
 	}
 	if report.Summary != summary {
 		t.Errorf("summary: got %q, want %q", report.Summary, summary)
+	}
+}
+
+func TestOpenRouterBase(t *testing.T) {
+	t.Setenv(openRouterBaseEnv, "")
+	if got := openRouterBase(); got != openRouterBaseURL {
+		t.Fatalf("empty override: got %q, want %q", got, openRouterBaseURL)
+	}
+	t.Setenv(openRouterBaseEnv, "  http://127.0.0.1:9/api/v1  ")
+	if got := openRouterBase(); got != "http://127.0.0.1:9/api/v1" {
+		t.Fatalf("override: got %q", got)
+	}
+}
+
+func TestHarnessRunUsesLocalOpenRouterAndReports401(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if r.URL.Path != "/api/v1/responses" {
+			t.Errorf("path = %s, want /api/v1/responses", r.URL.Path)
+		}
+		if strings.Contains(r.Host, "openrouter.ai") {
+			t.Errorf("request host %q", r.Host)
+		}
+		if r.Header.Get("Authorization") != "Bearer dummy" {
+			t.Errorf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"Unauthorized","code":401}}`))
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv(openRouterBaseEnv, server.URL+"/api/v1")
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req := reviewRequest(t)
+	_, err := (Harness{APIKey: "dummy", ThinkingLevel: "high"}).Run(ctx, req)
+	if err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("error = %v, want a 401", err)
+	}
+	if strings.Contains(err.Error(), "openrouter.ai") {
+		t.Fatalf("error names the public host: %v", err)
+	}
+	if hits.Load() == 0 {
+		t.Fatal("local openrouter received no request")
 	}
 }
 

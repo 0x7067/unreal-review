@@ -3,9 +3,20 @@
 # Exit status, stdout, stderr, and JSONL are checked against features/*.md.
 # Skipped on purpose: range-live, gh-post (live), gh-dry-with-token (calls api.github.com).
 # Fake-GitHub coverage of run --pr and render github is the Go test make canary runs next.
+# Non-empty diffs still expect a 401. That status comes from tools/openrouter-stub.py
+# on 127.0.0.1, not from openrouter.ai.
 set -euo pipefail
 
-trap 'status=$?; echo "canary: command failed at line $LINENO (exit $status)" >&2; echo "evidence: ${VERIFY_EVIDENCE:-unset}" >&2; exit $status' ERR
+stub_stop() {
+	if [ -n "${STUB_PID:-}" ] && kill -0 "$STUB_PID" 2>/dev/null; then
+		kill "$STUB_PID" 2>/dev/null || true
+		wait "$STUB_PID" 2>/dev/null || true
+	fi
+	STUB_PID=
+}
+
+trap 'status=$?; echo "canary: command failed at line $LINENO (exit $status)" >&2; echo "evidence: ${VERIFY_EVIDENCE:-unset}" >&2; stub_stop; exit $status' ERR
+trap 'stub_stop' EXIT
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
@@ -13,7 +24,7 @@ cd "$ROOT"
 export LC_ALL=C.UTF-8
 export VERIFY_ROOT=${VERIFY_ROOT:-$(mktemp -d "${TMPDIR:-/tmp}/unreal-review-canary.XXXXXX")}
 export VERIFY_RUN_ID=${VERIFY_RUN_ID:-canary}
-unset GH_TOKEN GITHUB_TOKEN UNREAL_HARNESS_LLM_MODEL OPENROUTER_API_KEY UNREAL_REVIEW_GITHUB_API || true
+unset GH_TOKEN GITHUB_TOKEN UNREAL_HARNESS_LLM_MODEL OPENROUTER_API_KEY UNREAL_REVIEW_GITHUB_API UNREAL_REVIEW_OPENROUTER_API || true
 
 # lib.sh keys off $0, so sourcing it from this script would point at tools/.
 # Launch still sources lib.sh itself; these are the same paths it derives.
@@ -25,6 +36,47 @@ VERIFY_EXAMPLE="$ROOT/examples/findings.jsonl"
 EMPTY=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 
 say() { printf 'canary: %s\n' "$*"; }
+
+start_openrouter_stub() {
+	local url_file="$VERIFY_ROOT/openrouter-stub.url" origin i
+	STUB_LOG="$VERIFY_ROOT/openrouter-stub.log"
+	: >"$STUB_LOG"
+	python3 "$ROOT/tools/openrouter-stub.py" "$STUB_LOG" >"$url_file" &
+	STUB_PID=$!
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+		if [ -s "$url_file" ]; then
+			break
+		fi
+		if ! kill -0 "$STUB_PID" 2>/dev/null; then
+			miss "openrouter stub exited before binding"
+		fi
+		sleep 0.05
+	done
+	if [ ! -s "$url_file" ]; then
+		miss "openrouter stub did not print a URL"
+	fi
+	origin=$(head -n 1 "$url_file")
+	case "$origin" in
+	http://127.0.0.1:*) ;;
+	*) miss "openrouter stub bound $origin" ;;
+	esac
+	export UNREAL_REVIEW_OPENROUTER_API="${origin}/api/v1"
+	say "openrouter stub $UNREAL_REVIEW_OPENROUTER_API"
+}
+
+require_openrouter_stub() {
+	local bad
+	if [ ! -s "$STUB_LOG" ]; then
+		miss "local openrouter stub received no requests"
+	fi
+	bad=$(grep -v -E '^POST /api/v1/responses host=127\.0\.0\.1:[0-9]+$' "$STUB_LOG" || true)
+	if [ -n "$bad" ]; then
+		miss "local openrouter stub saw unexpected requests: $bad"
+	fi
+	if grep -R -F -q -- 'openrouter.ai' "$VERIFY_EVIDENCE"; then
+		miss "recipe evidence names openrouter.ai"
+	fi
+}
 
 miss() {
 	if [ "${CANARY_QUIET:-}" = 1 ]; then
@@ -316,6 +368,8 @@ if not block.endswith("\n"):
 Path(sys.argv[2]).write_text(block)
 PY
 }
+
+start_openrouter_stub
 
 say "comparator fails closed when a needle is missing"
 prove_require_fails
@@ -689,6 +743,8 @@ expect_payload "$(stdout_of gh-legacy)" left_path a.go body_has "legacy"
 cli --name gh-no-token --no-github-auth -- render github --pr owner/repo#12 "$VERIFY_EXAMPLE"
 require_exit gh-no-token 1
 expect render-github.md "set GH_TOKEN or GITHUB_TOKEN to post a review" "$(stderr_of gh-no-token)" "gh-no-token"
+
+require_openrouter_stub
 
 "$SCRIPTS/cleanup.sh"
 say "offline recipes ok ($VERIFY_EVIDENCE)"

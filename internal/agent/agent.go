@@ -33,9 +33,21 @@ import (
 const (
 	maxSummaryCorrections = 2
 	openRouterBaseURL     = "https://openrouter.ai/api/v1"
+	openRouterBaseEnv     = "UNREAL_REVIEW_OPENROUTER_API"
 	toolHeartbeatInterval = 10 * time.Minute
 	sessionDirectoryName  = ".local/state/unreal-agent/sessions"
 )
+
+// openRouterBase talks to openrouter.ai unless UNREAL_REVIEW_OPENROUTER_API
+// names another origin. The offline canary points that variable at a local
+// server that returns 401. An empty value keeps the public API. The variable
+// is not a credential, so secret reexec leaves it in the environment.
+func openRouterBase() string {
+	if base := strings.TrimSpace(os.Getenv(openRouterBaseEnv)); base != "" {
+		return base
+	}
+	return openRouterBaseURL
+}
 
 type Harness struct {
 	APIKey        string
@@ -53,7 +65,7 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 		defer cancel()
 	}
 
-	client, err := openrouter.NewClient(openrouter.Config{APIKey: h.APIKey, BaseURL: openRouterBaseURL})
+	client, err := openrouter.NewClient(openrouter.Config{APIKey: h.APIKey, BaseURL: openRouterBase()})
 	if err != nil {
 		return review.AgentResult{}, fmt.Errorf("create openrouter client: %w", err)
 	}
