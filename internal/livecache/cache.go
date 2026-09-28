@@ -32,9 +32,13 @@ func (c *Cache) Set(key, value string) {
 }
 
 func (c *Cache) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return len(c.items)
 }
 
 func (c *Cache) Delete(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	delete(c.items, key)
 }
