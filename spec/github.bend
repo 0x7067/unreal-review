@@ -119,35 +119,5 @@ def receipt(ds: List<&2, Drop>) -> Bool:
         case OverCap{}:
           False{}
 
-type Posted is Data:
-  Posted{path: Nat, anchor: F.Anchor, lo: Nat, hi: Nat, current: Bool}
-
-def sameAnchor(a: F.Anchor, b: F.Anchor) -> Bool:
-  match a:
-    case F.AnchorNew{}:
-      match b:
-        case F.AnchorNew{}:
-          True{}
-        case F.AnchorOld{}:
-          False{}
-    case F.AnchorOld{}:
-      match b:
-        case F.AnchorNew{}:
-          False{}
-        case F.AnchorOld{}:
-          True{}
-
-def overlaps(alo: Nat, ahi: Nat, blo: Nat, bhi: Nat) -> Bool:
-  Bool.and(Nat.is_le(alo, bhi), Nat.is_le(blo, ahi))
-
-def sameIssue(p: Posted, path: Nat, anchor: F.Anchor, lo: Nat, hi: Nat) -> Bool:
-  match p:
-    case Posted{ppath, panchor, plo, phi, current}:
-      match current:
-        case False{}:
-          False{}
-        case True{}:
-          Bool.and(Nat.is_eq(ppath, path), Bool.and(sameAnchor(panchor, anchor), overlaps(plo, phi, lo, hi)))
-
-def suppressed(sameId: Bool, namedDuplicate: Bool, sameLocation: Bool) -> Bool:
-  Bool.or(sameId, Bool.or(namedDuplicate, sameLocation))
+def suppressed(sameId: Bool, namedDuplicate: Bool) -> Bool:
+  Bool.or(sameId, namedDuplicate)

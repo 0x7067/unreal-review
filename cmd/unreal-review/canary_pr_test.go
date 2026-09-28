@@ -275,6 +275,13 @@ func TestCanaryRenderLGTMPostsOncePerHead(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("run %d: exit=%d stderr=%s", run, code, stderr)
 		}
+		want := "posted LGTM"
+		if run == 2 {
+			want = "LGTM already posted"
+		}
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("run %d: want %q in stderr=%s", run, want, stderr)
+		}
 	}
 	reviews := fake.bodies(http.MethodPost, "/pulls/1/reviews")
 	if len(reviews) != 1 || !strings.Contains(reviews[0], `"body":"LGTM - no findings in aaaaaaa..bbbbbbb."`) {

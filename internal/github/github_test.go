@@ -130,13 +130,13 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 		t.Fatalf("comments: %+v", state.Comments)
 	}
 	current, outdated, human := state.Comments[0], state.Comments[1], state.Comments[2]
-	if current.StartLine != 155 || current.EndLine != 155 || current.Side != "RIGHT" || current.Outdated {
+	if current.StartLine != 155 || current.EndLine != 155 || current.Side != "RIGHT" {
 		t.Fatalf("single-line comment should start where it ends: %+v", current)
 	}
 	if id, ok := ParseFinding(current.Body); !ok || id != "aaaa1111" {
 		t.Fatalf("marker: %q %v", id, ok)
 	}
-	if outdated.StartLine != 35 || outdated.EndLine != 37 || outdated.Side != "RIGHT" || !outdated.Outdated {
+	if outdated.StartLine != 35 || outdated.EndLine != 37 || outdated.Side != "RIGHT" {
 		t.Fatalf("outdated comment lost its original position: %+v", outdated)
 	}
 	if _, ok := ParseFinding(human.Body); ok {

@@ -70,7 +70,7 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 			},
 		},
 	}
-	prior := opts.History.posted(opts.CommitID)
+	prior := opts.History.posted()
 	var placed []findings.Finding
 	for _, finding := range report.Findings {
 		switch {
@@ -121,7 +121,7 @@ func (h History) HasLGTM(commit string) bool {
 }
 
 func (h History) Reported() []findings.Finding {
-	items := h.posted("")
+	items := h.posted()
 	out := make([]findings.Finding, len(items))
 	for i, item := range items {
 		out[i] = item.finding
@@ -131,10 +131,9 @@ func (h History) Reported() []findings.Finding {
 
 type postedFinding struct {
 	finding findings.Finding
-	current bool
 }
 
-func (h History) posted(head string) []postedFinding {
+func (h History) posted() []postedFinding {
 	var out []postedFinding
 	for _, comment := range h.Comments {
 		id, ok := github.ParseFinding(comment.Body)
@@ -142,7 +141,7 @@ func (h History) posted(head string) []postedFinding {
 			continue
 		}
 		severity, body := splitPostedBody(comment.Body)
-		out = append(out, postedFinding{current: !comment.Outdated, finding: findings.Finding{
+		out = append(out, postedFinding{finding: findings.Finding{
 			ID:        id,
 			Path:      comment.Path,
 			StartLine: comment.StartLine,
@@ -155,7 +154,7 @@ func (h History) posted(head string) []postedFinding {
 	for _, review := range h.Reviews {
 		for _, line := range strings.Split(review.Body, "\n") {
 			if item, ok := parseDroppedLine(line); ok {
-				out = append(out, postedFinding{finding: item, current: head != "" && review.CommitID == head})
+				out = append(out, postedFinding{finding: item})
 			}
 		}
 	}
@@ -164,15 +163,11 @@ func (h History) posted(head string) []postedFinding {
 
 func alreadyReported(prior []postedFinding, finding findings.Finding) bool {
 	for _, item := range prior {
-		if item.finding.ID == finding.ID || item.finding.ID == finding.DuplicateOf || item.current && sameIssue(item.finding, finding) {
+		if item.finding.ID == finding.ID || item.finding.ID == finding.DuplicateOf {
 			return true
 		}
 	}
 	return false
-}
-
-func sameIssue(a, b findings.Finding) bool {
-	return a.Path == b.Path && a.Anchor == b.Anchor && a.StartLine <= b.EndLine && b.StartLine <= a.EndLine
 }
 
 func droppedLine(finding findings.Finding) string {

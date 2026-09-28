@@ -42,7 +42,6 @@ type PostedComment struct {
 	EndLine   int
 	Side      string
 	Body      string
-	Outdated  bool
 }
 
 type PostedReview struct {
@@ -228,7 +227,6 @@ func (c *Client) ListReviewComments(ctx context.Context, owner, repo string, num
 				EndLine:   end,
 				Side:      firstString(item.Side, item.OriginalSide),
 				Body:      item.Body,
-				Outdated:  item.Line == nil,
 			})
 		}
 		if len(raw) < 100 {

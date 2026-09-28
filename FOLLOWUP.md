@@ -21,5 +21,5 @@ An earlier run on a throwaway repository posted a second race comment after `Cou
 
 These came out of the review-loop assessment and are not scheduled yet.
 
-- Dedup matches by `id`, by the agent's `duplicate_of`, and by line overlap with findings still mapped onto the head. An issue that moved lines and whose comment went outdated is caught only if the agent sets `duplicate_of`. In the live test the comment never went outdated, so this path stayed unexercised.
+- Dedup matches by `id` and by the agent's `duplicate_of`. A reworded issue that moved lines is caught only if the agent sets `duplicate_of`; location overlap alone is intentionally not enough because two defects can share a line. The live test did not exercise this path.
 - A fixed finding is never resolved or answered on the PR. Push 3 confirmed it. The prototype on `t3code/work-on-followup` was not ported because its resolved threads still suppressed a later recurrence by id or line overlap. A redesign needs separate open-thread context for resolution and all-history context for audit, while allowing a resolved issue to be reported again if it regresses. Replies and thread resolution must remain idempotent.

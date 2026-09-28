@@ -403,15 +403,16 @@ func AppendFinding(path string, finding Finding) (Finding, error) {
 		return Finding{}, fmt.Errorf("encode end_line: %w", err)
 	}
 	err = appendLine(path, record{
-		V:         SchemaVersion,
-		Type:      TypeFinding,
-		ID:        finding.ID,
-		Path:      finding.Path,
-		StartLine: start,
-		EndLine:   end,
-		Anchor:    string(finding.Anchor),
-		Severity:  string(finding.Severity),
-		Body:      finding.Body,
+		V:           SchemaVersion,
+		Type:        TypeFinding,
+		ID:          finding.ID,
+		Path:        finding.Path,
+		StartLine:   start,
+		EndLine:     end,
+		Anchor:      string(finding.Anchor),
+		Severity:    string(finding.Severity),
+		Body:        finding.Body,
+		DuplicateOf: finding.DuplicateOf,
 	})
 	if err != nil {
 		return Finding{}, err

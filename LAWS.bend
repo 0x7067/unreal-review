@@ -287,40 +287,14 @@ law receipt_over_cap_blocks:
   for +ds: List<&2, G.Drop>
   {G.receipt(G.OverCap{} <> ds) == False{} : Bool}
 
-law same_issue_same_lines:
-  {G.sameIssue(G.Posted{3n, F.AnchorNew{}, 10n, 12n, True{}}, 3n, F.AnchorNew{}, 10n, 12n) == True{} : Bool}
-
-law same_issue_shifted_overlap:
-  {G.sameIssue(G.Posted{3n, F.AnchorNew{}, 10n, 12n, True{}}, 3n, F.AnchorNew{}, 12n, 15n) == True{} : Bool}
-
-law same_issue_disjoint_lines:
-  {G.sameIssue(G.Posted{3n, F.AnchorNew{}, 10n, 12n, True{}}, 3n, F.AnchorNew{}, 13n, 15n) == False{} : Bool}
-
-law same_issue_other_path:
-  {G.sameIssue(G.Posted{3n, F.AnchorNew{}, 10n, 12n, True{}}, 4n, F.AnchorNew{}, 10n, 12n) == False{} : Bool}
-
-law same_issue_other_anchor:
-  {G.sameIssue(G.Posted{3n, F.AnchorNew{}, 10n, 12n, True{}}, 3n, F.AnchorOld{}, 10n, 12n) == False{} : Bool}
-
-law same_issue_never_outdated:
-  for +pp: Nat
-  for +pa: F.Anchor
-  for +plo: Nat
-  for +phi: Nat
-  for +path: Nat
-  for +anchor: F.Anchor
-  for +lo: Nat
-  for +hi: Nat
-  {G.sameIssue(G.Posted{pp, pa, plo, phi, False{}}, path, anchor, lo, hi) == False{} : Bool}
+law suppressed_by_same_id:
+  {G.suppressed(True{}, False{}) == True{} : Bool}
 
 law suppressed_by_named_duplicate:
-  {G.suppressed(False{}, True{}, False{}) == True{} : Bool}
-
-law suppressed_by_location_alone:
-  {G.suppressed(False{}, False{}, G.sameIssue(G.Posted{3n, F.AnchorNew{}, 10n, 12n, True{}}, 3n, F.AnchorNew{}, 11n, 11n)) == True{} : Bool}
+  {G.suppressed(False{}, True{}) == True{} : Bool}
 
 law new_issue_not_suppressed:
-  {G.suppressed(False{}, False{}, False{}) == False{} : Bool}
+  {G.suppressed(False{}, False{}) == False{} : Bool}
 
 law oversized_diff_refused:
   for empty: Bool

@@ -144,73 +144,51 @@ func TestGitHubOverCapFindingBlocksReceiptAndCarriesNoMarker(t *testing.T) {
 	}
 }
 
-func TestGitHubTreatsTheSameLinesAsTheSameIssue(t *testing.T) {
+func TestGitHubDoesNotSuppressADistinctFindingOnTheSameLines(t *testing.T) {
 	posted := newFinding("src/foo.go", 10, 12, "This map write races with the reader.")
 	history := History{Comments: []github.PostedComment{postedComment(posted)}}
+	distinct := newFinding("src/foo.go", 10, 12, "This nil dereference crashes the request.")
 
-	for _, tc := range []struct {
-		name    string
-		finding findings.Finding
-		dup     bool
-	}{
-		{"reworded on the same lines", newFinding("src/foo.go", 10, 12, "Concurrent writes to the map race."), true},
-		{"shifted but overlapping", newFinding("src/foo.go", 12, 15, "The writer and reader race."), true},
-		{"adjacent but disjoint", newFinding("src/foo.go", 13, 15, "Another problem."), false},
-		{"same lines in another file", newFinding("src/bar.go", 10, 12, "Another problem."), false},
-		{"same lines on the old side", func() findings.Finding {
-			f := newFinding("src/foo.go", 10, 12, "A deleted guard.")
-			f.Anchor = findings.AnchorOld
-			return f
-		}(), false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			result := GitHub(reportOf(tc.finding), GitHubOptions{CommitID: "head", History: history})
-			if got := len(result.Duplicates) == 1; got != tc.dup {
-				t.Fatalf("duplicate=%v want %v (comments=%d)", got, tc.dup, len(result.Payload.Review.Comments))
-			}
-		})
+	result := GitHub(reportOf(distinct), GitHubOptions{CommitID: "head", History: history})
+
+	if len(result.Duplicates) != 0 || len(result.Payload.Review.Comments) != 1 {
+		t.Fatalf("distinct finding was suppressed: duplicates=%+v comments=%+v", result.Duplicates, result.Payload.Review.Comments)
 	}
 }
 
-func TestGitHubIgnoresLocationOfOutdatedComments(t *testing.T) {
+func TestGitHubMatchesPostedCommentsByIDOnly(t *testing.T) {
 	posted := newFinding("src/foo.go", 10, 12, "This map write races with the reader.")
-	stale := postedComment(posted)
-	stale.Outdated = true
+	comment := postedComment(posted)
 	moved := newFinding("src/foo.go", 10, 12, "A different issue now on these lines.")
 
-	result := GitHub(reportOf(moved, posted), GitHubOptions{CommitID: "head", History: History{Comments: []github.PostedComment{stale}}})
+	result := GitHub(reportOf(moved, posted), GitHubOptions{CommitID: "head", History: History{Comments: []github.PostedComment{comment}}})
 
 	if len(result.Payload.Review.Comments) != 1 || len(result.Duplicates) != 1 || result.Duplicates[0].ID != posted.ID {
-		t.Fatalf("an outdated comment matches by id only: comments=%d duplicates=%+v", len(result.Payload.Review.Comments), result.Duplicates)
+		t.Fatalf("posted comment matches by id only: comments=%d duplicates=%+v", len(result.Payload.Review.Comments), result.Duplicates)
 	}
 }
 
-func TestGitHubOutOfPatchLocationMatchesOnlyOnTheSameHead(t *testing.T) {
+func TestGitHubDoesNotSuppressARewordedOutOfPatchFindingByLocation(t *testing.T) {
 	lines := diffLines(t, "src/foo.go", "@@ -1,2 +1,3 @@\n keep\n+added\n keep\n")
 	dropped := newFinding("src/foo.go", 90, 90, "A finding the patch does not show.")
 	body := reviewBody("", nil, []DroppedFinding{{Finding: dropped}}, nil)
 	reworded := newFinding("src/foo.go", 90, 90, "Same issue, new words.")
 
-	same := GitHub(reportOf(reworded), GitHubOptions{CommitID: "head", Lines: lines, HasLines: true, History: History{Reviews: []github.PostedReview{{CommitID: "head", Body: body}}}})
-	if len(same.Duplicates) != 1 {
-		t.Fatalf("same head: duplicates=%+v dropped=%+v", same.Duplicates, same.Dropped)
-	}
-	older := GitHub(reportOf(reworded), GitHubOptions{CommitID: "head", Lines: lines, HasLines: true, History: History{Reviews: []github.PostedReview{{CommitID: "older", Body: body}}}})
-	if len(older.Duplicates) != 0 || len(older.Dropped) != 1 {
-		t.Fatalf("older head: line numbers may have moved, so only the id matches: duplicates=%+v", older.Duplicates)
+	result := GitHub(reportOf(reworded), GitHubOptions{CommitID: "head", Lines: lines, HasLines: true, History: History{Reviews: []github.PostedReview{{CommitID: "head", Body: body}}}})
+	if len(result.Duplicates) != 0 || len(result.Dropped) != 1 {
+		t.Fatalf("reworded finding was suppressed: duplicates=%+v dropped=%+v", result.Duplicates, result.Dropped)
 	}
 }
 
 func TestGitHubHonorsDuplicateOf(t *testing.T) {
 	posted := newFinding("src/foo.go", 10, 12, "This map write races with the reader.")
-	stale := postedComment(posted)
-	stale.Outdated = true
+	comment := postedComment(posted)
 	restated := newFinding("src/foo.go", 40, 41, "The race moved with the refactor.")
 	restated.DuplicateOf = posted.ID
 	wrong := newFinding("src/foo.go", 60, 60, "Claims a duplicate that was never posted.")
 	wrong.DuplicateOf = "ffffffffffffffff"
 
-	result := GitHub(reportOf(restated, wrong), GitHubOptions{CommitID: "head", History: History{Comments: []github.PostedComment{stale}}})
+	result := GitHub(reportOf(restated, wrong), GitHubOptions{CommitID: "head", History: History{Comments: []github.PostedComment{comment}}})
 
 	if len(result.Duplicates) != 1 || result.Duplicates[0].ID != restated.ID {
 		t.Fatalf("duplicates=%+v", result.Duplicates)
