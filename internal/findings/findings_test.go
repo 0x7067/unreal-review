@@ -111,6 +111,29 @@ func TestReportComplete(t *testing.T) {
 	}
 }
 
+func TestWriteOmitsZeroCreatedAt(t *testing.T) {
+	in := Report{Run: &Run{
+		ID:     "1",
+		Status: StatusComplete,
+		Source: Source{Kind: "git"},
+		Cost:   Cost{Currency: "USD"},
+	}}
+	var buf bytes.Buffer
+	if err := Write(&buf, in); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "created_at") {
+		t.Fatalf("zero CreatedAt should omit created_at: %s", buf.String())
+	}
+	out, err := Parse(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.Run.CreatedAt.IsZero() {
+		t.Fatal("omitted created_at should round-trip as zero")
+	}
+}
+
 func TestWriteRunRoundTrip(t *testing.T) {
 	in := Report{Run: &Run{
 		ID:        "1",
