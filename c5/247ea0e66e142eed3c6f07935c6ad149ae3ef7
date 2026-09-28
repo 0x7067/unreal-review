@@ -1,0 +1,14 @@
+internal/livecache/cache.go
+  h_29be57c0addd47 35-36,41-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c5247ea0e66e142eed3c6f07935c6ad149ae3ef7",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
