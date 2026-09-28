@@ -19,6 +19,12 @@ Wire a replacement at `cmd/unreal-review`. `AgentRequest.ReviewID` is the review
 
 A new backend, source, or renderer should plug in without changing the findings schema.
 
+## Skills
+
+Project skills live only under `.agents/skills/`. The verification skill is [verify-unreal-review](.agents/skills/verify-unreal-review/SKILL.md). `.claude/skills`, `.grok/skills`, and `.cursor/skills` are relative symlinks to `../.agents/skills`. `.claude/settings.json` and the other tool hook and config files stay real files in their tool directories. Do not add `CLAUDE.md`, do not copy these instructions under a tool directory, and do not copy the skill tree back as regular files.
+
+A checkout with `core.symlinks` false writes those three links as text files. Run the scripts from `.agents/skills/verify-unreal-review/scripts/`.
+
 ## Checks
 
 `make check` (fmt, lint, vet, test, prove). `make prove` runs `tools/prove.sh`: Bend checks `PROOF.bend` and the script enforces `spec/unsafe-allow.txt` for laws that lean on `@unsafe` code (running `bend PROOF.bend --check-only` alone is not enough). `hooks/prove-stop.sh` runs the same gate when a turn ends and refuses the stop while the proof is red, for up to three consecutive failures before it stands down. It is registered project-level in `.claude/`, `.cursor/`, `.codex/` and `.grok/`; OpenCode (`.opencode/plugin/`) and Pi (`.pi/`) can only nudge, not block. For a one-shot verdict run `hooks/prove-stop.sh --check`.
