@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -71,10 +72,21 @@ func newPullResolver(token, repo string) (review.PullResolver, error) {
 		}
 	}
 	return pullResolver{
-		client:       &github.Client{Token: token, HTTP: github.NewHTTPClient()},
+		client:       githubClient(token),
 		defaultOwner: owner,
 		defaultRepo:  name,
 	}, nil
+}
+
+// githubClient talks to api.github.com unless UNREAL_REVIEW_GITHUB_API names
+// another origin. The offline canary points that variable at a local server.
+// An empty value keeps the public API. The variable is not a credential.
+func githubClient(token string) *github.Client {
+	return &github.Client{
+		Token:   token,
+		BaseURL: os.Getenv("UNREAL_REVIEW_GITHUB_API"),
+		HTTP:    github.NewHTTPClient(),
+	}
 }
 
 func resolveToken(allowGH bool) string {

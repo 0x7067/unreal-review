@@ -20,6 +20,8 @@ make check
 
 `make check` includes `make prove` (`tools/prove.sh`: checks `PROOF.bend` with Bend and enforces `spec/unsafe-allow.txt`). Product invariants live in `LAWS.bend`. Install Bend from https://bend-lang.com (`bend version` 2.0.27 is the local toolchain).
 
+`make canary` builds `bin/unreal-review` from this checkout and checks it the way a user drives it. The recipes live in [.grok/skills/verify-unreal-review](.grok/skills/verify-unreal-review/SKILL.md). The canary asserts those offline steps, then runs `run --pr` and `render github` against a local GitHub stand-in. It needs no `OPENROUTER_API_KEY` secret and no `GH_TOKEN`; a dummy key is used only where a recipe expects `401`. CI runs `check` and `canary` on pull requests, on pushes to `main`, and on `workflow_dispatch`. Those two jobs are the pair that must pass before merge. Turning them on as required status checks is a GitHub branch-protection setting. The [Review workflow](.github/workflows/review.yml) is live dogfood: it posts a review of a pull request using the base commit's binary. `eval` stays outside `make check` and `make canary`.
+
 ## Review a local change
 
 From a git repository:
