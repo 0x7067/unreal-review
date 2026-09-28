@@ -112,14 +112,13 @@ type Run struct {
 }
 
 type Finding struct {
-	ID          string   `json:"id,omitempty"`
-	Path        string   `json:"path"`
-	StartLine   int      `json:"start_line"`
-	EndLine     int      `json:"end_line"`
-	Anchor      Anchor   `json:"anchor"`
-	Severity    Severity `json:"severity"`
-	Body        string   `json:"body"`
-	DuplicateOf string   `json:"duplicate_of,omitempty"`
+	ID        string   `json:"id,omitempty"`
+	Path      string   `json:"path"`
+	StartLine int      `json:"start_line"`
+	EndLine   int      `json:"end_line"`
+	Anchor    Anchor   `json:"anchor"`
+	Severity  Severity `json:"severity"`
+	Body      string   `json:"body"`
 }
 
 type Report struct {
@@ -136,22 +135,21 @@ func (r Report) Complete() bool {
 }
 
 type record struct {
-	V           int             `json:"v"`
-	Type        Type            `json:"type"`
-	ID          string          `json:"id,omitempty"`
-	CreatedAt   string          `json:"created_at,omitempty"`
-	Model       string          `json:"model,omitempty"`
-	Source      *Source         `json:"source,omitempty"`
-	Path        string          `json:"path,omitempty"`
-	StartLine   json.RawMessage `json:"start_line,omitempty"`
-	EndLine     json.RawMessage `json:"end_line,omitempty"`
-	Anchor      string          `json:"anchor,omitempty"`
-	Severity    string          `json:"severity,omitempty"`
-	Body        string          `json:"body,omitempty"`
-	Summary     string          `json:"summary,omitempty"`
-	Cost        *Cost           `json:"cost,omitempty"`
-	Status      string          `json:"status,omitempty"`
-	DuplicateOf string          `json:"duplicate_of,omitempty"`
+	V         int             `json:"v"`
+	Type      Type            `json:"type"`
+	ID        string          `json:"id,omitempty"`
+	CreatedAt string          `json:"created_at,omitempty"`
+	Model     string          `json:"model,omitempty"`
+	Source    *Source         `json:"source,omitempty"`
+	Path      string          `json:"path,omitempty"`
+	StartLine json.RawMessage `json:"start_line,omitempty"`
+	EndLine   json.RawMessage `json:"end_line,omitempty"`
+	Anchor    string          `json:"anchor,omitempty"`
+	Severity  string          `json:"severity,omitempty"`
+	Body      string          `json:"body,omitempty"`
+	Summary   string          `json:"summary,omitempty"`
+	Cost      *Cost           `json:"cost,omitempty"`
+	Status    string          `json:"status,omitempty"`
 }
 
 type runRecord struct {
@@ -318,14 +316,13 @@ func parseFinding(rec record) (Finding, error) {
 		return Finding{}, fmt.Errorf("end_line: %w", err)
 	}
 	return Normalize(Finding{
-		ID:          rec.ID,
-		Path:        rec.Path,
-		StartLine:   start,
-		EndLine:     end,
-		Anchor:      Anchor(rec.Anchor),
-		Severity:    Severity(rec.Severity),
-		Body:        rec.Body,
-		DuplicateOf: rec.DuplicateOf,
+		ID:        rec.ID,
+		Path:      rec.Path,
+		StartLine: start,
+		EndLine:   end,
+		Anchor:    Anchor(rec.Anchor),
+		Severity:  Severity(rec.Severity),
+		Body:      rec.Body,
 	})
 }
 
@@ -360,7 +357,7 @@ func Normalize(finding Finding) (Finding, error) {
 	if finding.Body == "" {
 		return Finding{}, fmt.Errorf("body must be set")
 	}
-	finding.DuplicateOf = strings.TrimSpace(finding.DuplicateOf)
+	finding.ID = strings.TrimSpace(finding.ID)
 	if finding.ID == "" {
 		finding.ID = Fingerprint(finding)
 	}
@@ -403,16 +400,15 @@ func AppendFinding(path string, finding Finding) (Finding, error) {
 		return Finding{}, fmt.Errorf("encode end_line: %w", err)
 	}
 	err = appendLine(path, record{
-		V:           SchemaVersion,
-		Type:        TypeFinding,
-		ID:          finding.ID,
-		Path:        finding.Path,
-		StartLine:   start,
-		EndLine:     end,
-		Anchor:      string(finding.Anchor),
-		Severity:    string(finding.Severity),
-		Body:        finding.Body,
-		DuplicateOf: finding.DuplicateOf,
+		V:         SchemaVersion,
+		Type:      TypeFinding,
+		ID:        finding.ID,
+		Path:      finding.Path,
+		StartLine: start,
+		EndLine:   end,
+		Anchor:    string(finding.Anchor),
+		Severity:  string(finding.Severity),
+		Body:      finding.Body,
 	})
 	if err != nil {
 		return Finding{}, err
@@ -528,16 +524,15 @@ func Write(w io.Writer, report Report) error {
 			return fmt.Errorf("encode end_line: %w", err)
 		}
 		rec := record{
-			V:           SchemaVersion,
-			Type:        TypeFinding,
-			ID:          finding.ID,
-			Path:        finding.Path,
-			StartLine:   start,
-			EndLine:     end,
-			Anchor:      string(finding.Anchor),
-			Severity:    string(finding.Severity),
-			Body:        finding.Body,
-			DuplicateOf: finding.DuplicateOf,
+			V:         SchemaVersion,
+			Type:      TypeFinding,
+			ID:        finding.ID,
+			Path:      finding.Path,
+			StartLine: start,
+			EndLine:   end,
+			Anchor:    string(finding.Anchor),
+			Severity:  string(finding.Severity),
+			Body:      finding.Body,
 		}
 		if err := enc.Encode(rec); err != nil {
 			return fmt.Errorf("encode finding %s: %w", finding.ID, err)

@@ -118,6 +118,3 @@ def receipt(ds: List<&2, Drop>) -> Bool:
           receipt(t)
         case OverCap{}:
           False{}
-
-def suppressed(sameId: Bool, namedDuplicate: Bool) -> Bool:
-  Bool.or(sameId, namedDuplicate)

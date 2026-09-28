@@ -261,7 +261,7 @@ func reportedSection(reported []findings.Finding) string {
 		}
 		fmt.Fprintf(&b, "- %s: %s\n", strings.Join(parts, " "), strings.Join(strings.Fields(item.Body), " "))
 	}
-	b.WriteString("\nReport a problem this list does not cover, or a material change in one it does. Do not restate it. If a finding you record is the same issue as one listed, set duplicate_of to that id.\n\n")
+	b.WriteString("\nReport a problem this list does not cover, or a material change in one it does. Do not restate it. If a finding you record is the same issue as one listed, record it with that id.\n\n")
 	return b.String()
 }
 

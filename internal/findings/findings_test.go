@@ -159,32 +159,13 @@ func TestWriteRunRoundTrip(t *testing.T) {
 	}
 }
 
-func TestWriteFindingKeepsDuplicateOf(t *testing.T) {
-	restated := Finding{ID: "b", Path: "x.go", StartLine: 3, EndLine: 3, Anchor: AnchorNew, Severity: SeverityWarning, Body: "Same race.", DuplicateOf: "a1b2c3d4e5f60708"}
-	fresh := Finding{ID: "c", Path: "y.go", StartLine: 1, EndLine: 1, Anchor: AnchorNew, Severity: SeverityNote, Body: "New."}
-	var buf bytes.Buffer
-	if err := Write(&buf, Report{Findings: []Finding{restated, fresh}}); err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Count(buf.String(), `"duplicate_of"`); got != 1 {
-		t.Fatalf("duplicate_of written %d times, want only on the restated finding:\n%s", got, buf.String())
-	}
-	out, err := Parse(&buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(out.Findings) != 2 || out.Findings[0] != restated || out.Findings[1] != fresh {
-		t.Fatalf("round trip: %+v", out.Findings)
-	}
-}
-
 func TestAppendFindingNormalizesLikeParse(t *testing.T) {
 	work := filepath.Join(t.TempDir(), "work.jsonl")
-	finding, err := AppendFinding(work, Finding{Path: " a.go ", StartLine: 2, Severity: SeverityWarning, Body: "  body  ", DuplicateOf: " prior-id "})
+	finding, err := AppendFinding(work, Finding{ID: " prior-id ", Path: " a.go ", StartLine: 2, Severity: SeverityWarning, Body: "  body  "})
 	if err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	if finding.Path != "a.go" || finding.EndLine != 2 || finding.Anchor != AnchorNew || finding.ID == "" || finding.DuplicateOf != "prior-id" {
+	if finding.Path != "a.go" || finding.EndLine != 2 || finding.Anchor != AnchorNew || finding.ID != "prior-id" {
 		t.Fatalf("normalized: %+v", finding)
 	}
 	parsed, err := ReadFile(work)

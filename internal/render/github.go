@@ -168,7 +168,7 @@ func (h History) posted() []postedFinding {
 
 func alreadyReported(prior []postedFinding, finding findings.Finding) bool {
 	for _, item := range prior {
-		if item.finding.ID == finding.ID || item.finding.ID == finding.DuplicateOf {
+		if item.finding.ID == finding.ID {
 			return true
 		}
 	}

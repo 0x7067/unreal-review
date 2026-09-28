@@ -287,15 +287,6 @@ law receipt_over_cap_blocks:
   for +ds: List<&2, G.Drop>
   {G.receipt(G.OverCap{} <> ds) == False{} : Bool}
 
-law suppressed_by_same_id:
-  {G.suppressed(True{}, False{}) == True{} : Bool}
-
-law suppressed_by_named_duplicate:
-  {G.suppressed(False{}, True{}) == True{} : Bool}
-
-law new_issue_not_suppressed:
-  {G.suppressed(False{}, False{}) == False{} : Bool}
-
 law oversized_diff_refused:
   for empty: Bool
   for fresh: Bool

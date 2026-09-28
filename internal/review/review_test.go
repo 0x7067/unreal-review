@@ -32,7 +32,7 @@ func TestReportedSectionListsEachFindingOnce(t *testing.T) {
 	want := "Already reported on this pull request:\n" +
 		"- id `a1b2c3d4e5f60708` `src/foo.go` 12-14 warning: This map write races with the reader.\n" +
 		"- `src/gone.go` note: Line unknown.\n" +
-		"\nReport a problem this list does not cover, or a material change in one it does. Do not restate it. If a finding you record is the same issue as one listed, set duplicate_of to that id.\n\n"
+		"\nReport a problem this list does not cover, or a material change in one it does. Do not restate it. If a finding you record is the same issue as one listed, record it with that id.\n\n"
 	if got != want {
 		t.Fatalf("section:\n%q\nwant:\n%q", got, want)
 	}

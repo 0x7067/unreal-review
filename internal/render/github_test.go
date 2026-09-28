@@ -180,21 +180,21 @@ func TestGitHubDoesNotSuppressARewordedOutOfPatchFindingByLocation(t *testing.T)
 	}
 }
 
-func TestGitHubHonorsDuplicateOf(t *testing.T) {
+func TestGitHubSuppressesAFindingThatReusesAPostedID(t *testing.T) {
 	posted := newFinding("src/foo.go", 10, 12, "This map write races with the reader.")
 	comment := postedComment(posted)
 	restated := newFinding("src/foo.go", 40, 41, "The race moved with the refactor.")
-	restated.DuplicateOf = posted.ID
+	restated.ID = posted.ID
 	wrong := newFinding("src/foo.go", 60, 60, "Claims a duplicate that was never posted.")
-	wrong.DuplicateOf = "ffffffffffffffff"
+	wrong.ID = "ffffffffffffffff"
 
 	result := GitHub(reportOf(restated, wrong), GitHubOptions{CommitID: "head", History: History{Comments: []github.PostedComment{comment}}})
 
-	if len(result.Duplicates) != 1 || result.Duplicates[0].ID != restated.ID {
+	if len(result.Duplicates) != 1 || result.Duplicates[0].StartLine != 40 {
 		t.Fatalf("duplicates=%+v", result.Duplicates)
 	}
 	if len(result.Payload.Review.Comments) != 1 || result.Payload.Review.Comments[0].Line != 60 {
-		t.Fatalf("a duplicate_of naming no posted finding must still post: %+v", result.Payload.Review.Comments)
+		t.Fatalf("an id naming no posted finding must still post: %+v", result.Payload.Review.Comments)
 	}
 }
 

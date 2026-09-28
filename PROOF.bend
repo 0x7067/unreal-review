@@ -236,15 +236,6 @@ def Laws.receipt_outside_patch_ok():
 def Laws.receipt_over_cap_blocks(ds):
   {==}
 
-def Laws.suppressed_by_same_id():
-  {==}
-
-def Laws.suppressed_by_named_duplicate():
-  {==}
-
-def Laws.new_issue_not_suppressed():
-  {==}
-
 def Laws.oversized_diff_refused(empty, fresh, status, same):
   {==}
 
