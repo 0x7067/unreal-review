@@ -36,6 +36,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
+          cp "$GITHUB_WORKSPACE/.github/workflows/review.yml" "$RUNNER_TEMP/base/.github/workflows/review.yml"
           cd "$RUNNER_TEMP/base"
           go install ./cmd/unreal-review
       - name: Review pull request
