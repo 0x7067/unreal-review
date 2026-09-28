@@ -47,6 +47,27 @@ func ParseFinding(body string) (string, bool) {
 	return fields[1], true
 }
 
+// FindingIDs returns every finding marker in body, in order. A review body
+// lists several dropped findings, each with its own marker.
+func FindingIDs(body string) []string {
+	var ids []string
+	for {
+		at := strings.Index(body, markerPrefix)
+		if at < 0 {
+			return ids
+		}
+		body = body[at:]
+		end := strings.Index(body, "-->")
+		if end < 0 {
+			return ids
+		}
+		if id, ok := ParseFinding(body[:end+len("-->")]); ok {
+			ids = append(ids, id)
+		}
+		body = body[end+len("-->"):]
+	}
+}
+
 func markerFields(body string) []string {
 	at := strings.Index(body, markerPrefix)
 	if at < 0 {

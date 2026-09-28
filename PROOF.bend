@@ -220,3 +220,18 @@ def Laws.post_new_true_dropped():
 
 def Laws.post_new_false_all_reported():
   {==}
+
+def Laws.dropped_counts_unposted_off_patch():
+  {==}
+
+def Laws.dropped_already_posted_not_repeated():
+  {==}
+
+def Laws.receipt_without_drops():
+  {==}
+
+def Laws.receipt_outside_patch_ok():
+  {==}
+
+def Laws.receipt_over_cap_blocks(ds):
+  {==}

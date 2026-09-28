@@ -85,6 +85,56 @@ func TestGitHubPostReview(t *testing.T) {
 	}
 }
 
+func TestGitHubOutOfPatchFindingIsReportedOnceAndReceipts(t *testing.T) {
+	lines := diffLines(t, "src/foo.go", "@@ -1,2 +1,3 @@\n keep\n+added\n keep\n")
+	offDiff := newFinding("src/foo.go", 90, 90, "A finding on a line the pull request does not touch.")
+	opts := GitHubOptions{Lines: lines, HasLines: true}
+
+	first := GitHub(reportOf(offDiff), opts)
+	if !first.PostReview() || !first.Receipt() {
+		t.Fatalf("first render: post=%v receipt=%v, want both true", first.PostReview(), first.Receipt())
+	}
+	want := "- `src/foo.go` L90: line is not in the pull request diff <!-- unreal-review finding " + offDiff.ID + " -->"
+	if !strings.Contains(first.Payload.Review.Body, want) {
+		t.Fatalf("review body lacks %q:\n%s", want, first.Payload.Review.Body)
+	}
+
+	opts.PostedReviews = []string{"an unrelated human review", first.Payload.Review.Body}
+	second := GitHub(reportOf(offDiff), opts)
+	if second.PostReview() {
+		t.Fatalf("second render repeats the drop:\n%s", second.Payload.Review.Body)
+	}
+	if len(second.Duplicates) != 1 || second.Duplicates[0].ID != offDiff.ID || len(second.Dropped) != 0 {
+		t.Fatalf("second render: duplicates=%+v dropped=%+v", second.Duplicates, second.Dropped)
+	}
+	if !second.Receipt() {
+		t.Fatal("second render must still receipt the head")
+	}
+}
+
+func TestGitHubOverCapFindingBlocksReceiptAndCarriesNoMarker(t *testing.T) {
+	var items []findings.Finding
+	for i := range maxInlineComments + 1 {
+		items = append(items, newFinding("src/foo.go", i+1, i+1, fmt.Sprintf("Problem %d.", i)))
+	}
+	over := items[maxInlineComments]
+
+	result := GitHub(reportOf(items...), GitHubOptions{})
+
+	if len(result.Payload.Review.Comments) != maxInlineComments || len(result.Dropped) != 1 || result.Dropped[0].Finding.ID != over.ID {
+		t.Fatalf("comments=%d dropped=%+v", len(result.Payload.Review.Comments), result.Dropped)
+	}
+	if result.Receipt() {
+		t.Fatal("a finding cut by the cap is still postable; the head must not be receipted")
+	}
+	if !strings.Contains(result.Payload.Review.Body, "`src/foo.go` L51: review already has 50 inline comments") {
+		t.Fatalf("review body:\n%s", result.Payload.Review.Body)
+	}
+	if ids := github.FindingIDs(result.Payload.Review.Body); len(ids) != 0 {
+		t.Fatalf("an over-cap finding must stay postable, but the body marks %v as reported", ids)
+	}
+}
+
 func TestGitHubCommentCarriesItsFingerprint(t *testing.T) {
 	item := newFinding("src/foo.go", 12, 14, "This map write races with the reader.")
 	comment := githubComment(item)

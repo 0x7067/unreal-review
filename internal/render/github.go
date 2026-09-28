@@ -12,13 +12,14 @@ import (
 const maxInlineComments = 50
 
 type GitHubOptions struct {
-	Owner      string
-	Repo       string
-	PullNumber int
-	CommitID   string
-	Lines      diffmap.Map
-	HasLines   bool
-	Posted     []github.PostedComment
+	Owner         string
+	Repo          string
+	PullNumber    int
+	CommitID      string
+	Lines         diffmap.Map
+	HasLines      bool
+	Posted        []github.PostedComment
+	PostedReviews []string
 }
 
 type GitHubResult struct {
@@ -32,9 +33,37 @@ func (r GitHubResult) PostReview() bool {
 	return len(r.Payload.Review.Comments) > 0 || len(r.Dropped) > 0 || r.LGTM
 }
 
+// Receipt reports whether this render may record the head as reviewed. A
+// finding outside the patch can never become an inline comment, and its marker
+// in the review body keeps later runs from posting it again, so it does not
+// hold the receipt back. A finding cut by the inline cap is postable, so the
+// head stays unreviewed until a later run posts it.
+func (r GitHubResult) Receipt() bool {
+	for _, item := range r.Dropped {
+		if item.Kind == DropOverCap {
+			return false
+		}
+	}
+	return true
+}
+
+type DropKind int
+
+const (
+	DropOutsidePatch DropKind = iota
+	DropOverCap
+)
+
 type DroppedFinding struct {
 	Finding findings.Finding
-	Reason  string
+	Kind    DropKind
+}
+
+func (d DroppedFinding) Reason() string {
+	if d.Kind == DropOverCap {
+		return fmt.Sprintf("review already has %d inline comments", maxInlineComments)
+	}
+	return "line is not in the pull request diff"
 }
 
 func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
@@ -49,22 +78,16 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 			},
 		},
 	}
-	posted := postedFingerprints(opts.Posted)
+	posted := postedFingerprints(opts.Posted, opts.PostedReviews)
 	var placed []findings.Finding
 	for _, finding := range report.Findings {
 		switch {
 		case posted[finding.ID]:
 			result.Duplicates = append(result.Duplicates, finding)
 		case opts.HasLines && !commentable(opts.Lines, finding):
-			result.Dropped = append(result.Dropped, DroppedFinding{
-				Finding: finding,
-				Reason:  "line is not in the pull request diff",
-			})
+			result.Dropped = append(result.Dropped, DroppedFinding{Finding: finding, Kind: DropOutsidePatch})
 		case len(result.Payload.Review.Comments) >= maxInlineComments:
-			result.Dropped = append(result.Dropped, DroppedFinding{
-				Finding: finding,
-				Reason:  fmt.Sprintf("review already has %d inline comments", maxInlineComments),
-			})
+			result.Dropped = append(result.Dropped, DroppedFinding{Finding: finding, Kind: DropOverCap})
 		default:
 			result.Payload.Review.Comments = append(result.Payload.Review.Comments, githubComment(finding))
 			placed = append(placed, finding)
@@ -86,10 +109,15 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 	return result
 }
 
-func postedFingerprints(comments []github.PostedComment) map[string]bool {
+func postedFingerprints(comments []github.PostedComment, reviews []string) map[string]bool {
 	out := make(map[string]bool, len(comments))
 	for _, comment := range comments {
 		if id, ok := github.ParseFinding(comment.Body); ok {
+			out[id] = true
+		}
+	}
+	for _, body := range reviews {
+		for _, id := range github.FindingIDs(body) {
 			out[id] = true
 		}
 	}
@@ -220,7 +248,11 @@ func reviewBody(summary string, placed []findings.Finding, dropped []DroppedFind
 	}
 	fmt.Fprintf(&b, "%d finding(s) were not posted as inline comments:\n", len(dropped))
 	for _, item := range dropped {
-		fmt.Fprintf(&b, "- `%s` %s: %s\n", item.Finding.Path, formatLines(item.Finding.StartLine, item.Finding.EndLine), item.Reason)
+		fmt.Fprintf(&b, "- `%s` %s: %s", item.Finding.Path, formatLines(item.Finding.StartLine, item.Finding.EndLine), item.Reason())
+		if item.Kind == DropOutsidePatch {
+			b.WriteString(" " + github.FindingMarker(item.Finding.ID))
+		}
+		b.WriteByte('\n')
 	}
 	return strings.TrimSpace(b.String())
 }

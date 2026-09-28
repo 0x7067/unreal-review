@@ -120,6 +120,7 @@ func renderGitHub(args []string) error {
 		opts.Lines = lines
 		opts.HasLines = true
 		opts.Posted = state.Comments
+		opts.PostedReviews = state.ReviewBodies
 	}
 	result := render.GitHub(report, opts)
 	if *dryRun {
@@ -135,11 +136,11 @@ func renderGitHub(args []string) error {
 	if result.PostReview() {
 		posted := true
 		if result.LGTM {
-			var err error
-			posted, err = client.HasLGTMReview(ctx, owner, name, number, opts.CommitID)
+			exists, err := client.HasLGTMReview(ctx, owner, name, number, opts.CommitID)
 			if err != nil {
 				return err
 			}
+			posted = !exists
 		}
 		if posted {
 			if err := client.CreateReview(ctx, result.Payload); err != nil {
@@ -163,7 +164,7 @@ func renderGitHub(args []string) error {
 	if err != nil {
 		return err
 	}
-	if !receipted && len(result.Dropped) == 0 {
+	if !receipted && result.Receipt() {
 		if err := client.CreateCheckRun(ctx, owner, name, opts.CommitID, checkName, "unreal-review", "Review posted."); err != nil {
 			return err
 		}
