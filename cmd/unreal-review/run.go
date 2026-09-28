@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -33,9 +32,6 @@ func cmdRun(args []string) error {
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout")
 	agentLog := fs.String("agent-log", "", "optional path for the harness session JSONL log")
 	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
 		return err
 	}
 	if *model == "" {
