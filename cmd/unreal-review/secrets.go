@@ -17,7 +17,7 @@ const (
 	maxSecretBytes = 4096
 )
 
-var secretNames = []string{"OPENROUTER_API_KEY", "UNREAL_HARNESS_LLM_API_KEY", "GH_TOKEN", "GITHUB_TOKEN"}
+var secretNames = []string{"OPENROUTER_API_KEY", "GH_TOKEN", "GITHUB_TOKEN"}
 
 var secrets = map[string]string{}
 
