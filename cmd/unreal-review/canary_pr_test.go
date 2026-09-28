@@ -55,7 +55,7 @@ func TestCanaryRunPRRequiresToken(t *testing.T) {
 	}
 	out := filepath.Join(t.TempDir(), "findings.jsonl")
 	_, stderr, code := runCLI(t, bin, env, "run", "--model", "x", "--pr", canaryOwner+"/"+canaryRepo+"#1", "--out", out, "--timeout", "1s")
-	if code != 1 || !strings.Contains(stderr, "set GH_TOKEN or GITHUB_TOKEN to review a pull request") {
+	if code != 1 || !strings.Contains(stderr, "set GH_TOKEN to review a pull request") {
 		t.Fatalf("exit=%d stderr=%s", code, stderr)
 	}
 }
