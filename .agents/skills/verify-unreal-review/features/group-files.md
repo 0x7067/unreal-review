@@ -51,4 +51,4 @@ Preconditions:
 - Pathspecs and `--exclude` match `run`. Size does not omit files.
 - Root-level files such as `hello.txt` do not use `.` as a pathspec. The printed `run` command lists those files.
 - A leftover file in a directory that also has files in other groups is printed as a file pathspec. `tests/test_c.py` is not `-- tests`.
-- Go import grouping reads `go.mod` and joins a changed `.go` file to the single changed package it imports in another directory. A file that imports two changed packages stays in its directory group.
+- Go import grouping reads `go.mod` and joins a changed `.go` file to the single changed package it imports in another directory. Those sources come from the revision named by `--to`, `--commit`, or `--branch`. With no such revision (`group` alone, or `--from` without `--to`) they come from the working tree. A file that imports two changed packages stays in its directory group.

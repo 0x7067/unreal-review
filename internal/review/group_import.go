@@ -1,6 +1,7 @@
 package review
 
 import (
+	"context"
 	"go/parser"
 	"go/token"
 	"os"
@@ -9,17 +10,35 @@ import (
 	"strings"
 )
 
-// importEdge joins two changed files. goImportEdges emits one when a .go file
-// imports exactly one changed package that lives in another directory.
+// importEdge joins an importer to one representative file of the package it
+// imports. The representative stands for every changed file that still shares
+// that file's group, so a package of many files does not become one edge each.
 type importEdge struct {
 	from string
 	to   string
 }
 
 func applyImportEdges(files []ChangedFile, groupKey []string, edges []importEdge) {
+	if len(edges) == 0 {
+		return
+	}
 	index := make(map[string]int, len(files))
 	for i, file := range files {
 		index[file.Path] = i
+	}
+	parent := make(map[string]string, len(groupKey))
+	for _, key := range groupKey {
+		parent[key] = key
+	}
+	var find func(string) string
+	find = func(key string) string {
+		seen, ok := parent[key]
+		if !ok || seen == key {
+			parent[key] = key
+			return key
+		}
+		parent[key] = find(seen)
+		return parent[key]
 	}
 	for _, edge := range edges {
 		from, okFrom := index[edge.from]
@@ -27,33 +46,27 @@ func applyImportEdges(files []ChangedFile, groupKey []string, edges []importEdge
 		if !okFrom || !okTo || from == to {
 			continue
 		}
-		unionGroupKey(groupKey, from, to)
-	}
-}
-
-func unionGroupKey(groupKey []string, a, b int) {
-	from, to := groupKey[a], groupKey[b]
-	if from == to {
-		return
-	}
-	for i := range groupKey {
-		if groupKey[i] == to {
-			groupKey[i] = from
+		a, b := find(groupKey[from]), find(groupKey[to])
+		if a != b {
+			parent[b] = a
 		}
 	}
+	for i, key := range groupKey {
+		groupKey[i] = find(key)
+	}
 }
 
-// goImportEdges reads changed .go files under workspace. The module path comes
-// from workspace/go.mod. A file is paired with every changed file of the one
-// package it imports in a different directory. Two such packages, a missing
-// module, or a file that does not parse contribute no edge.
-type importedPkg struct {
-	dir   string
-	files []string
-}
-
-func goImportEdges(workspace string, files []ChangedFile) []importEdge {
-	modPath, ok := modulePath(filepath.Join(workspace, "go.mod"))
+// goImportEdges pairs a changed .go file with the single changed package it
+// imports in another directory. go.mod and those sources are read from the
+// destination of the range: the working tree when head is empty (workspace
+// mode, or --from with no --to), otherwise the resolved head commit. A later
+// checkout does not supply imports for --to, --commit, or --branch.
+func goImportEdges(ctx context.Context, workspace string, r resolved, files []ChangedFile) []importEdge {
+	modData, ok := readRangeFile(ctx, workspace, r, "go.mod")
+	if !ok {
+		return nil
+	}
+	modPath, ok := parseModulePath(string(modData))
 	if !ok {
 		return nil
 	}
@@ -69,24 +82,26 @@ func goImportEdges(workspace string, files []ChangedFile) []importEdge {
 		}
 		entry := byImport[imp]
 		if entry == nil {
-			entry = &importedPkg{dir: dir}
+			entry = &importedPkg{dir: dir, rep: file.Path}
 			byImport[imp] = entry
 		}
-		entry.files = append(entry.files, file.Path)
 		goFiles = append(goFiles, file.Path)
 	}
 	var edges []importEdge
 	for _, path := range goFiles {
 		dir := filepath.ToSlash(filepath.Dir(path))
-		hits := uniqueImportedPackage(byImport, dir, parseGoImports(filepath.Join(workspace, filepath.FromSlash(path))))
-		if hits == nil {
+		hit := uniqueImportedPackage(byImport, dir, parseGoImports(readRangeFileBytes(ctx, workspace, r, path)))
+		if hit == nil || hit.rep == path {
 			continue
 		}
-		for _, other := range hits.files {
-			edges = append(edges, importEdge{from: path, to: other})
-		}
+		edges = append(edges, importEdge{from: path, to: hit.rep})
 	}
 	return edges
+}
+
+type importedPkg struct {
+	dir string
+	rep string
 }
 
 func uniqueImportedPackage(byImport map[string]*importedPkg, importerDir string, imports []string) *importedPkg {
@@ -117,12 +132,28 @@ func fileImportPath(modPath, rel string) (imp, dir string, ok bool) {
 	return modPath + "/" + dir, dir, true
 }
 
-func modulePath(path string) (string, bool) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", false
+func readRangeFile(ctx context.Context, workspace string, r resolved, rel string) ([]byte, bool) {
+	if r.head == "" {
+		data, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(rel)))
+		return data, err == nil
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	rev := r.headSHA
+	if rev == "" {
+		rev = r.head
+	}
+	return gitBlob(ctx, workspace, rev, rel)
+}
+
+func readRangeFileBytes(ctx context.Context, workspace string, r resolved, rel string) []byte {
+	data, ok := readRangeFile(ctx, workspace, r, rel)
+	if !ok {
+		return nil
+	}
+	return data
+}
+
+func parseModulePath(data string) (string, bool) {
+	for _, line := range strings.Split(data, "\n") {
 		line = strings.TrimSpace(line)
 		if i := strings.Index(line, "//"); i >= 0 {
 			line = strings.TrimSpace(line[:i])
@@ -140,12 +171,11 @@ func modulePath(path string) (string, bool) {
 	return "", false
 }
 
-func parseGoImports(path string) []string {
-	src, err := os.ReadFile(path)
-	if err != nil {
+func parseGoImports(src []byte) []string {
+	if len(src) == 0 {
 		return nil
 	}
-	file, err := parser.ParseFile(token.NewFileSet(), path, src, parser.ImportsOnly)
+	file, err := parser.ParseFile(token.NewFileSet(), "", src, parser.ImportsOnly)
 	if err != nil || file == nil {
 		return nil
 	}

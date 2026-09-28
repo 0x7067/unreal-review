@@ -57,7 +57,7 @@ func Groups(ctx context.Context, workspace string, spec Spec, paths, exclude []s
 	if err != nil {
 		return GroupResult{}, err
 	}
-	return GroupResult{Spec: spec, From: r.base, To: r.head, Groups: clusterFilesEdges(files, goImportEdges(workspace, files))}, nil
+	return GroupResult{Spec: spec, From: r.base, To: r.head, Groups: clusterFilesEdges(files, goImportEdges(ctx, workspace, r, files))}, nil
 }
 
 func parseNumstat(raw string) ([]ChangedFile, error) {

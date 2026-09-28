@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"unreal-review/internal/findings"
@@ -413,6 +414,14 @@ func resolves(ctx context.Context, workspace, rev string) bool {
 func isAncestor(ctx context.Context, workspace, ancestor, commit string) bool {
 	cmd := exec.CommandContext(ctx, "git", "-C", workspace, "merge-base", "--is-ancestor", ancestor, commit)
 	return cmd.Run() == nil
+}
+
+func gitBlob(ctx context.Context, workspace, rev, path string) ([]byte, bool) {
+	out, err := git(ctx, workspace, "cat-file", "blob", rev+":"+filepath.ToSlash(path))
+	if err != nil {
+		return nil, false
+	}
+	return []byte(out), true
 }
 
 func git(ctx context.Context, workspace string, args ...string) (string, error) {
