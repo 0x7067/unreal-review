@@ -125,6 +125,56 @@ func TestGroupsImportLeavesDirectorySibling(t *testing.T) {
 	}
 }
 
+func TestGroupsImportFollowsChainedRepresentative(t *testing.T) {
+	dir := gitRepo(t)
+	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")
+	writeRepoFile(t, dir, "go.mod", "module example\n")
+	writeRepoFile(t, dir, "internal/api/a.go", "package api\n\nimport \"example/internal/billing\"\n")
+	writeRepoFile(t, dir, "internal/billing/charge.go", "package billing\n\nimport \"example/internal/other\"\n")
+	writeRepoFile(t, dir, "internal/billing/extra.go", "package billing\n\nfunc Extra() {}\n")
+	writeRepoFile(t, dir, "internal/other/x.go", "package other\n\nfunc X() {}\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "head")
+
+	result, err := Groups(context.Background(), dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := groupPaths(result.Groups)
+	want := [][]string{
+		{"go.mod"},
+		{"internal/api/a.go", "internal/billing/charge.go", "internal/other/x.go"},
+		{"internal/billing/extra.go"},
+	}
+	if strings.Join(flatten(got), " | ") != strings.Join(flatten(want), " | ") {
+		t.Fatalf("groups:\n got %v\nwant %v", got, want)
+	}
+}
+
+func TestGroupsImportMutualUsesSiblingRepresentative(t *testing.T) {
+	dir := gitRepo(t)
+	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")
+	writeRepoFile(t, dir, "go.mod", "module example\n")
+	writeRepoFile(t, dir, "internal/api/a.go", "package api\n\nfunc A() {}\n")
+	writeRepoFile(t, dir, "internal/api/b.go", "package api\n\nimport \"example/internal/billing\"\n")
+	writeRepoFile(t, dir, "internal/billing/charge.go", "package billing\n\nimport \"example/internal/api\"\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "head")
+
+	result, err := Groups(context.Background(), dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := groupPaths(result.Groups)
+	want := [][]string{
+		{"go.mod"},
+		{"internal/api/a.go", "internal/api/b.go", "internal/billing/charge.go"},
+	}
+	if strings.Join(flatten(got), " | ") != strings.Join(flatten(want), " | ") {
+		t.Fatalf("groups:\n got %v\nwant %v", got, want)
+	}
+}
+
 func TestGoImportEdgesUsePackageRepresentative(t *testing.T) {
 	dir := gitRepo(t)
 	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")

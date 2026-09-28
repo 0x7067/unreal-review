@@ -593,8 +593,50 @@ def unionKeys(xs: List<&2, Item>, ka: Maybe<&2, GKey>, kb: Maybe<&2, GKey>) -> L
     case Some{a} Some{b}:
       remapKey(b, a, xs)
 
-# An edge moves only the importing file onto the representative's key.
-# Directory siblings that still share the importer's old key stay there.
+# An edge records that the importing file follows one representative.
+# Parents are file ids. Only those sources are rekeyed, and only after every
+# edge has been linked, so a representative that itself imports does not leave
+# an earlier importer on a stale key. A link is skipped when the two ids
+# already share a root, which is what keeps a mutual import from cycling.
+type Link is Data:
+  Link{id: Nat, parent: Nat}
+
+def parentLookup(+id: Nat, ps: List<&2, Link>) -> Nat:
+  match ps:
+    case Nil{}:
+      id
+    case Link{+i, +p} <> t:
+      Bool.pick(Nat, Nat.is_eq(id, i), p, parentLookup(id, t))
+
+def findFuel(+fuel: Nat, +id: Nat, +ps: List<&2, Link>) -> Nat:
+  match fuel:
+    case 0n:
+      id
+    case 1n+n:
+      Bool.pick(Nat, Nat.is_eq(id, parentLookup(id, ps)), id, findFuel(n, parentLookup(id, ps), ps))
+
+def linkRootsB(ps: List<&2, Link>, +ra: Nat, +rb: Nat, same: Bool) -> List<&2, Link>:
+  match same:
+    case True{}:
+      ps
+    case False{}:
+      Link{ra, rb} <> ps
+
+def linkRoots(ps: List<&2, Link>, +ra: Nat, +rb: Nat) -> List<&2, Link>:
+  linkRootsB(ps, ra, rb, Nat.is_eq(ra, rb))
+
+def addEdge(+ps: List<&2, Link>, e: Edge, +fuel: Nat) -> List<&2, Link>:
+  match e:
+    case Edge{+a, +b}:
+      linkRoots(ps, findFuel(fuel, a, ps), findFuel(fuel, b, ps))
+
+def buildParents(es: List<&2, Edge>, ps: List<&2, Link>, +fuel: Nat) -> List<&2, Link>:
+  match es:
+    case Nil{}:
+      ps
+    case h <> t:
+      buildParents(t, addEdge(ps, h, fuel), fuel)
+
 def applyEdgeB(+id: Nat, k: Maybe<&2, GKey>, xs: List<&2, Item>) -> List<&2, Item>:
   match k:
     case None{}:
@@ -602,17 +644,23 @@ def applyEdgeB(+id: Nat, k: Maybe<&2, GKey>, xs: List<&2, Item>) -> List<&2, Ite
     case Some{key}:
       remapId(id, key, xs)
 
-def applyEdge(+xs: List<&2, Item>, e: Edge) -> List<&2, Item>:
+def rekeySource(e: Edge, +ps: List<&2, Link>, +orig: List<&2, Item>, xs: List<&2, Item>, +fuel: Nat) -> List<&2, Item>:
   match e:
     case Edge{+a, +b}:
-      applyEdgeB(a, keyOf(b, xs), xs)
+      applyEdgeB(a, keyOf(findFuel(fuel, a, ps), orig), xs)
 
-def applyEdges(es: List<&2, Edge>, xs: List<&2, Item>) -> List<&2, Item>:
-  match es:
+def rekeySources(todo: List<&2, Edge>, +ps: List<&2, Link>, +orig: List<&2, Item>, xs: List<&2, Item>, +fuel: Nat) -> List<&2, Item>:
+  match todo:
     case Nil{}:
       xs
     case h <> t:
-      applyEdges(t, applyEdge(xs, h))
+      rekeySources(t, ps, orig, rekeySource(h, ps, orig, xs, fuel), fuel)
+
+def applyEdgesGo(+es: List<&2, Edge>, +xs: List<&2, Item>, +fuel: Nat) -> List<&2, Item>:
+  rekeySources(es, buildParents(es, Nil{}, fuel), xs, xs, fuel)
+
+def applyEdges(+es: List<&2, Edge>, xs: List<&2, Item>) -> List<&2, Item>:
+  applyEdgesGo(es, xs, List.length(&2, Edge, es))
 
 type Bucket is Data:
   Bucket{key: GKey, files: List<&2, ChangedFile>}
@@ -894,18 +942,24 @@ def applyEdgeBFiles(+id: Nat, k: Maybe<&2, GKey>, xs: List<&2, Item>) -> {filesO
     case Some{key}:
       remapIdFiles(id, key, xs)
 
-def applyEdgeFiles(+xs: List<&2, Item>, e: Edge) -> {filesOf(applyEdge(xs, e)) == filesOf(xs) : List<&2, ChangedFile>}:
+def rekeySourceFiles(e: Edge, +ps: List<&2, Link>, +orig: List<&2, Item>, xs: List<&2, Item>, +fuel: Nat) -> {filesOf(rekeySource(e, ps, orig, xs, fuel)) == filesOf(xs) : List<&2, ChangedFile>}:
   match e:
     case Edge{+a, +b}:
-      applyEdgeBFiles(a, keyOf(b, xs), xs)
+      applyEdgeBFiles(a, keyOf(findFuel(fuel, a, ps), orig), xs)
 
-def applyEdgesFiles(es: List<&2, Edge>, +xs: List<&2, Item>) -> {filesOf(applyEdges(es, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
-  match es:
+def rekeySourcesFiles(todo: List<&2, Edge>, +ps: List<&2, Link>, +orig: List<&2, Item>, +xs: List<&2, Item>, +fuel: Nat) -> {filesOf(rekeySources(todo, ps, orig, xs, fuel)) == filesOf(xs) : List<&2, ChangedFile>}:
+  match todo:
     case Nil{}:
       {==}
     case +h <> +t:
-      %applyEdgeFiles(xs, h) : {filesOf(applyEdges(t, applyEdge(xs, h))) == _ : List<&2, ChangedFile>}
-      applyEdgesFiles(t, applyEdge(xs, h))
+      %rekeySourceFiles(h, ps, orig, xs, fuel) : {filesOf(rekeySources(t, ps, orig, rekeySource(h, ps, orig, xs, fuel), fuel)) == _ : List<&2, ChangedFile>}
+      rekeySourcesFiles(t, ps, orig, rekeySource(h, ps, orig, xs, fuel), fuel)
+
+def applyEdgesGoFiles(+es: List<&2, Edge>, +xs: List<&2, Item>, +fuel: Nat) -> {filesOf(applyEdgesGo(es, xs, fuel)) == filesOf(xs) : List<&2, ChangedFile>}:
+  rekeySourcesFiles(es, buildParents(es, Nil{}, fuel), xs, xs, fuel)
+
+def applyEdgesFiles(+es: List<&2, Edge>, +xs: List<&2, Item>) -> {filesOf(applyEdges(es, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
+  applyEdgesGoFiles(es, xs, List.length(&2, Edge, es))
 
 def bumpAddR(b: Bool, x: Nat, y: Nat) -> {bump(b, Nat.add(x, y)) == Nat.add(bump(b, x), y) : Nat}:
   match b:

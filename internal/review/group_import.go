@@ -19,6 +19,11 @@ type importEdge struct {
 	to   string
 }
 
+// applyImportEdges moves each importing file onto the stable root of its
+// import parents. The parent map is file indexes, not directory keys, so a
+// sibling that did not import is never rewritten. Roots are resolved from
+// the whole edge list before any key is copied, so a representative that is
+// itself an importer does not leave earlier importers on a stale key.
 func applyImportEdges(files []ChangedFile, groupKey []string, edges []importEdge) {
 	if len(edges) == 0 {
 		return
@@ -27,13 +32,35 @@ func applyImportEdges(files []ChangedFile, groupKey []string, edges []importEdge
 	for i, file := range files {
 		index[file.Path] = i
 	}
+	parent := make([]int, len(files))
+	for i := range parent {
+		parent[i] = i
+	}
+	var find func(int) int
+	find = func(i int) int {
+		if parent[i] != i {
+			parent[i] = find(parent[i])
+		}
+		return parent[i]
+	}
+	source := make([]bool, len(files))
 	for _, edge := range edges {
 		from, okFrom := index[edge.from]
 		to, okTo := index[edge.to]
 		if !okFrom || !okTo || from == to {
 			continue
 		}
-		groupKey[from] = groupKey[to]
+		ra, rb := find(from), find(to)
+		if ra != rb {
+			parent[ra] = rb
+		}
+		source[from] = true
+	}
+	orig := append([]string(nil), groupKey...)
+	for i, isSource := range source {
+		if isSource {
+			groupKey[i] = orig[find(i)]
+		}
 	}
 }
 
