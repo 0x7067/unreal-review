@@ -24,7 +24,10 @@ cd "$ROOT"
 export LC_ALL=C.UTF-8
 export VERIFY_ROOT=${VERIFY_ROOT:-$(mktemp -d "${TMPDIR:-/tmp}/unreal-review-canary.XXXXXX")}
 export VERIFY_RUN_ID=${VERIFY_RUN_ID:-canary}
-unset GH_TOKEN GITHUB_TOKEN UNREAL_HARNESS_LLM_MODEL OPENROUTER_API_KEY UNREAL_REVIEW_GITHUB_API UNREAL_REVIEW_OPENROUTER_API || true
+# Actions sets GITHUB_REPOSITORY, which render/run use as the default --repo,
+# and GITHUB_EVENT_PATH, which supplies a pull request when --pr is empty.
+# Drop both so a bare --pr number still fails closed, the same as off Actions.
+unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY GITHUB_EVENT_PATH UNREAL_HARNESS_LLM_MODEL OPENROUTER_API_KEY UNREAL_REVIEW_GITHUB_API UNREAL_REVIEW_OPENROUTER_API || true
 
 # lib.sh keys off $0, so sourcing it from this script would point at tools/.
 # Launch still sources lib.sh itself; these are the same paths it derives.
