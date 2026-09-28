@@ -71,6 +71,10 @@ func recordFindingDefinition() tool.Definition {
 					"type":        "string",
 					"description": "Markdown finding body.",
 				},
+				"duplicate_of": map[string]any{
+					"type":        "string",
+					"description": "Id of an already-reported finding this one restates, from the list in the prompt. Omit for a new issue.",
+				},
 			},
 			"required": []any{"path", "start_line", "severity", "body"},
 		},
@@ -78,12 +82,13 @@ func recordFindingDefinition() tool.Definition {
 }
 
 type recordFindingArgs struct {
-	Path      string `json:"path"`
-	StartLine int    `json:"start_line"`
-	EndLine   int    `json:"end_line"`
-	Anchor    string `json:"anchor"`
-	Severity  string `json:"severity"`
-	Body      string `json:"body"`
+	Path        string `json:"path"`
+	StartLine   int    `json:"start_line"`
+	EndLine     int    `json:"end_line"`
+	Anchor      string `json:"anchor"`
+	Severity    string `json:"severity"`
+	Body        string `json:"body"`
+	DuplicateOf string `json:"duplicate_of"`
 }
 
 type recordFindingTranslator struct{}
@@ -94,12 +99,13 @@ func (recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) to
 		return tool.ErrorStatus(fmt.Sprintf("decode arguments: %v", err), 0)
 	}
 	finding, err := findings.Normalize(findings.Finding{
-		Path:      args.Path,
-		StartLine: args.StartLine,
-		EndLine:   args.EndLine,
-		Anchor:    findings.Anchor(args.Anchor),
-		Severity:  findings.Severity(args.Severity),
-		Body:      args.Body,
+		Path:        args.Path,
+		StartLine:   args.StartLine,
+		EndLine:     args.EndLine,
+		Anchor:      findings.Anchor(args.Anchor),
+		Severity:    findings.Severity(args.Severity),
+		Body:        args.Body,
+		DuplicateOf: args.DuplicateOf,
 	})
 	if err != nil {
 		return tool.ErrorStatus(err.Error(), 0)

@@ -228,6 +228,9 @@ func reportedSection(reported []findings.Finding) string {
 	b.WriteString("Already reported on this pull request:\n")
 	for _, item := range reported {
 		parts := []string{"`" + item.Path + "`"}
+		if item.ID != "" {
+			parts = append([]string{"id `" + item.ID + "`"}, parts...)
+		}
 		if item.StartLine > 0 {
 			parts = append(parts, fmt.Sprintf("%d-%d", item.StartLine, item.EndLine))
 		}
@@ -236,7 +239,7 @@ func reportedSection(reported []findings.Finding) string {
 		}
 		fmt.Fprintf(&b, "- %s: %s\n", strings.Join(parts, " "), strings.Join(strings.Fields(item.Body), " "))
 	}
-	b.WriteString("\nReport a problem this list does not cover, or a material change in one it does. Do not restate it.\n\n")
+	b.WriteString("\nReport a problem this list does not cover, or a material change in one it does. Do not restate it. If a finding you record is the same issue as one listed, set duplicate_of to that id.\n\n")
 	return b.String()
 }
 

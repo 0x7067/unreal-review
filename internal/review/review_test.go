@@ -26,13 +26,13 @@ func TestReportedSectionListsEachFindingOnce(t *testing.T) {
 		t.Fatalf("an empty list should add nothing to the prompt: %q", got)
 	}
 	got := reportedSection([]findings.Finding{
-		{Path: "src/foo.go", StartLine: 12, EndLine: 14, Severity: findings.SeverityWarning, Body: "This map write\nraces with the reader."},
+		{ID: "a1b2c3d4e5f60708", Path: "src/foo.go", StartLine: 12, EndLine: 14, Severity: findings.SeverityWarning, Body: "This map write\nraces with the reader."},
 		{Path: "src/gone.go", Severity: findings.SeverityNote, Body: "Line unknown."},
 	})
 	want := "Already reported on this pull request:\n" +
-		"- `src/foo.go` 12-14 warning: This map write races with the reader.\n" +
+		"- id `a1b2c3d4e5f60708` `src/foo.go` 12-14 warning: This map write races with the reader.\n" +
 		"- `src/gone.go` note: Line unknown.\n" +
-		"\nReport a problem this list does not cover, or a material change in one it does. Do not restate it.\n\n"
+		"\nReport a problem this list does not cover, or a material change in one it does. Do not restate it. If a finding you record is the same issue as one listed, set duplicate_of to that id.\n\n"
 	if got != want {
 		t.Fatalf("section:\n%q\nwant:\n%q", got, want)
 	}
