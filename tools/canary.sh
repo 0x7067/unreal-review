@@ -41,8 +41,8 @@ unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY GITHUB_EVENT_PATH UNREAL_HARNESS_L
 
 # lib.sh keys off $0, so sourcing it from this script would point at tools/.
 # Launch still sources lib.sh itself; these are the same paths it derives.
-FEATURES="$ROOT/.grok/skills/verify-unreal-review/features"
-SCRIPTS="$ROOT/.grok/skills/verify-unreal-review/scripts"
+FEATURES="$ROOT/.agents/skills/verify-unreal-review/features"
+SCRIPTS="$ROOT/.agents/skills/verify-unreal-review/scripts"
 VERIFY_EVIDENCE="$VERIFY_ROOT/evidence/$VERIFY_RUN_ID"
 VERIFY_SCRATCH="$VERIFY_ROOT/scratch/$VERIFY_RUN_ID"
 VERIFY_EXAMPLE="$ROOT/examples/findings.jsonl"
