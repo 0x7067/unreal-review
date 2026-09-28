@@ -204,9 +204,7 @@ func parseJSONL(raw []byte) (Report, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	scanner.Buffer(nil, 4<<20)
 	var records []json.RawMessage
-	lineNo := 0
 	for scanner.Scan() {
-		lineNo++
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
 			continue
@@ -500,14 +498,16 @@ func Write(w io.Writer, report Report) error {
 			cost.Currency = "USD"
 		}
 		rec := runRecord{
-			V:         SchemaVersion,
-			Type:      TypeRun,
-			ID:        report.Run.ID,
-			Model:     report.Run.Model,
-			Status:    string(report.Run.Status),
-			Source:    &report.Run.Source,
-			CreatedAt: report.Run.CreatedAt.UTC().Format(time.RFC3339),
-			Cost:      &cost,
+			V:      SchemaVersion,
+			Type:   TypeRun,
+			ID:     report.Run.ID,
+			Model:  report.Run.Model,
+			Status: string(report.Run.Status),
+			Source: &report.Run.Source,
+			Cost:   &cost,
+		}
+		if !report.Run.CreatedAt.IsZero() {
+			rec.CreatedAt = report.Run.CreatedAt.UTC().Format(time.RFC3339)
 		}
 		if err := enc.Encode(rec); err != nil {
 			return fmt.Errorf("encode run: %w", err)
