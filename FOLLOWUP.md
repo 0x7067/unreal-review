@@ -4,23 +4,27 @@ Open work from the session that moved the agent onto the embedded unreal-agent h
 
 The user wants no fallbacks: one source per value, and a clear error when it is missing.
 
-## 1. Run a live multi-push test PR
+## 1. Live multi-push test PR (done)
 
-Nothing has exercised the current loop on a real PR with several pushes. Use a disposable repository or branch, not this repo's own PRs:
+Draft PR #23 (closed) against `receipt-out-of-patch-drops`, reviewed by the Review workflow with `openai/gpt-6-luna-pro`. Each run posted the `unreal-review` check run on its head, and every summary followed the contract.
 
-1. Push 1: a planted bug. Expect one inline comment and a check run on the head.
-2. Push 2: an unrelated change. Expect the range to start at push 1's head, the old finding listed as already reported, and no repeated comment.
-3. Push 3: fix the push 1 bug. Record what happens to the old comment; nothing resolves it today.
-4. Push 4: a finding on a line outside the patch. Confirms that an out-of-patch finding posts once and still gets the check run.
+| Push | Change | Reviewed | New / dup / not postable | Cost USD | Outcome |
+| --- | --- | --- | --- | --- | --- |
+| 1 `d32f3ce` | `livecache` with unlocked `Len`/`Delete` | base..d32f3ce | 1 / 0 / 0 | 0.003528 | One error inline at L27-32 |
+| 2 `b676493` | Locked `Has` above `Get`, shifting lines | d32f3ce..b676493 | 0 / 0 / 0 | 0.001272 | LGTM review; old comment moved to L34-39, still current |
+| 3 `c5247ea` | Lock `Len` and `Delete` | b676493..c5247ea | 0 / 0 / 0 | 0.001370 | LGTM review; old comment stays current and unresolved, widened to L27-43 |
+| 4 `c7823a5` | `Reset` sets `items` to nil | c5247ea..c7823a5 | 1 / 0 / 0 | 0.003429 | New error inline on `reset.go:6` |
 
-Record per push: the reviewed range from the status comment, new/duplicate/dropped counts, cost, and the summary. The summary must follow the contract in `schema/findings-v1.md#summary`.
+Every range started at the previous reviewed head, and no push repeated a comment. Push 4's finding landed inside the patch, so the out-of-patch path was not exercised live. The offline canary covers it.
+
+An earlier run on a throwaway repository posted a second race comment after `Count`/`Remove` were added. That was not a dedup miss: the push added new unlocked copies while `Len`/`Delete` stayed, so the second comment was a distinct issue on different lines.
 
 ## Known gaps found along the way
 
 These came out of the review-loop assessment. They are not scheduled yet.
 
-- Dedup matches by `id`, by the agent's `duplicate_of`, and by line overlap with findings still mapped onto the head. An issue that moved lines and whose comment went outdated is caught only if the agent sets `duplicate_of`. Push 2 and push 3 of the live test should show whether it does.
-- A fixed finding is never resolved or answered on the PR.
+- Dedup matches by `id`, by the agent's `duplicate_of`, and by line overlap with findings still mapped onto the head. An issue that moved lines and whose comment went outdated is caught only if the agent sets `duplicate_of`. In the live test the comment never went outdated, so this path stayed unexercised.
+- A fixed finding is never resolved or answered on the PR. Push 3 confirmed it: after the fix, the comment stays current and GitHub widens its range over the edited lines, so line-overlap dedup now covers a wider span than the original finding.
 - The agent never sees the PR title or description (`github.GetPullRequest` fetches `Title`, but `review.Pull` does not carry it).
 - `reviewPrompt` cuts the diff at 200 KB and still marks the review `complete`.
 - No `eval` baseline is recorded for the target model.
