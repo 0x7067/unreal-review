@@ -235,3 +235,30 @@ def Laws.receipt_outside_patch_ok():
 
 def Laws.receipt_over_cap_blocks(ds):
   {==}
+
+def Laws.same_issue_same_lines():
+  {==}
+
+def Laws.same_issue_shifted_overlap():
+  {==}
+
+def Laws.same_issue_disjoint_lines():
+  {==}
+
+def Laws.same_issue_other_path():
+  {==}
+
+def Laws.same_issue_other_anchor():
+  {==}
+
+def Laws.same_issue_never_outdated(pp, pa, plo, phi, path, anchor, lo, hi):
+  {==}
+
+def Laws.suppressed_by_named_duplicate():
+  {==}
+
+def Laws.suppressed_by_location_alone():
+  {==}
+
+def Laws.new_issue_not_suppressed():
+  {==}

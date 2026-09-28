@@ -19,7 +19,7 @@ Record per push: the reviewed range from the status comment, new/duplicate/dropp
 
 These came out of the review-loop assessment. They are not scheduled yet.
 
-- Dedup hashes the finding body (`findings.Fingerprint`), so a reworded or line-shifted finding gets a new ID and can be posted again.
+- Dedup matches by `id`, by the agent's `duplicate_of`, and by line overlap with findings still mapped onto the head. An issue that moved lines and whose comment went outdated is caught only if the agent sets `duplicate_of`. Push 2 and push 3 of the live test should show whether it does.
 - A fixed finding is never resolved or answered on the PR.
 - The agent never sees the PR title or description (`github.GetPullRequest` fetches `Title`, but `review.Pull` does not carry it).
 - `reviewPrompt` cuts the diff at 200 KB and still marks the review `complete`.

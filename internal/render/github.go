@@ -70,14 +70,11 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 			},
 		},
 	}
-	posted := make(map[string]bool)
-	for _, item := range opts.History.Reported() {
-		posted[item.ID] = true
-	}
+	prior := opts.History.posted(opts.CommitID)
 	var placed []findings.Finding
 	for _, finding := range report.Findings {
 		switch {
-		case posted[finding.ID]:
+		case alreadyReported(prior, finding):
 			result.Duplicates = append(result.Duplicates, finding)
 		case opts.HasLines && !commentable(opts.Lines, finding):
 			result.Dropped = append(result.Dropped, DroppedFinding{Finding: finding, Kind: DropOutsidePatch})
@@ -124,14 +121,28 @@ func (h History) HasLGTM(commit string) bool {
 }
 
 func (h History) Reported() []findings.Finding {
-	var out []findings.Finding
+	items := h.posted("")
+	out := make([]findings.Finding, len(items))
+	for i, item := range items {
+		out[i] = item.finding
+	}
+	return out
+}
+
+type postedFinding struct {
+	finding findings.Finding
+	current bool
+}
+
+func (h History) posted(head string) []postedFinding {
+	var out []postedFinding
 	for _, comment := range h.Comments {
 		id, ok := github.ParseFinding(comment.Body)
 		if !ok {
 			continue
 		}
 		severity, body := splitPostedBody(comment.Body)
-		out = append(out, findings.Finding{
+		out = append(out, postedFinding{current: !comment.Outdated, finding: findings.Finding{
 			ID:        id,
 			Path:      comment.Path,
 			StartLine: comment.StartLine,
@@ -139,16 +150,29 @@ func (h History) Reported() []findings.Finding {
 			Anchor:    anchorOf(comment.Side),
 			Severity:  severity,
 			Body:      body,
-		})
+		}})
 	}
 	for _, review := range h.Reviews {
 		for _, line := range strings.Split(review.Body, "\n") {
 			if item, ok := parseDroppedLine(line); ok {
-				out = append(out, item)
+				out = append(out, postedFinding{finding: item, current: head != "" && review.CommitID == head})
 			}
 		}
 	}
 	return out
+}
+
+func alreadyReported(prior []postedFinding, finding findings.Finding) bool {
+	for _, item := range prior {
+		if item.finding.ID == finding.ID || item.finding.ID == finding.DuplicateOf || item.current && sameIssue(item.finding, finding) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameIssue(a, b findings.Finding) bool {
+	return a.Path == b.Path && a.Anchor == b.Anchor && a.StartLine <= b.EndLine && b.StartLine <= a.EndLine
 }
 
 func droppedLine(finding findings.Finding) string {
