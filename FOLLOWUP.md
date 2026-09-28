@@ -1,8 +1,6 @@
 # Follow-up: pull request review loop
 
-Open work from the session that moved the agent onto the embedded unreal-agent harness. Do these in order. Delete this file once all remaining items are done.
-
-The user wants no fallbacks: one source per value, and a clear error when it is missing.
+Open work that remains after consolidating the review-loop branches. Delete this file once all remaining items are done.
 
 ## 1. Live multi-push test PR (done)
 
@@ -21,16 +19,7 @@ An earlier run on a throwaway repository posted a second race comment after `Cou
 
 ## Known gaps found along the way
 
-These came out of the review-loop assessment. They are not scheduled yet.
+These came out of the review-loop assessment and are not scheduled yet.
 
 - Dedup matches by `id`, by the agent's `duplicate_of`, and by line overlap with findings still mapped onto the head. An issue that moved lines and whose comment went outdated is caught only if the agent sets `duplicate_of`. In the live test the comment never went outdated, so this path stayed unexercised.
-- A fixed finding is never resolved or answered on the PR. Push 3 confirmed it: after the fix, the comment stays current and GitHub widens its range over the edited lines, so line-overlap dedup now covers a wider span than the original finding.
-- The agent never sees the PR title or description (`github.GetPullRequest` fetches `Title`, but `review.Pull` does not carry it).
-- `reviewPrompt` cuts the diff at 200 KB and still marks the review `complete`.
-- No `eval` baseline is recorded for the target model.
-
-Fallbacks still in code this branch did not touch:
-
-- `resolveToken` (`cmd/unreal-review/pull.go`): `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token`.
-- `pullFullBase` (`internal/review/git.go`): `origin/<base ref>`, then the base SHA.
-- `resolvePR` (`cmd/unreal-review/render.go`): `--pr`, then the Actions event file through `actionsPR`.
+- A fixed finding is never resolved or answered on the PR. Push 3 confirmed it. The prototype on `t3code/work-on-followup` was not ported because its resolved threads still suppressed a later recurrence by id or line overlap. A redesign needs separate open-thread context for resolution and all-history context for audit, while allowing a resolved issue to be reported again if it regresses. Replies and thread resolution must remain idempotent.
