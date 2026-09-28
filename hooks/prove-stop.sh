@@ -48,12 +48,12 @@ if [ -z "$proof" ]; then
 elif [ -z "$bend_bin" ]; then
   proof_out="bend is not installed, so $laws cannot be checked (make prove fails the same way)."
   status=1
-elif [ -x "$root/tools/prove.sh" ]; then
+elif [ -f "$root/tools/prove.sh" ]; then
   proof_out="$(cd "$root" && $bend_wrap sh tools/prove.sh 2>&1)"
   status=$?
 else
-  proof_out="$(cd "$root" && $bend_wrap "$bend_bin" "$rel" --check-only 2>&1)"
-  status=$?
+  proof_out="$root/tools/prove.sh is missing, so the full law gate cannot run (make prove fails the same way)."
+  status=1
 fi
 
 pass=0
