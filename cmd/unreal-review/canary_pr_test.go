@@ -225,12 +225,15 @@ func TestCanaryRenderOutOfPatchFindingPostsOnceAndReceipts(t *testing.T) {
 	if err := json.Unmarshal([]byte(reviews[0]), &posted); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(posted.Body, "`hello.go` L90: line is not in the pull request diff <!-- unreal-review finding 3333333333333333 -->") {
+	if !strings.Contains(posted.Body, "Not in the pull request diff, so not posted inline:\n- **error** `hello.go` L90: This line is outside the patch. <!-- unreal-review finding 3333333333333333 -->") {
 		t.Fatalf("dropped finding has no marker in the review body:\n%s", posted.Body)
 	}
 	receipts := fake.bodies(http.MethodPost, "/check-runs")
 	if len(receipts) != 1 || !strings.Contains(receipts[0], head) {
 		t.Fatalf("receipts=%v want one on %s", receipts, head)
+	}
+	if reads := fake.count(http.MethodGet, "/pulls/1/reviews"); reads != 2 {
+		t.Fatalf("two renders read the reviews %d times, want once each", reads)
 	}
 }
 

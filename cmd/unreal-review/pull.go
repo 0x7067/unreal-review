@@ -40,7 +40,7 @@ func (p pullResolver) ResolvePull(ctx context.Context, spec string) (review.Pull
 		BaseSHA:      state.BaseSHA,
 		HeadSHA:      state.HeadSHA,
 		ReviewedHead: reviewed,
-		Reported:     render.ReportedFindings(state.Comments),
+		Reported:     render.HistoryOf(state).Reported(),
 	}, nil
 }
 

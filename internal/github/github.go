@@ -41,6 +41,12 @@ type PostedComment struct {
 	EndLine   int
 	Side      string
 	Body      string
+	Outdated  bool
+}
+
+type PostedReview struct {
+	CommitID string
+	Body     string
 }
 
 type IssueComment struct {
@@ -55,7 +61,7 @@ type PullState struct {
 	Status          Status
 	StatusCommentID int64
 	Comments        []PostedComment
-	ReviewBodies    []string
+	Reviews         []PostedReview
 	Commits         []string
 }
 
@@ -142,11 +148,11 @@ func (c *Client) PullState(ctx context.Context, owner, repo string, number int) 
 		return PullState{}, err
 	}
 	state.Comments = comments
-	reviews, err := c.ListReviewBodies(ctx, owner, repo, number)
+	reviews, err := c.ListReviews(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err
 	}
-	state.ReviewBodies = reviews
+	state.Reviews = reviews
 	commits, err := c.ListPullCommits(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err
@@ -218,6 +224,7 @@ func (c *Client) ListReviewComments(ctx context.Context, owner, repo string, num
 				EndLine:   end,
 				Side:      firstString(item.Side, item.OriginalSide),
 				Body:      item.Body,
+				Outdated:  item.Line == nil,
 			})
 		}
 		if len(raw) < 100 {
@@ -452,28 +459,8 @@ func (c *Client) CreateCheckRun(ctx context.Context, owner, repo, sha, name, tit
 	return c.post(ctx, fmt.Sprintf("/repos/%s/%s/check-runs", owner, repo), body, nil)
 }
 
-func (c *Client) ListReviewBodies(ctx context.Context, owner, repo string, number int) ([]string, error) {
-	var out []string
-	page := 1
-	for {
-		var raw []struct {
-			Body string `json:"body"`
-		}
-		path := fmt.Sprintf("/repos/%s/%s/pulls/%d/reviews?per_page=100&page=%d", owner, repo, number, page)
-		if err := c.get(ctx, path, &raw); err != nil {
-			return nil, err
-		}
-		for _, item := range raw {
-			out = append(out, item.Body)
-		}
-		if len(raw) < 100 {
-			return out, nil
-		}
-		page++
-	}
-}
-
-func (c *Client) HasLGTMReview(ctx context.Context, owner, repo string, number int, sha string) (bool, error) {
+func (c *Client) ListReviews(ctx context.Context, owner, repo string, number int) ([]PostedReview, error) {
+	var out []PostedReview
 	page := 1
 	for {
 		var raw []struct {
@@ -482,15 +469,13 @@ func (c *Client) HasLGTMReview(ctx context.Context, owner, repo string, number i
 		}
 		path := fmt.Sprintf("/repos/%s/%s/pulls/%d/reviews?per_page=100&page=%d", owner, repo, number, page)
 		if err := c.get(ctx, path, &raw); err != nil {
-			return false, err
+			return nil, err
 		}
 		for _, item := range raw {
-			if item.CommitID == sha && strings.HasPrefix(strings.TrimSpace(item.Body), "LGTM") {
-				return true, nil
-			}
+			out = append(out, PostedReview{CommitID: item.CommitID, Body: item.Body})
 		}
 		if len(raw) < 100 {
-			return false, nil
+			return out, nil
 		}
 		page++
 	}
