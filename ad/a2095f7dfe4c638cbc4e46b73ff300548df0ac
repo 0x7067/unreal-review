@@ -1,0 +1,25 @@
+spec/checkpoint.bend
+  s_2469fd92ef607c::t_056e71511599e4 10,44-50,63-64
+internal/review/review.go
+  s_2469fd92ef607c::t_056e71511599e4 71-77,206
+PROOF.bend
+  s_2469fd92ef607c::t_056e71511599e4 265-270
+LAWS.bend
+  s_2469fd92ef607c::t_056e71511599e4 324-337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ada2095f7dfe4c638cbc4e46b73ff300548df0ac",
+  "prompts": {},
+  "sessions": {
+    "s_2469fd92ef607c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f18303d9-c8bb-4d3b-9973-64924ba62fd3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
