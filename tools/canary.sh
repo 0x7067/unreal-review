@@ -24,6 +24,16 @@ cd "$ROOT"
 export LC_ALL=C.UTF-8
 export VERIFY_ROOT=${VERIFY_ROOT:-$(mktemp -d "${TMPDIR:-/tmp}/unreal-review-canary.XXXXXX")}
 export VERIFY_RUN_ID=${VERIFY_RUN_ID:-canary}
+# VERIFY_RUN_ID is a single path segment under VERIFY_ROOT. Rejecting "." and
+# ".." and anything outside [A-Za-z0-9._-] keeps evidence and scratch cleanup
+# from walking out of that root.
+case $VERIFY_RUN_ID in
+'' | '.' | '..' | *[!A-Za-z0-9._-]*)
+	echo "canary: VERIFY_RUN_ID must be one path segment (letters, digits, dot, underscore, hyphen)" >&2
+	exit 1
+	;;
+esac
+mkdir -p "$VERIFY_ROOT"
 # Actions sets GITHUB_REPOSITORY, which render/run use as the default --repo,
 # and GITHUB_EVENT_PATH, which supplies a pull request when --pr is empty.
 # Drop both so a bare --pr number still fails closed, the same as off Actions.
@@ -42,6 +52,10 @@ say() { printf 'canary: %s\n' "$*"; }
 
 start_openrouter_stub() {
 	local url_file="$VERIFY_ROOT/openrouter-stub.url" origin i
+	mkdir -p "$VERIFY_ROOT"
+	# Drop a URL left by an earlier run in this root before the new stub
+	# opens the file. Otherwise the wait below can read the stale URL.
+	rm -f "$url_file"
 	STUB_LOG="$VERIFY_ROOT/openrouter-stub.log"
 	: >"$STUB_LOG"
 	python3 "$ROOT/tools/openrouter-stub.py" "$STUB_LOG" >"$url_file" &
