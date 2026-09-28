@@ -57,7 +57,11 @@ func Groups(ctx context.Context, workspace string, spec Spec, paths, exclude []s
 	if err != nil {
 		return GroupResult{}, err
 	}
-	return GroupResult{Spec: spec, From: r.base, To: r.head, Groups: clusterFiles(files)}, nil
+	edges, err := goImportEdges(ctx, workspace, r, files)
+	if err != nil {
+		return GroupResult{}, err
+	}
+	return GroupResult{Spec: spec, From: r.base, To: r.head, Groups: clusterFilesEdges(files, edges)}, nil
 }
 
 func parseNumstat(raw string) ([]ChangedFile, error) {
@@ -134,6 +138,10 @@ const (
 )
 
 func clusterFiles(files []ChangedFile) []FileGroup {
+	return clusterFilesEdges(files, nil)
+}
+
+func clusterFilesEdges(files []ChangedFile, edges []importEdge) []FileGroup {
 	if len(files) == 0 {
 		return nil
 	}
@@ -154,6 +162,10 @@ func clusterFiles(files []ChangedFile) []FileGroup {
 	mergeFamilies(files, groupKey, headerFamilyKey, 4)
 	mergeFamilies(files, groupKey, stemFamilyKey, 0)
 	mergeFamilies(files, groupKey, lockFamilyKey, 0)
+	// Imports first so a cross-directory test copies the importer's key after
+	// that file has joined its imported package. Same-directory tests are not
+	// rekeyed here; they already share a directory or stem key.
+	applyImportEdges(files, groupKey, edges)
 	attachTests(files, groupKey)
 	buckets := make(map[string][]ChangedFile)
 	for i, file := range files {

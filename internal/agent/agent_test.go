@@ -4,10 +4,15 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/unreallabsai/unreal-agent/harness/llm"
 
@@ -245,6 +250,162 @@ func TestRunRecordsCleanSummaryWithoutFindings(t *testing.T) {
 	}
 	if report.Summary != summary {
 		t.Errorf("summary: got %q, want %q", report.Summary, summary)
+	}
+}
+
+func TestLoopbackHTTPClientRejectsOffHostRedirect(t *testing.T) {
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://example.com/steal", http.StatusFound)
+	}))
+	t.Cleanup(stub.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, stub.URL+"/v1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := LoopbackHTTPClient().Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("off-host redirect was followed")
+	}
+	if !strings.Contains(err.Error(), "not loopback") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestLoopbackHTTPClientAllowsLoopbackRedirect(t *testing.T) {
+	next := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Errorf("authorization %q", r.Header.Get("Authorization"))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(next.Close)
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, next.URL+"/ok", http.StatusFound)
+	}))
+	t.Cleanup(stub.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, stub.URL+"/v1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := LoopbackHTTPClient().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status %s", resp.Status)
+	}
+}
+
+func TestLoopbackModelAdapterRefusesOffHostRedirect(t *testing.T) {
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Errorf("authorization %q", r.Header.Get("Authorization"))
+		}
+		http.Redirect(w, r, "https://example.com/steal", http.StatusFound)
+	}))
+	t.Cleanup(stub.Close)
+
+	adapter, closeAdapter, err := newLoopbackModelAdapter("secret", stub.URL+"/api/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = closeAdapter() })
+	_, err = adapter.Respond(t.Context(), llm.Request{
+		Model: llm.Model{ID: "test"},
+		Input: []llm.Item{{
+			Type: llm.ItemMessage,
+			Data: llm.Message{Role: llm.RoleUser, Text: "hi"},
+		}},
+	}, llm.RequestOptions{})
+	if err == nil || !strings.Contains(err.Error(), "not loopback") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestOpenRouterBase(t *testing.T) {
+	t.Setenv(openRouterBaseEnv, "")
+	got, err := openRouterBase()
+	if err != nil || got != openRouterBaseURL {
+		t.Fatalf("empty override: got (%q, %v), want %q", got, err, openRouterBaseURL)
+	}
+	t.Setenv(openRouterBaseEnv, "  http://127.0.0.1:9/api/v1  ")
+	got, err = openRouterBase()
+	if err != nil || got != "http://127.0.0.1:9/api/v1" {
+		t.Fatalf("override: got (%q, %v)", got, err)
+	}
+	for _, raw := range []string{
+		"http://localhost:9/api/v1",
+		"http://[::1]:9/api/v1",
+	} {
+		t.Setenv(openRouterBaseEnv, raw)
+		got, err = openRouterBase()
+		if err != nil || got != raw {
+			t.Fatalf("loopback %q: got (%q, %v)", raw, got, err)
+		}
+	}
+	for _, raw := range []string{
+		"https://openrouter.ai/api/v1",
+		"http://127.0.0.2:9/api/v1",
+		"not a url",
+		"file:///tmp/openrouter",
+	} {
+		t.Setenv(openRouterBaseEnv, raw)
+		if _, err = openRouterBase(); err == nil {
+			t.Fatalf("%q: want an error", raw)
+		}
+	}
+}
+
+func TestHarnessRunRejectsNonLoopbackOpenRouter(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(openRouterBaseEnv, "https://openrouter.ai/api/v1")
+	_, err := (Harness{APIKey: "dummy", ThinkingLevel: "high"}).Run(t.Context(), reviewRequest(t))
+	if err == nil || !strings.Contains(err.Error(), "not loopback") {
+		t.Fatalf("error = %v, want a loopback refusal", err)
+	}
+}
+
+func TestHarnessRunUsesLocalOpenRouterAndReports401(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if r.URL.Path != "/api/v1/responses" {
+			t.Errorf("path = %s, want /api/v1/responses", r.URL.Path)
+		}
+		if strings.Contains(r.Host, "openrouter.ai") {
+			t.Errorf("request host %q", r.Host)
+		}
+		if r.Header.Get("Authorization") != "Bearer dummy" {
+			t.Errorf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"Unauthorized","code":401}}`))
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv(openRouterBaseEnv, server.URL+"/api/v1")
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req := reviewRequest(t)
+	_, err := (Harness{APIKey: "dummy", ThinkingLevel: "high"}).Run(ctx, req)
+	if err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("error = %v, want a 401", err)
+	}
+	if strings.Contains(err.Error(), "openrouter.ai") {
+		t.Fatalf("error names the public host: %v", err)
+	}
+	if hits.Load() == 0 {
+		t.Fatal("local openrouter received no request")
 	}
 }
 

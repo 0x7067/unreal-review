@@ -80,7 +80,10 @@ func renderGitHub(args []string) error {
 		return err
 	}
 	token := resolveToken(!*dryRun)
-	client := &github.Client{Token: token, HTTP: github.NewHTTPClient()}
+	client, err := githubClient(token)
+	if err != nil {
+		return err
+	}
 	opts := render.GitHubOptions{
 		Owner:      owner,
 		Repo:       name,

@@ -37,3 +37,22 @@ jobs:
       - run: make check build
         env:
           BEND_NO_TELEMETRY: "1"
+
+  canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      # Build and exec bin/unreal-review from this checkout (the pull request
+      # head or merge, or the push tip). Do not install the base SHA; that
+      # install belongs to the Review workflow.
+      - name: Offline CLI canary
+        run: make canary
