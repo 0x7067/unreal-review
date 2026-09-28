@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,7 +198,10 @@ func TestGoImportEdgesUsePackageRepresentative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edges := goImportEdges(ctx, dir, r, files)
+	edges, err := goImportEdges(ctx, dir, r, files)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(edges) != 2 {
 		t.Fatalf("edges = %d (%+v), want one per importer", len(edges), edges)
 	}
@@ -214,6 +218,97 @@ func TestGoImportEdgesUsePackageRepresentative(t *testing.T) {
 	want := "internal/api/a.go,internal/billing/c1.go,internal/billing/c2.go,internal/billing/c3.go,internal/pay/b.go"
 	if strings.Join(billing, ",") != want {
 		t.Fatalf("package group: %v", billing)
+	}
+}
+
+func TestGroupsWorkspaceRepIsPathMin(t *testing.T) {
+	dir := gitRepo(t)
+	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")
+	writeRepoFile(t, dir, "go.mod", "module example\n")
+	writeRepoFile(t, dir, "internal/api/a.go", "package api\n")
+	writeRepoFile(t, dir, "internal/billing/extra.go", "package billing\n")
+	writeRepoFile(t, dir, "internal/other/x.go", "package other\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "head")
+
+	// Tracked edits sort before the untracked charge.go that workspace mode appends.
+	// charge.go is still the representative because it is the lesser path.
+	writeRepoFile(t, dir, "internal/api/a.go", "package api\n\nimport \"example/internal/billing\"\n")
+	writeRepoFile(t, dir, "internal/billing/extra.go", "package billing\n\nfunc Extra() {}\n")
+	writeRepoFile(t, dir, "internal/other/x.go", "package other\n\nfunc X() {}\n")
+	writeRepoFile(t, dir, "internal/billing/charge.go", "package billing\n\nimport \"example/internal/other\"\n")
+
+	result, err := Groups(context.Background(), dir, Spec{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := groupPaths(result.Groups)
+	want := [][]string{
+		{"internal/api/a.go", "internal/billing/charge.go", "internal/other/x.go"},
+		{"internal/billing/extra.go"},
+	}
+	if strings.Join(flatten(got), " | ") != strings.Join(flatten(want), " | ") {
+		t.Fatalf("groups:\n got %v\nwant %v", got, want)
+	}
+}
+
+func TestGoImportEdgesCanceled(t *testing.T) {
+	dir := gitRepo(t)
+	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")
+	writeImportFixture(t, dir)
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "head")
+
+	ctx := context.Background()
+	r, err := resolveSpec(ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := collectNumstat(ctx, dir, r, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	edges, err := goImportEdges(canceled, dir, r, files)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("edges=%v err=%v", edges, err)
+	}
+	_, err = Groups(canceled, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Groups err=%v", err)
+	}
+}
+
+func TestReadRangeFileDistinguishesMissing(t *testing.T) {
+	dir := gitRepo(t)
+	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")
+	writeRepoFile(t, dir, "go.mod", "module example\n")
+	writeRepoFile(t, dir, "internal/api/a.go", "package api\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "head")
+
+	ctx := context.Background()
+	r, err := resolveSpec(ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing, err := readRangeFile(ctx, dir, r, "missing.go")
+	if err != nil || missing != nil {
+		t.Fatalf("missing blob data=%q err=%v", missing, err)
+	}
+	if _, err := readRangeFile(ctx, dir, r, "internal"); err == nil {
+		t.Fatal("tree path was treated as a missing blob")
+	}
+	disk, err := readRangeFile(ctx, dir, resolved{}, "missing.go")
+	if err != nil || disk != nil {
+		t.Fatalf("missing disk data=%q err=%v", disk, err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "not-a-file"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readRangeFile(ctx, dir, resolved{}, "not-a-file"); err == nil {
+		t.Fatal("directory read was treated as a missing file")
 	}
 }
 

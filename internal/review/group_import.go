@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"errors"
 	"go/parser"
 	"go/token"
 	"os"
@@ -69,14 +70,17 @@ func applyImportEdges(files []ChangedFile, groupKey []string, edges []importEdge
 // destination of the range: the working tree when head is empty (workspace
 // mode, or --from with no --to), otherwise the resolved head commit. A later
 // checkout does not supply imports for --to, --commit, or --branch.
-func goImportEdges(ctx context.Context, workspace string, r resolved, files []ChangedFile) []importEdge {
-	modData, ok := readRangeFile(ctx, workspace, r, "go.mod")
-	if !ok {
-		return nil
+func goImportEdges(ctx context.Context, workspace string, r resolved, files []ChangedFile) ([]importEdge, error) {
+	modData, err := readRangeFile(ctx, workspace, r, "go.mod")
+	if err != nil {
+		return nil, err
+	}
+	if modData == nil {
+		return nil, nil
 	}
 	modPath, ok := parseModulePath(string(modData))
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	byImport := map[string]*importedPkg{}
 	var goFiles []string
@@ -88,23 +92,29 @@ func goImportEdges(ctx context.Context, workspace string, r resolved, files []Ch
 		if !ok {
 			continue
 		}
+		// Path-min, not first-seen. Workspace numstat appends untracked files
+		// after tracked ones, so first-seen would pick a different representative
+		// than a commit range whose paths sort the other way.
 		entry := byImport[imp]
-		if entry == nil {
-			entry = &importedPkg{dir: dir, rep: file.Path}
-			byImport[imp] = entry
+		if entry == nil || strings.Compare(file.Path, entry.rep) < 0 {
+			byImport[imp] = &importedPkg{dir: dir, rep: file.Path}
 		}
 		goFiles = append(goFiles, file.Path)
 	}
 	var edges []importEdge
 	for _, path := range goFiles {
+		src, err := readRangeFile(ctx, workspace, r, path)
+		if err != nil {
+			return nil, err
+		}
 		dir := filepath.ToSlash(filepath.Dir(path))
-		hit := uniqueImportedPackage(byImport, dir, parseGoImports(readRangeFileBytes(ctx, workspace, r, path)))
+		hit := uniqueImportedPackage(byImport, dir, parseGoImports(src))
 		if hit == nil || hit.rep == path {
 			continue
 		}
 		edges = append(edges, importEdge{from: path, to: hit.rep})
 	}
-	return edges
+	return edges, nil
 }
 
 type importedPkg struct {
@@ -140,24 +150,28 @@ func fileImportPath(modPath, rel string) (imp, dir string, ok bool) {
 	return modPath + "/" + dir, dir, true
 }
 
-func readRangeFile(ctx context.Context, workspace string, r resolved, rel string) ([]byte, bool) {
+// readRangeFile returns the destination bytes. A missing file is (nil, nil).
+// Cancellation and any other read failure are returned so grouping fails
+// instead of dropping import edges.
+func readRangeFile(ctx context.Context, workspace string, r resolved, rel string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if r.head == "" {
 		data, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(rel)))
-		return data, err == nil
+		if err == nil {
+			return data, nil
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
 	}
 	rev := r.headSHA
 	if rev == "" {
 		rev = r.head
 	}
 	return gitBlob(ctx, workspace, rev, rel)
-}
-
-func readRangeFileBytes(ctx context.Context, workspace string, r resolved, rel string) []byte {
-	data, ok := readRangeFile(ctx, workspace, r, rel)
-	if !ok {
-		return nil
-	}
-	return data
 }
 
 func parseModulePath(data string) (string, bool) {

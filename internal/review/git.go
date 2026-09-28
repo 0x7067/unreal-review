@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -416,12 +417,32 @@ func isAncestor(ctx context.Context, workspace, ancestor, commit string) bool {
 	return cmd.Run() == nil
 }
 
-func gitBlob(ctx context.Context, workspace, rev, path string) ([]byte, bool) {
-	out, err := git(ctx, workspace, "cat-file", "blob", rev+":"+filepath.ToSlash(path))
-	if err != nil {
-		return nil, false
+// gitBlob reads rev:path. A path that is not in the tree is a missing blob
+// (nil, nil). Cancellation, deadlines, and any other git failure are returned
+// so a caller cannot treat an interrupted read as an absent file.
+func gitBlob(ctx context.Context, workspace, rev, path string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	return []byte(out), true
+	out, err := git(ctx, workspace, "cat-file", "blob", rev+":"+filepath.ToSlash(path))
+	if err == nil {
+		return []byte(out), nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	if missingGitBlob(err) {
+		return nil, nil
+	}
+	return nil, err
+}
+
+func missingGitBlob(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "does not exist in") || strings.Contains(msg, "exists on disk, but not in")
 }
 
 func git(ctx context.Context, workspace string, args ...string) (string, error) {
