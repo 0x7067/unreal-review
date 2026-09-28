@@ -255,12 +255,44 @@ func TestRunRecordsCleanSummaryWithoutFindings(t *testing.T) {
 
 func TestOpenRouterBase(t *testing.T) {
 	t.Setenv(openRouterBaseEnv, "")
-	if got := openRouterBase(); got != openRouterBaseURL {
-		t.Fatalf("empty override: got %q, want %q", got, openRouterBaseURL)
+	got, err := openRouterBase()
+	if err != nil || got != openRouterBaseURL {
+		t.Fatalf("empty override: got (%q, %v), want %q", got, err, openRouterBaseURL)
 	}
 	t.Setenv(openRouterBaseEnv, "  http://127.0.0.1:9/api/v1  ")
-	if got := openRouterBase(); got != "http://127.0.0.1:9/api/v1" {
-		t.Fatalf("override: got %q", got)
+	got, err = openRouterBase()
+	if err != nil || got != "http://127.0.0.1:9/api/v1" {
+		t.Fatalf("override: got (%q, %v)", got, err)
+	}
+	for _, raw := range []string{
+		"http://localhost:9/api/v1",
+		"http://[::1]:9/api/v1",
+	} {
+		t.Setenv(openRouterBaseEnv, raw)
+		got, err = openRouterBase()
+		if err != nil || got != raw {
+			t.Fatalf("loopback %q: got (%q, %v)", raw, got, err)
+		}
+	}
+	for _, raw := range []string{
+		"https://openrouter.ai/api/v1",
+		"http://127.0.0.2:9/api/v1",
+		"not a url",
+		"file:///tmp/openrouter",
+	} {
+		t.Setenv(openRouterBaseEnv, raw)
+		if _, err = openRouterBase(); err == nil {
+			t.Fatalf("%q: want an error", raw)
+		}
+	}
+}
+
+func TestHarnessRunRejectsNonLoopbackOpenRouter(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(openRouterBaseEnv, "https://openrouter.ai/api/v1")
+	_, err := (Harness{APIKey: "dummy", ThinkingLevel: "high"}).Run(t.Context(), reviewRequest(t))
+	if err == nil || !strings.Contains(err.Error(), "not loopback") {
+		t.Fatalf("error = %v, want a loopback refusal", err)
 	}
 }
 

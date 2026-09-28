@@ -39,14 +39,19 @@ const (
 )
 
 // openRouterBase talks to openrouter.ai unless UNREAL_REVIEW_OPENROUTER_API
-// names another origin. The offline canary points that variable at a local
-// server that returns 401. An empty value keeps the public API. The variable
-// is not a credential, so secret reexec leaves it in the environment.
-func openRouterBase() string {
-	if base := strings.TrimSpace(os.Getenv(openRouterBaseEnv)); base != "" {
-		return base
+// names a loopback origin (see LoopbackBaseURL). The offline canary points
+// that variable at a local server that returns 401. An empty value keeps the
+// public API. A non-loopback value is an error. The variable is not a
+// credential, so secret reexec leaves it in the environment.
+func openRouterBase() (string, error) {
+	base, err := LoopbackBaseURL(openRouterBaseEnv, os.Getenv(openRouterBaseEnv))
+	if err != nil {
+		return "", err
 	}
-	return openRouterBaseURL
+	if base == "" {
+		return openRouterBaseURL, nil
+	}
+	return base, nil
 }
 
 type Harness struct {
@@ -65,7 +70,11 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 		defer cancel()
 	}
 
-	client, err := openrouter.NewClient(openrouter.Config{APIKey: h.APIKey, BaseURL: openRouterBase()})
+	base, err := openRouterBase()
+	if err != nil {
+		return review.AgentResult{}, err
+	}
+	client, err := openrouter.NewClient(openrouter.Config{APIKey: h.APIKey, BaseURL: base})
 	if err != nil {
 		return review.AgentResult{}, fmt.Errorf("create openrouter client: %w", err)
 	}

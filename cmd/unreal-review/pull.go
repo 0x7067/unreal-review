@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"unreal-review/internal/agent"
 	"unreal-review/internal/github"
 	"unreal-review/internal/render"
 	"unreal-review/internal/review"
@@ -71,22 +72,32 @@ func newPullResolver(token, repo string) (review.PullResolver, error) {
 			return nil, err
 		}
 	}
+	client, err := githubClient(token)
+	if err != nil {
+		return nil, err
+	}
 	return pullResolver{
-		client:       githubClient(token),
+		client:       client,
 		defaultOwner: owner,
 		defaultRepo:  name,
 	}, nil
 }
 
 // githubClient talks to api.github.com unless UNREAL_REVIEW_GITHUB_API names
-// another origin. The offline canary points that variable at a local server.
-// An empty value keeps the public API. The variable is not a credential.
-func githubClient(token string) *github.Client {
+// a loopback origin (127.0.0.1, ::1, or localhost). The offline canary points
+// that variable at a local server. An empty value keeps the public API. A
+// non-loopback value is an error. The variable is not a credential, so secret
+// reexec leaves it in the environment.
+func githubClient(token string) (*github.Client, error) {
+	base, err := agent.LoopbackBaseURL("UNREAL_REVIEW_GITHUB_API", os.Getenv("UNREAL_REVIEW_GITHUB_API"))
+	if err != nil {
+		return nil, err
+	}
 	return &github.Client{
 		Token:   token,
-		BaseURL: os.Getenv("UNREAL_REVIEW_GITHUB_API"),
+		BaseURL: base,
 		HTTP:    github.NewHTTPClient(),
-	}
+	}, nil
 }
 
 func resolveToken(allowGH bool) string {
