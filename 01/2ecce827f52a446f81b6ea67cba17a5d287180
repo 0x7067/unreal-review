@@ -1,0 +1,38 @@
+FOLLOWUP.md
+  h_29be57c0addd47 7,14
+LAWS.bend
+  h_29be57c0addd47 273-288
+PROOF.bend
+  h_29be57c0addd47 223-237
+README.md
+  h_29be57c0addd47 62
+cmd/unreal-review/canary_pr_test.go
+  h_29be57c0addd47 196,204-248,253,256-257,259-274,276-278,426-437,441-444,455-467
+cmd/unreal-review/render.go
+  h_29be57c0addd47 123,139,143,167
+internal/github/github.go
+  h_29be57c0addd47 58,145-149,455-475
+internal/github/github_test.go
+  h_29be57c0addd47 54-68,93-98,128-130
+internal/github/marker.go
+  h_29be57c0addd47 50-70
+internal/render/github.go
+  h_29be57c0addd47 15-22,36-56,59-66,81,88,90,112,119-123,251-255
+internal/render/github_test.go
+  h_29be57c0addd47 88-137
+schema/findings-v1.md
+  h_29be57c0addd47 56
+spec/github.bend
+  h_29be57c0addd47 89-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "012ecce827f52a446f81b6ea67cba17a5d287180",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

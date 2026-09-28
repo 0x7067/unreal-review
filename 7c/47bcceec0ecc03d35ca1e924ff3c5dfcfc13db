@@ -1,0 +1,19 @@
+cmd/unreal-review/canary_pr_test.go
+  s_3b66ef4795b42c::t_d61f676191b535 228,235-237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7c47bcceec0ecc03d35ca1e924ff3c5dfcfc13db",
+  "prompts": {},
+  "sessions": {
+    "s_3b66ef4795b42c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e8a1-297c-7140-939e-0758669c1e25",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
