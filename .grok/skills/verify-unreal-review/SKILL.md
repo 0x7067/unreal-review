@@ -7,7 +7,7 @@ description: Drive the unreal-review CLI the way a user does — build the binar
 
 unreal-review is a short-lived CLI. There is no server. Launch builds `bin/unreal-review`; each drive is a fresh process against an isolated git fixture or a findings file.
 
-Read [features/README.md](features/README.md) before driving. Use that map as the recipe source. After a product change, `/maintain-verification-skill` is the upkeep path.
+Read [features/README.md](features/README.md) before driving. Use that map as the recipe source. After a product change, update `features/*` in the same PR as the product change.
 
 ## Launch
 
@@ -95,7 +95,7 @@ Do not treat `make check`, `go test`, or internal setters as a user-path proof.
 .grok/skills/verify-unreal-review/scripts/cleanup.sh
 ```
 
-Stops only PIDs listed in `$VERIFY_SCRATCH/pids` (the default recipes are synchronous and write none). Deletes `$VERIFY_SCRATCH` for this run id. Leaves `$VERIFY_EVIDENCE` in place. After cleanup, `ls "$VERIFY_EVIDENCE"` must still list the step directories.
+Deletes `$VERIFY_SCRATCH` for this run id. Leaves `$VERIFY_EVIDENCE` in place. After cleanup, `ls "$VERIFY_EVIDENCE"` must still list the step directories.
 
 On a failed attempt, run cleanup for that run id before starting another.
 
