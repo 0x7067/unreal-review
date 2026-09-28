@@ -66,21 +66,21 @@ func applyImportEdges(files []ChangedFile, groupKey []string, edges []importEdge
 }
 
 // goImportEdges pairs a changed .go file with the single changed package it
-// imports in another directory. go.mod and those sources are read from the
-// destination of the range: the working tree when head is empty (workspace
-// mode, or --from with no --to), otherwise the resolved head commit. A later
-// checkout does not supply imports for --to, --commit, or --branch.
+// imports in another directory. Each file's module is the nearest go.mod at
+// or above it, and the import path is that module plus the directory under
+// it. go.mod and those sources are read from the destination of the range:
+// the working tree when head is empty (workspace mode, or --from with no
+// --to), otherwise the resolved head commit. A later checkout does not
+// supply imports for --to, --commit, or --branch.
 func goImportEdges(ctx context.Context, workspace string, r resolved, files []ChangedFile) ([]importEdge, error) {
-	modData, err := readRangeFile(ctx, workspace, r, "go.mod")
-	if err != nil {
-		return nil, err
-	}
-	if modData == nil {
-		return nil, nil
-	}
-	modPath, ok := parseModulePath(string(modData))
-	if !ok {
-		return nil, nil
+	modCache := map[string]modRead{}
+	readMod := func(rel string) ([]byte, error) {
+		if hit, ok := modCache[rel]; ok {
+			return hit.data, hit.err
+		}
+		data, err := readRangeFile(ctx, workspace, r, rel)
+		modCache[rel] = modRead{data: data, err: err}
+		return data, err
 	}
 	byImport := map[string]*importedPkg{}
 	var goFiles []string
@@ -88,7 +88,14 @@ func goImportEdges(ctx context.Context, workspace string, r resolved, files []Ch
 		if !strings.HasSuffix(file.Path, ".go") {
 			continue
 		}
-		imp, dir, ok := fileImportPath(modPath, file.Path)
+		modPath, modDir, ok, err := nearestModule(file.Path, readMod)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		imp, dir, ok := fileImportPath(modPath, modDir, file.Path)
 		if !ok {
 			continue
 		}
@@ -122,6 +129,46 @@ type importedPkg struct {
 	rep string
 }
 
+type modRead struct {
+	data []byte
+	err  error
+}
+
+// nearestModule reads the closest go.mod at or above the file, from the
+// destination tree. The package path is that module plus the directory under
+// it, so a root go.mod does not invent paths for a nested module.
+func nearestModule(rel string, read func(string) ([]byte, error)) (modPath, modDir string, ok bool, err error) {
+	dir := filepath.ToSlash(filepath.Dir(rel))
+	if strings.HasPrefix(dir, "../") || dir == ".." {
+		return "", "", false, nil
+	}
+	for {
+		modRel := "go.mod"
+		if dir != "." {
+			modRel = dir + "/go.mod"
+		}
+		data, err := read(modRel)
+		if err != nil {
+			return "", "", false, err
+		}
+		if data != nil {
+			path, parsed := parseModulePath(string(data))
+			if !parsed {
+				return "", "", false, nil
+			}
+			return path, dir, true, nil
+		}
+		if dir == "." {
+			return "", "", false, nil
+		}
+		next := filepath.ToSlash(filepath.Dir(dir))
+		if next == dir {
+			return "", "", false, nil
+		}
+		dir = next
+	}
+}
+
 func uniqueImportedPackage(byImport map[string]*importedPkg, importerDir string, imports []string) *importedPkg {
 	var hit *importedPkg
 	seen := map[string]bool{}
@@ -139,15 +186,30 @@ func uniqueImportedPackage(byImport map[string]*importedPkg, importerDir string,
 	return hit
 }
 
-func fileImportPath(modPath, rel string) (imp, dir string, ok bool) {
+func fileImportPath(modPath, modDir, rel string) (imp, dir string, ok bool) {
 	dir = filepath.ToSlash(filepath.Dir(rel))
-	if dir == "." {
-		return modPath, dir, modPath != ""
+	modDir = filepath.ToSlash(modDir)
+	if modDir == "" {
+		modDir = "."
 	}
-	if strings.HasPrefix(dir, "../") || dir == ".." {
+	var relDir string
+	switch {
+	case dir == modDir:
+		relDir = "."
+	case modDir == ".":
+		relDir = dir
+	case strings.HasPrefix(dir, modDir+"/"):
+		relDir = strings.TrimPrefix(dir, modDir+"/")
+	default:
 		return "", "", false
 	}
-	return modPath + "/" + dir, dir, true
+	if strings.HasPrefix(relDir, "../") || relDir == ".." {
+		return "", "", false
+	}
+	if relDir == "." {
+		return modPath, dir, modPath != ""
+	}
+	return modPath + "/" + relDir, dir, true
 }
 
 // readRangeFile returns the destination bytes. A missing file is (nil, nil).
@@ -180,12 +242,15 @@ func parseModulePath(data string) (string, bool) {
 		if i := strings.Index(line, "//"); i >= 0 {
 			line = strings.TrimSpace(line[:i])
 		}
-		rest, ok := strings.CutPrefix(line, "module ")
-		if !ok {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || fields[0] != "module" {
 			continue
 		}
-		rest = strings.Trim(strings.TrimSpace(rest), `"`)
-		if rest == "" || strings.ContainsAny(rest, " \t") {
+		if len(fields) != 2 {
+			return "", false
+		}
+		rest := strings.Trim(fields[1], `"`)
+		if rest == "" {
 			return "", false
 		}
 		return rest, true

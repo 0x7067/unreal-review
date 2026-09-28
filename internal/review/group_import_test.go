@@ -338,6 +338,57 @@ func TestReadRangeFileDistinguishesMissing(t *testing.T) {
 	}
 }
 
+func TestGroupsNestedModuleImport(t *testing.T) {
+	dir := gitRepo(t)
+	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")
+	writeRepoFile(t, dir, "go.mod", "module example\n")
+	writeRepoFile(t, dir, "sub/go.mod", "module other.example/sub\n")
+	writeRepoFile(t, dir, "sub/api/a.go", "package api\n\nimport \"other.example/sub/billing\"\n")
+	writeRepoFile(t, dir, "sub/billing/charge.go", "package billing\n\nfunc Charge() {}\n")
+	writeRepoFile(t, dir, "cmd/main.go", "package main\n\nimport \"example/sub/billing\"\n")
+	writeRepoFile(t, dir, "internal/api/b.go", "package api\n\nimport \"example/internal/pay\"\n")
+	writeRepoFile(t, dir, "internal/pay/p.go", "package pay\n\nfunc P() {}\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "head")
+
+	result, err := Groups(context.Background(), dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := groupPaths(result.Groups)
+	want := [][]string{
+		{"cmd/main.go"},
+		{"go.mod"},
+		{"internal/api/b.go", "internal/pay/p.go"},
+		{"sub/api/a.go", "sub/billing/charge.go"},
+		{"sub/go.mod"},
+	}
+	if strings.Join(flatten(got), " | ") != strings.Join(flatten(want), " | ") {
+		t.Fatalf("groups:\n got %v\nwant %v", got, want)
+	}
+}
+
+func TestGroupsModuleDirectiveTab(t *testing.T) {
+	dir := gitRepo(t)
+	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")
+	writeRepoFile(t, dir, "go.mod", "module\texample\n")
+	writeRepoFile(t, dir, "internal/api/billing.go", "package api\n\nimport \"example/internal/billing\"\n")
+	writeRepoFile(t, dir, "internal/billing/charge.go", "package billing\n\nfunc Charge() {}\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "head")
+
+	if path, ok := parseModulePath("module\texample\n"); !ok || path != "example" {
+		t.Fatalf("parseModulePath = %q %v", path, ok)
+	}
+	result, err := Groups(context.Background(), dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(flatten(groupPaths(result.Groups)), " | ") != "go.mod | internal/api/billing.go,internal/billing/charge.go" {
+		t.Fatalf("groups: %v", groupPaths(result.Groups))
+	}
+}
+
 func TestGroupsIgnoresGoImportsWithoutModule(t *testing.T) {
 	dir := gitRepo(t)
 	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")
