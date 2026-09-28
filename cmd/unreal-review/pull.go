@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
 	"time"
 
 	"unreal-review/internal/agent"
@@ -36,11 +34,12 @@ func (p pullResolver) ResolvePull(ctx context.Context, spec string) (review.Pull
 		return review.Pull{}, err
 	}
 	return review.Pull{
-		BaseRef:      state.BaseRef,
 		BaseSHA:      state.BaseSHA,
 		HeadSHA:      state.HeadSHA,
 		ReviewedHead: reviewed,
-		Reported:     render.ReportedFindings(state.Comments),
+		Title:        state.Title,
+		Description:  state.Body,
+		Reported:     render.HistoryOf(state).Reported(),
 	}, nil
 }
 
@@ -63,7 +62,7 @@ func (p pullResolver) reviewedHead(ctx context.Context, owner, repo string, numb
 
 func newPullResolver(token, repo string) (review.PullResolver, error) {
 	if token == "" {
-		return nil, fmt.Errorf("set GH_TOKEN or GITHUB_TOKEN to review a pull request")
+		return nil, fmt.Errorf("set GH_TOKEN to review a pull request")
 	}
 	owner, name := "", ""
 	if repo != "" {
@@ -104,14 +103,4 @@ func githubClient(token string) (*github.Client, error) {
 		BaseURL: base,
 		HTTP:    httpClient,
 	}, nil
-}
-
-func resolveToken(allowGH bool) string {
-	token := firstNonEmpty(secret("GH_TOKEN"), secret("GITHUB_TOKEN"))
-	if token == "" && allowGH {
-		if out, err := exec.CommandContext(context.Background(), "gh", "auth", "token").Output(); err == nil {
-			token = strings.TrimSpace(string(out))
-		}
-	}
-	return token
 }

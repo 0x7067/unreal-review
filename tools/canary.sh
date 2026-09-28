@@ -34,10 +34,7 @@ case $VERIFY_RUN_ID in
 	;;
 esac
 mkdir -p "$VERIFY_ROOT"
-# Actions sets GITHUB_REPOSITORY, which render/run use as the default --repo,
-# and GITHUB_EVENT_PATH, which supplies a pull request when --pr is empty.
-# Drop both so a bare --pr number still fails closed, the same as off Actions.
-unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY GITHUB_EVENT_PATH UNREAL_HARNESS_LLM_MODEL OPENROUTER_API_KEY UNREAL_REVIEW_GITHUB_API UNREAL_REVIEW_OPENROUTER_API || true
+unset GH_TOKEN GITHUB_REPOSITORY UNREAL_HARNESS_LLM_MODEL OPENROUTER_API_KEY UNREAL_REVIEW_GITHUB_API UNREAL_REVIEW_OPENROUTER_API || true
 
 # lib.sh keys off $0, so sourcing it from this script would point at tools/.
 # Launch still sources lib.sh itself; these are the same paths it derives.
@@ -739,7 +736,7 @@ expect_payload "$(stdout_of gh-legacy)" left_path a.go body_has "legacy"
 
 cli --name gh-no-token --no-github-auth -- render github --pr owner/repo#12 "$VERIFY_EXAMPLE"
 require_exit gh-no-token 1
-expect render-github.md "set GH_TOKEN or GITHUB_TOKEN to post a review" "$(stderr_of gh-no-token)" "gh-no-token"
+expect render-github.md "set GH_TOKEN to post a review" "$(stderr_of gh-no-token)" "gh-no-token"
 
 require_openrouter_stub
 

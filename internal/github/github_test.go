@@ -75,6 +75,12 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 			{"id": 13, "body": StatusMarker(Status{Head: "dab3e1c", Runs: 2, CostUSD: 1.25})},
 		})
 	})
+	mux.HandleFunc("/repos/o/r/pulls/3/reviews", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, []map[string]any{
+			{"commit_id": "7c81b2c", "body": "a human review"},
+			{"commit_id": "dab3e1c", "body": "Dropped.\n" + FindingMarker("cccc3333")},
+		})
+	})
 	mux.HandleFunc("/repos/o/r/pulls/3/comments", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(t, w, []map[string]any{
 			{
@@ -104,7 +110,14 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.BaseRef != "main" || state.BaseSHA != "8ad9a39" || state.HeadSHA != "42227a3" {
+	wantReviews := []PostedReview{
+		{CommitID: "7c81b2c", Body: "a human review"},
+		{CommitID: "dab3e1c", Body: "Dropped.\n" + FindingMarker("cccc3333")},
+	}
+	if len(state.Reviews) != 2 || state.Reviews[0] != wantReviews[0] || state.Reviews[1] != wantReviews[1] {
+		t.Fatalf("reviews: %+v", state.Reviews)
+	}
+	if state.BaseSHA != "8ad9a39" || state.HeadSHA != "42227a3" {
 		t.Fatalf("pull request: %+v", state)
 	}
 	if state.StatusCommentID != 13 {

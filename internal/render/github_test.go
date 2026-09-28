@@ -14,7 +14,7 @@ func TestGitHubSuppressesFindingsItAlreadyPosted(t *testing.T) {
 	already := newFinding("src/foo.go", 12, 14, "This map write races with the reader.")
 	fresh := newFinding("src/bar.go", 3, 3, "A new problem.")
 
-	result := GitHub(reportOf(fresh, already), GitHubOptions{Posted: []github.PostedComment{postedComment(already)}})
+	result := GitHub(reportOf(fresh, already), GitHubOptions{History: History{Comments: []github.PostedComment{postedComment(already)}}})
 
 	if len(result.Payload.Review.Comments) != 1 {
 		t.Fatalf("comments: %+v", result.Payload.Review.Comments)
@@ -30,10 +30,18 @@ func TestGitHubSuppressesFindingsItAlreadyPosted(t *testing.T) {
 	}
 }
 
-func TestGitHubEmptyFindingsPostLGTM(t *testing.T) {
-	result := GitHub(reportOf(), GitHubOptions{})
-	if !result.LGTM || result.Payload.Review.Body != "LGTM" {
-		t.Fatalf("empty findings must post LGTM: lgtm=%v body=%q", result.LGTM, result.Payload.Review.Body)
+func TestGitHubEmptyFindingsPostLGTMOncePerHead(t *testing.T) {
+	result := GitHub(reportOf(), GitHubOptions{CommitID: "bbb"})
+	if !result.PostReview() || result.Payload.Review.Body != "LGTM" {
+		t.Fatalf("empty findings must post LGTM: post=%v body=%q", result.PostReview(), result.Payload.Review.Body)
+	}
+	older := History{Reviews: []github.PostedReview{{CommitID: "aaa", Body: "LGTM"}}}
+	if !GitHub(reportOf(), GitHubOptions{CommitID: "bbb", History: older}).PostReview() {
+		t.Fatal("an LGTM on an older head must not stop the LGTM for this head")
+	}
+	same := History{Reviews: []github.PostedReview{{CommitID: "bbb", Body: "LGTM - no findings in aaa..bbb."}}}
+	if GitHub(reportOf(), GitHubOptions{CommitID: "bbb", History: same}).PostReview() {
+		t.Fatal("a second LGTM for the same head was posted")
 	}
 }
 
@@ -49,7 +57,7 @@ func TestGitHubSuppressionDoesNotConsumeTheCommentCap(t *testing.T) {
 	}
 	fresh := newFinding("src/bar.go", 200, 200, "A new problem.")
 
-	result := GitHub(reportOf(append(already, fresh)...), GitHubOptions{Posted: comments})
+	result := GitHub(reportOf(append(already, fresh)...), GitHubOptions{History: History{Comments: comments}})
 
 	if len(result.Payload.Review.Comments) != 1 {
 		t.Fatalf("the one new finding should still fit under the cap: %d comments, %d dropped",
@@ -73,7 +81,7 @@ func TestGitHubPostReview(t *testing.T) {
 		want   bool
 	}{
 		{"a new finding", reportOf(fresh), GitHubOptions{}, true},
-		{"only findings already posted", reportOf(already), GitHubOptions{Posted: []github.PostedComment{postedComment(already)}}, false},
+		{"only findings already posted", reportOf(already), GitHubOptions{History: History{Comments: []github.PostedComment{postedComment(already)}}}, false},
 		{"no findings at all", reportOf(), GitHubOptions{}, true},
 		{"a finding outside the pull request diff", reportOf(offDiff), GitHubOptions{Lines: lines, HasLines: true}, true},
 	} {
@@ -82,6 +90,111 @@ func TestGitHubPostReview(t *testing.T) {
 				t.Fatalf("PostReview() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestGitHubOutOfPatchFindingIsReportedOnceAndReceipts(t *testing.T) {
+	lines := diffLines(t, "src/foo.go", "@@ -1,2 +1,3 @@\n keep\n+added\n keep\n")
+	offDiff := newFinding("src/foo.go", 90, 90, "A finding on a line the pull request does not touch.")
+	opts := GitHubOptions{Lines: lines, HasLines: true}
+
+	first := GitHub(reportOf(offDiff), opts)
+	if !first.PostReview() || !first.Receipt() {
+		t.Fatalf("first render: post=%v receipt=%v, want both true", first.PostReview(), first.Receipt())
+	}
+	want := "Not in the pull request diff, so not posted inline:\n- **warning** `src/foo.go` L90: A finding on a line the pull request does not touch. <!-- unreal-review finding " + offDiff.ID + " -->"
+	if !strings.Contains(first.Payload.Review.Body, want) {
+		t.Fatalf("review body lacks %q:\n%s", want, first.Payload.Review.Body)
+	}
+
+	opts.History.Reviews = []github.PostedReview{{Body: "an unrelated human review"}, {CommitID: "abc", Body: first.Payload.Review.Body}}
+	second := GitHub(reportOf(offDiff), opts)
+	if second.PostReview() {
+		t.Fatalf("second render repeats the drop:\n%s", second.Payload.Review.Body)
+	}
+	if len(second.Duplicates) != 1 || second.Duplicates[0].ID != offDiff.ID || len(second.Dropped) != 0 {
+		t.Fatalf("second render: duplicates=%+v dropped=%+v", second.Duplicates, second.Dropped)
+	}
+	if !second.Receipt() {
+		t.Fatal("second render must still receipt the head")
+	}
+}
+
+func TestGitHubOverCapFindingBlocksReceiptAndCarriesNoMarker(t *testing.T) {
+	var items []findings.Finding
+	for i := range maxInlineComments + 1 {
+		items = append(items, newFinding("src/foo.go", i+1, i+1, fmt.Sprintf("Problem %d.", i)))
+	}
+	over := items[maxInlineComments]
+
+	result := GitHub(reportOf(items...), GitHubOptions{})
+
+	if len(result.Payload.Review.Comments) != maxInlineComments || len(result.Dropped) != 1 || result.Dropped[0].Finding.ID != over.ID {
+		t.Fatalf("comments=%d dropped=%+v", len(result.Payload.Review.Comments), result.Dropped)
+	}
+	if result.Receipt() {
+		t.Fatal("a finding cut by the cap is still postable; the head must not be receipted")
+	}
+	if !strings.Contains(result.Payload.Review.Body, "Not posted, the review already has 50 inline comments:\n- `src/foo.go` L51") {
+		t.Fatalf("review body:\n%s", result.Payload.Review.Body)
+	}
+	history := History{Reviews: []github.PostedReview{{Body: result.Payload.Review.Body}}}
+	if got := history.Reported(); len(got) != 0 {
+		t.Fatalf("an over-cap finding must stay postable, but the body reports %+v", got)
+	}
+}
+
+func TestGitHubDoesNotSuppressADistinctFindingOnTheSameLines(t *testing.T) {
+	posted := newFinding("src/foo.go", 10, 12, "This map write races with the reader.")
+	history := History{Comments: []github.PostedComment{postedComment(posted)}}
+	distinct := newFinding("src/foo.go", 10, 12, "This nil dereference crashes the request.")
+
+	result := GitHub(reportOf(distinct), GitHubOptions{CommitID: "head", History: history})
+
+	if len(result.Duplicates) != 0 || len(result.Payload.Review.Comments) != 1 {
+		t.Fatalf("distinct finding was suppressed: duplicates=%+v comments=%+v", result.Duplicates, result.Payload.Review.Comments)
+	}
+}
+
+func TestGitHubMatchesPostedCommentsByIDOnly(t *testing.T) {
+	posted := newFinding("src/foo.go", 10, 12, "This map write races with the reader.")
+	comment := postedComment(posted)
+	moved := newFinding("src/foo.go", 10, 12, "A different issue now on these lines.")
+
+	result := GitHub(reportOf(moved, posted), GitHubOptions{CommitID: "head", History: History{Comments: []github.PostedComment{comment}}})
+
+	if len(result.Payload.Review.Comments) != 1 || len(result.Duplicates) != 1 || result.Duplicates[0].ID != posted.ID {
+		t.Fatalf("posted comment matches by id only: comments=%d duplicates=%+v", len(result.Payload.Review.Comments), result.Duplicates)
+	}
+}
+
+func TestGitHubDoesNotSuppressARewordedOutOfPatchFindingByLocation(t *testing.T) {
+	lines := diffLines(t, "src/foo.go", "@@ -1,2 +1,3 @@\n keep\n+added\n keep\n")
+	dropped := newFinding("src/foo.go", 90, 90, "A finding the patch does not show.")
+	body := reviewBody("", nil, []DroppedFinding{{Finding: dropped}}, nil)
+	reworded := newFinding("src/foo.go", 90, 90, "Same issue, new words.")
+
+	result := GitHub(reportOf(reworded), GitHubOptions{CommitID: "head", Lines: lines, HasLines: true, History: History{Reviews: []github.PostedReview{{CommitID: "head", Body: body}}}})
+	if len(result.Duplicates) != 0 || len(result.Dropped) != 1 {
+		t.Fatalf("reworded finding was suppressed: duplicates=%+v dropped=%+v", result.Duplicates, result.Dropped)
+	}
+}
+
+func TestGitHubSuppressesAFindingThatReusesAPostedID(t *testing.T) {
+	posted := newFinding("src/foo.go", 10, 12, "This map write races with the reader.")
+	comment := postedComment(posted)
+	restated := newFinding("src/foo.go", 40, 41, "The race moved with the refactor.")
+	restated.ID = posted.ID
+	wrong := newFinding("src/foo.go", 60, 60, "Claims a duplicate that was never posted.")
+	wrong.ID = "ffffffffffffffff"
+
+	result := GitHub(reportOf(restated, wrong), GitHubOptions{CommitID: "head", History: History{Comments: []github.PostedComment{comment}}})
+
+	if len(result.Duplicates) != 1 || result.Duplicates[0].StartLine != 40 {
+		t.Fatalf("duplicates=%+v", result.Duplicates)
+	}
+	if len(result.Payload.Review.Comments) != 1 || result.Payload.Review.Comments[0].Line != 60 {
+		t.Fatalf("an id naming no posted finding must still post: %+v", result.Payload.Review.Comments)
 	}
 }
 
@@ -98,21 +211,34 @@ func TestGitHubCommentCarriesItsFingerprint(t *testing.T) {
 	}
 }
 
-func TestReportedFindingsReadsBackWhatWasPosted(t *testing.T) {
+func TestHistoryReportedReadsBackWhatWasPosted(t *testing.T) {
 	right := newFinding("src/foo.go", 12, 14, "This map write races with the reader.")
 	left := newFinding("src/gone.go", 7, 7, "This guard was removed.")
 	left.Anchor = findings.AnchorOld
 	left.ID = findings.Fingerprint(left)
 	leftComment := githubComment(left)
 
-	got := ReportedFindings([]github.PostedComment{
-		postedComment(right),
-		{Path: left.Path, StartLine: 7, EndLine: 7, Side: leftComment.Side, Body: leftComment.Body},
-		{Path: "x.go", StartLine: 1, EndLine: 1, Side: "RIGHT", Body: `<!-- devin-review-comment {"id": "BUG_x_0001"} -->`},
-		{Path: "y.go", StartLine: 2, EndLine: 2, Side: "RIGHT", Body: "a human comment"},
-	})
+	outside := newFinding("src/far.go", 40, 42, "A problem the patch does not show,\nacross two lines.")
+	outside.Severity = findings.SeverityError
+	outsideOld := newFinding("src/far.go", 5, 5, "A deleted guard.")
+	outsideOld.Anchor = findings.AnchorOld
+	outsideOdd := newFinding("src/`odd\nname.go", 9, 9, "A problem in an unusual path.")
+	body := reviewBody("Summary.", nil, []DroppedFinding{{Finding: outside}, {Finding: outsideOld}, {Finding: outsideOdd}}, nil)
 
-	if len(got) != 2 {
+	got := History{
+		Comments: []github.PostedComment{
+			postedComment(right),
+			{Path: left.Path, StartLine: 7, EndLine: 7, Side: leftComment.Side, Body: leftComment.Body},
+			{Path: "x.go", StartLine: 1, EndLine: 1, Side: "RIGHT", Body: `<!-- devin-review-comment {"id": "BUG_x_0001"} -->`},
+			{Path: "y.go", StartLine: 2, EndLine: 2, Side: "RIGHT", Body: "a human comment"},
+		},
+		Reviews: []github.PostedReview{{Body: "a human review"}, {Body: body}},
+	}.Reported()
+
+	wantOutside := findings.Finding{ID: outside.ID, Path: "src/far.go", StartLine: 40, EndLine: 42, Anchor: findings.AnchorNew, Severity: findings.SeverityError, Body: "A problem the patch does not show, across two lines."}
+	wantOld := findings.Finding{ID: outsideOld.ID, Path: "src/far.go", StartLine: 5, EndLine: 5, Anchor: findings.AnchorOld, Severity: findings.SeverityWarning, Body: "A deleted guard."}
+	wantOdd := findings.Finding{ID: outsideOdd.ID, Path: "src/`odd\nname.go", StartLine: 9, EndLine: 9, Anchor: findings.AnchorNew, Severity: findings.SeverityWarning, Body: "A problem in an unusual path."}
+	if len(got) != 5 || got[2] != wantOutside || got[3] != wantOld || got[4] != wantOdd {
 		t.Fatalf("reported: %+v", got)
 	}
 	if got[0] != right {

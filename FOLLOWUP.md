@@ -1,45 +1,26 @@
 # Follow-up: pull request review loop
 
-Open work from the session that moved the agent onto the embedded unreal-agent harness. Do these in order. Delete this file once all remaining items are done.
+Open work that remains after consolidating the review-loop branches. Delete this file once all remaining items are done.
 
-The user wants no fallbacks: one source per value, and a clear error when it is missing.
+## 1. Live multi-push test PR (done)
 
-## 1. Stop one dropped finding from blocking the review receipt
+Draft PR #23 (closed) against `receipt-out-of-patch-drops`, reviewed by the Review workflow with `openai/gpt-6-luna-pro`. Each run posted the `unreal-review` check run on its head, and every summary followed the contract.
 
-A finding whose lines are outside the PR patch turns incremental review back into full-range review, and a new review is posted on every push:
+| Push | Change | Reviewed | New / dup / not postable | Cost USD | Outcome |
+| --- | --- | --- | --- | --- | --- |
+| 1 `d32f3ce` | `livecache` with unlocked `Len`/`Delete` | base..d32f3ce | 1 / 0 / 0 | 0.003528 | One error inline at L27-32 |
+| 2 `b676493` | Locked `Has` above `Get`, shifting lines | d32f3ce..b676493 | 0 / 0 / 0 | 0.001272 | LGTM review; old comment moved to L34-39, still current |
+| 3 `c5247ea` | Lock `Len` and `Delete` | b676493..c5247ea | 0 / 0 / 0 | 0.001370 | LGTM review; old comment stays current and unresolved, widened to L27-43 |
+| 4 `c7823a5` | `Reset` sets `items` to nil | c5247ea..c7823a5 | 1 / 0 / 0 | 0.003429 | New error inline on `reset.go:6` |
 
-- `render.GitHub` (`internal/render/github.go`) puts dropped findings only in the review body, with no marker.
-- `postedFingerprints` reads markers from inline comments only, so a dropped finding is never deduplicated.
-- `renderGitHub` (`cmd/unreal-review/render.go`) creates the `unreal-review` check run only when `len(result.Dropped) == 0`, so the receipt never lands and `run --pr` keeps reviewing from the older receipt.
-- `GitHubResult.PostReview()` stays true, so each push posts another review listing the same drop.
+Every range started at the previous reviewed head, and no push repeated a comment. Push 4's finding landed inside the patch, so the out-of-patch path was not exercised live. The offline canary covers it.
 
-Decide the rule first. `spec/github.bend` `postNew` and the law `post_new_true_dropped` say a drop forces a review to be posted; the receipt rule is not modeled at all. Changing either is a product rule change: add or update the law and its proof in `LAWS.bend`/`PROOF.bend`, and mirror it in `spec/`, in the same change. One option: a drop caused by lines outside the patch still records the receipt, and dropped findings carry a marker in the review body so later runs deduplicate them. Keep the existing rule that the 50-comment cap blocks the receipt, since those findings are postable.
-
-Done when two consecutive `render github` calls on the same head, with one out-of-patch finding, post one review and create the check run.
-
-## 2. Run a live multi-push test PR
-
-Nothing has exercised the current loop on a real PR with several pushes. Use a disposable repository or branch, not this repo's own PRs:
-
-1. Push 1: a planted bug. Expect one inline comment and a check run on the head.
-2. Push 2: an unrelated change. Expect the range to start at push 1's head, the old finding listed as already reported, and no repeated comment.
-3. Push 3: fix the push 1 bug. Record what happens to the old comment; nothing resolves it today.
-4. Push 4: a finding on a line outside the patch. Confirms item 2.
-
-Record per push: the reviewed range from the status comment, new/duplicate/dropped counts, cost, and the summary. The summary must follow the contract in `schema/findings-v1.md#summary`.
+An earlier run on a throwaway repository posted a second race comment after `Count`/`Remove` were added. That was not a dedup miss: the push added new unlocked copies while `Len`/`Delete` stayed, so the second comment was a distinct issue on different lines.
 
 ## Known gaps found along the way
 
-These came out of the review-loop assessment. They are not scheduled yet.
+These came out of the review-loop assessment and are not scheduled yet.
 
-- Dedup hashes the finding body (`findings.Fingerprint`), so a reworded or line-shifted finding gets a new ID and can be posted again.
-- A fixed finding is never resolved or answered on the PR.
-- The agent never sees the PR title or description (`github.GetPullRequest` fetches `Title`, but `review.Pull` does not carry it).
-- `reviewPrompt` cuts the diff at 200 KB and still marks the review `complete`.
-- No `eval` baseline is recorded for the target model.
-
-Fallbacks still in code this branch did not touch:
-
-- `resolveToken` (`cmd/unreal-review/pull.go`): `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token`.
-- `pullFullBase` (`internal/review/git.go`): `origin/<base ref>`, then the base SHA.
-- `resolvePR` (`cmd/unreal-review/render.go`): `--pr`, then the Actions event file through `actionsPR`.
+- Dedup matches by `id` alone. A reworded issue that moved lines is caught only if the agent records it with the prior finding's `id`; location overlap alone is intentionally not enough because two defects can share a line. The live test did not exercise this path.
+- Review history trusts markers from any author. A finding marker in any inline comment (as on `main`), or a dropped marker in any review body, counts as already reported, so anyone who can comment on the PR can suppress a finding by forging its id. Filtering history to the posting identity needs that identity resolved under `GITHUB_TOKEN`, where `GET /user` is not available.
+- A fixed finding is never resolved or answered on the PR. Push 3 confirmed it. The prototype on `t3code/work-on-followup` was not ported because its resolved threads still suppressed a later recurrence by id or line overlap. A redesign needs separate open-thread context for resolution and all-history context for audit, while allowing a resolved issue to be reported again if it regresses. Replies and thread resolution must remain idempotent.

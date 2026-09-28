@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"unreal-review/internal/diffmap"
 	"unreal-review/internal/findings"
@@ -79,7 +78,7 @@ func renderGitHub(args []string) error {
 	if err != nil {
 		return err
 	}
-	token := resolveToken(!*dryRun)
+	token := secret("GH_TOKEN")
 	client, err := githubClient(token)
 	if err != nil {
 		return err
@@ -119,7 +118,7 @@ func renderGitHub(args []string) error {
 		}
 		opts.Lines = lines
 		opts.HasLines = true
-		opts.Posted = state.Comments
+		opts.History = render.HistoryOf(state)
 	}
 	result := render.GitHub(report, opts)
 	if *dryRun {
@@ -129,22 +128,12 @@ func renderGitHub(args []string) error {
 		return enc.Encode(result.Payload)
 	}
 	if token == "" {
-		return fmt.Errorf("set GH_TOKEN or GITHUB_TOKEN to post a review")
+		return fmt.Errorf("set GH_TOKEN to post a review")
 	}
 	ctx := context.Background()
 	if result.PostReview() {
-		posted := true
-		if result.LGTM {
-			var err error
-			posted, err = client.HasLGTMReview(ctx, owner, name, number, opts.CommitID)
-			if err != nil {
-				return err
-			}
-		}
-		if posted {
-			if err := client.CreateReview(ctx, result.Payload); err != nil {
-				return err
-			}
+		if err := client.CreateReview(ctx, result.Payload); err != nil {
+			return err
 		}
 	}
 	cost := runCost(report)
@@ -163,7 +152,7 @@ func renderGitHub(args []string) error {
 	if err != nil {
 		return err
 	}
-	if !receipted && len(result.Dropped) == 0 {
+	if !receipted && result.Receipt() {
 		if err := client.CreateCheckRun(ctx, owner, name, opts.CommitID, checkName, "unreal-review", "Review posted."); err != nil {
 			return err
 		}
@@ -182,6 +171,8 @@ func runCost(report findings.Report) findings.Cost {
 func reportPosted(result render.GitHubResult, cost findings.Cost) {
 	if len(result.Payload.Review.Comments) > 0 {
 		fmt.Fprintf(os.Stderr, "posted %d inline comment(s)", len(result.Payload.Review.Comments))
+	} else if result.LGTM && result.LGTMPosted {
+		fmt.Fprint(os.Stderr, "LGTM already posted")
 	} else if result.LGTM {
 		fmt.Fprint(os.Stderr, "posted LGTM")
 	} else {
@@ -224,51 +215,7 @@ func resolvePR(spec, repo string) (string, string, int, error) {
 		}
 	}
 	if spec == "" {
-		spec = actionsPR()
-	}
-	if spec == "" {
 		return "", "", 0, fmt.Errorf("set --pr")
 	}
 	return github.ParsePR(spec, defaultOwner, defaultRepo)
-}
-
-func actionsPR() string {
-	path := os.Getenv("GITHUB_EVENT_PATH")
-	if path == "" {
-		return ""
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	var event struct {
-		Number int `json:"number"`
-		PR     struct {
-			Number int `json:"number"`
-		} `json:"pull_request"`
-	}
-	if err := json.Unmarshal(raw, &event); err != nil {
-		return ""
-	}
-	n := event.Number
-	if n == 0 {
-		n = event.PR.Number
-	}
-	if n == 0 {
-		return ""
-	}
-	repo := os.Getenv("GITHUB_REPOSITORY")
-	if repo == "" {
-		return fmt.Sprintf("%d", n)
-	}
-	return fmt.Sprintf("%s#%d", repo, n)
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }

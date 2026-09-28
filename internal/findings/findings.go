@@ -357,6 +357,7 @@ func Normalize(finding Finding) (Finding, error) {
 	if finding.Body == "" {
 		return Finding{}, fmt.Errorf("body must be set")
 	}
+	finding.ID = strings.TrimSpace(finding.ID)
 	if finding.ID == "" {
 		finding.ID = Fingerprint(finding)
 	}

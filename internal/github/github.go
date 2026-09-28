@@ -25,9 +25,10 @@ type PullRequest struct {
 	Number  int
 	Owner   string
 	Repo    string
-	BaseRef string
 	BaseSHA string
 	HeadSHA string
+	Title   string
+	Body    string
 }
 
 type PullFile struct {
@@ -43,18 +44,25 @@ type PostedComment struct {
 	Body      string
 }
 
+type PostedReview struct {
+	CommitID string
+	Body     string
+}
+
 type IssueComment struct {
 	ID   int64
 	Body string
 }
 
 type PullState struct {
-	BaseRef         string
 	BaseSHA         string
 	HeadSHA         string
+	Title           string
+	Body            string
 	Status          Status
 	StatusCommentID int64
 	Comments        []PostedComment
+	Reviews         []PostedReview
 	Commits         []string
 }
 
@@ -97,9 +105,10 @@ func (c *Client) http() *http.Client {
 
 func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (PullRequest, error) {
 	var raw struct {
-		Number int `json:"number"`
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		Body   string `json:"body"`
 		Base   struct {
-			Ref string `json:"ref"`
 			SHA string `json:"sha"`
 		} `json:"base"`
 		Head struct {
@@ -114,9 +123,10 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 		Number:  raw.Number,
 		Owner:   owner,
 		Repo:    repo,
-		BaseRef: raw.Base.Ref,
 		BaseSHA: raw.Base.SHA,
 		HeadSHA: raw.Head.SHA,
+		Title:   raw.Title,
+		Body:    raw.Body,
 	}, nil
 }
 
@@ -125,7 +135,7 @@ func (c *Client) PullState(ctx context.Context, owner, repo string, number int) 
 	if err != nil {
 		return PullState{}, err
 	}
-	state := PullState{BaseRef: pull.BaseRef, BaseSHA: pull.BaseSHA, HeadSHA: pull.HeadSHA}
+	state := PullState{BaseSHA: pull.BaseSHA, HeadSHA: pull.HeadSHA, Title: pull.Title, Body: pull.Body}
 	issue, err := c.ListIssueComments(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err
@@ -141,6 +151,11 @@ func (c *Client) PullState(ctx context.Context, owner, repo string, number int) 
 		return PullState{}, err
 	}
 	state.Comments = comments
+	reviews, err := c.ListReviews(ctx, owner, repo, number)
+	if err != nil {
+		return PullState{}, err
+	}
+	state.Reviews = reviews
 	commits, err := c.ListPullCommits(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err
@@ -446,7 +461,8 @@ func (c *Client) CreateCheckRun(ctx context.Context, owner, repo, sha, name, tit
 	return c.post(ctx, fmt.Sprintf("/repos/%s/%s/check-runs", owner, repo), body, nil)
 }
 
-func (c *Client) HasLGTMReview(ctx context.Context, owner, repo string, number int, sha string) (bool, error) {
+func (c *Client) ListReviews(ctx context.Context, owner, repo string, number int) ([]PostedReview, error) {
+	var out []PostedReview
 	page := 1
 	for {
 		var raw []struct {
@@ -455,15 +471,13 @@ func (c *Client) HasLGTMReview(ctx context.Context, owner, repo string, number i
 		}
 		path := fmt.Sprintf("/repos/%s/%s/pulls/%d/reviews?per_page=100&page=%d", owner, repo, number, page)
 		if err := c.get(ctx, path, &raw); err != nil {
-			return false, err
+			return nil, err
 		}
 		for _, item := range raw {
-			if item.CommitID == sha && strings.HasPrefix(strings.TrimSpace(item.Body), "LGTM") {
-				return true, nil
-			}
+			out = append(out, PostedReview{CommitID: item.CommitID, Body: item.Body})
 		}
 		if len(raw) < 100 {
-			return false, nil
+			return out, nil
 		}
 		page++
 	}

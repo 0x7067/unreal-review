@@ -523,15 +523,17 @@ func TestPullRangeIgnoresUnusableSince(t *testing.T) {
 	}
 }
 
-func TestPullBasePrefersTheBaseBranchRef(t *testing.T) {
+func TestPullBaseMustBeInTheLocalRepository(t *testing.T) {
 	h := newPullRepo(t)
-	gitRun(t, h.dir, "update-ref", "refs/remotes/origin/main", h.base)
-	got := loadPull(t, h.dir, Pull{BaseRef: "main", BaseSHA: h.base, HeadSHA: h.head})
-	if got.source.Base != "origin/main" {
-		t.Fatalf("base = %q, want origin/main", got.source.Base)
+	missing := strings.Repeat("0", 40)
+	stub := &stubPull{pull: Pull{BaseSHA: missing, HeadSHA: h.head}}
+	_, err := loadGitDiff(context.Background(), h.dir, Spec{Pull: "o/r#1"}, nil, nil, stub)
+	if err == nil || !strings.Contains(err.Error(), "not in the local repository") {
+		t.Fatalf("err = %v, want the base commit reported as missing", err)
 	}
-	if got.source.BaseSHA != h.base {
-		t.Fatalf("base_sha = %s, want %s", got.source.BaseSHA, h.base)
+	got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head})
+	if got.source.Base != h.base || got.source.BaseSHA != h.base {
+		t.Fatalf("base = %q base_sha = %s, want %s for both", got.source.Base, got.source.BaseSHA, h.base)
 	}
 }
 
@@ -542,8 +544,8 @@ func TestPullCarriesReportedFindings(t *testing.T) {
 		Anchor: findings.AnchorNew, Severity: findings.SeverityWarning, Body: "Already said this.",
 	}}
 	got := loadPull(t, h.dir, Pull{BaseSHA: h.base, HeadSHA: h.head, ReviewedHead: h.since, Reported: reported})
-	if len(got.reported) != 1 || got.reported[0].ID != "a1b2c3d4e5f60708" {
-		t.Fatalf("reported: %+v", got.reported)
+	if len(got.pull.Reported) != 1 || got.pull.Reported[0].ID != "a1b2c3d4e5f60708" {
+		t.Fatalf("reported: %+v", got.pull.Reported)
 	}
 }
 

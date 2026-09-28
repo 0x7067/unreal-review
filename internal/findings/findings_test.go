@@ -161,11 +161,11 @@ func TestWriteRunRoundTrip(t *testing.T) {
 
 func TestAppendFindingNormalizesLikeParse(t *testing.T) {
 	work := filepath.Join(t.TempDir(), "work.jsonl")
-	finding, err := AppendFinding(work, Finding{Path: " a.go ", StartLine: 2, Severity: SeverityWarning, Body: "  body  "})
+	finding, err := AppendFinding(work, Finding{ID: " prior-id ", Path: " a.go ", StartLine: 2, Severity: SeverityWarning, Body: "  body  "})
 	if err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	if finding.Path != "a.go" || finding.EndLine != 2 || finding.Anchor != AnchorNew || finding.ID == "" {
+	if finding.Path != "a.go" || finding.EndLine != 2 || finding.Anchor != AnchorNew || finding.ID != "prior-id" {
 		t.Fatalf("normalized: %+v", finding)
 	}
 	parsed, err := ReadFile(work)

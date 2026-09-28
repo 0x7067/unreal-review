@@ -86,3 +86,35 @@ def postOk(complete: Bool, dry: Bool) -> Bool:
       True{}
     case False{}:
       complete
+
+def dropped(flags: List<&2, Flags>) -> Nat:
+  match flags:
+    case Nil{}:
+      0n
+    case f <> t:
+      match f:
+        case Flags{posted, commentable}:
+          match posted:
+            case True{}:
+              dropped(t)
+            case False{}:
+              match commentable:
+                case True{}:
+                  dropped(t)
+                case False{}:
+                  Nat.add(1n, dropped(t))
+
+type Drop is Data:
+  OutsidePatch{}
+  OverCap{}
+
+def receipt(ds: List<&2, Drop>) -> Bool:
+  match ds:
+    case Nil{}:
+      True{}
+    case d <> t:
+      match d:
+        case OutsidePatch{}:
+          receipt(t)
+        case OverCap{}:
+          False{}

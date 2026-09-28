@@ -55,7 +55,7 @@ func TestCanaryRunPRRequiresToken(t *testing.T) {
 	}
 	out := filepath.Join(t.TempDir(), "findings.jsonl")
 	_, stderr, code := runCLI(t, bin, env, "run", "--model", "x", "--pr", canaryOwner+"/"+canaryRepo+"#1", "--out", out, "--timeout", "1s")
-	if code != 1 || !strings.Contains(stderr, "set GH_TOKEN or GITHUB_TOKEN to review a pull request") {
+	if code != 1 || !strings.Contains(stderr, "set GH_TOKEN to review a pull request") {
 		t.Fatalf("exit=%d stderr=%s", code, stderr)
 	}
 }
@@ -193,7 +193,7 @@ func TestCanaryRenderSuppressesDuplicateAndStillReceipts(t *testing.T) {
 	}
 }
 
-func TestCanaryRenderDroppedFindingSkipsReceipt(t *testing.T) {
+func TestCanaryRenderOutOfPatchFindingPostsOnceAndReceipts(t *testing.T) {
 	bin := canaryBinary(t)
 	const head = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	fake := newRenderFake(head, nil)
@@ -201,24 +201,91 @@ func TestCanaryRenderDroppedFindingSkipsReceipt(t *testing.T) {
 	defer server.Close()
 
 	findings := writeFindings(t, head, finding{"3333333333333333", "hello.go", 90, "This line is outside the patch."})
-	_, stderr, code := postFindings(t, bin, server.URL, findings)
+	for run := 1; run <= 2; run++ {
+		_, stderr, code := postFindings(t, bin, server.URL, findings)
+		fake.check(t)
+		if code != 0 {
+			t.Fatalf("run %d: exit=%d stderr=%s", run, code, stderr)
+		}
+		want := "dropped 1"
+		if run == 2 {
+			want = "1 already reported"
+		}
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("run %d: want %q in stderr=%s", run, want, stderr)
+		}
+	}
+	reviews := fake.bodies(http.MethodPost, "/pulls/1/reviews")
+	if len(reviews) != 1 {
+		t.Fatalf("two renders of one head posted %d reviews: %v", len(reviews), reviews)
+	}
+	var posted struct {
+		Body string `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(reviews[0]), &posted); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(posted.Body, "Not in the pull request diff, so not posted inline:\n- **error** `hello.go` L90: This line is outside the patch. <!-- unreal-review finding 3333333333333333 -->") {
+		t.Fatalf("dropped finding has no marker in the review body:\n%s", posted.Body)
+	}
+	receipts := fake.bodies(http.MethodPost, "/check-runs")
+	if len(receipts) != 1 || !strings.Contains(receipts[0], head) {
+		t.Fatalf("receipts=%v want one on %s", receipts, head)
+	}
+	if reads := fake.count(http.MethodGet, "/pulls/1/reviews"); reads != 2 {
+		t.Fatalf("two renders read the reviews %d times, want once each", reads)
+	}
+}
+
+func TestCanaryRenderOverCapFindingSkipsReceipt(t *testing.T) {
+	bin := canaryBinary(t)
+	const head = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	fake := newRenderFake(head, nil)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+
+	var items []finding
+	for i := range 51 {
+		items = append(items, finding{fmt.Sprintf("%016x", i+1), "hello.go", 1 + i%3, fmt.Sprintf("Problem %d.", i)})
+	}
+	_, stderr, code := postFindings(t, bin, server.URL, writeFindings(t, head, items...))
 	fake.check(t)
 	if code != 0 {
 		t.Fatalf("exit=%d stderr=%s", code, stderr)
 	}
-	if !strings.Contains(stderr, "dropped 1") {
+	if !strings.Contains(stderr, "posted 50 inline comment(s)") || !strings.Contains(stderr, "dropped 1") {
 		t.Fatalf("stderr=%s", stderr)
 	}
-	reviews := fake.bodies(http.MethodPost, "/pulls/1/reviews")
-	if len(reviews) != 1 || !strings.Contains(reviews[0], "not posted as inline comments") {
-		t.Fatalf("dropped review body=%v", reviews)
-	}
-	if status := fake.count(http.MethodPost, "/issues/1/comments"); status != 1 {
-		t.Fatalf("status comments=%d", status)
-	}
-	// Today's receipt rule: CreateCheckRun only when nothing was dropped.
 	if receipts := fake.count(http.MethodPost, "/check-runs"); receipts != 0 {
-		t.Fatalf("dropped finding still created %d check runs", receipts)
+		t.Fatalf("a finding cut by the inline cap still created %d check runs", receipts)
+	}
+}
+
+func TestCanaryRenderLGTMPostsOncePerHead(t *testing.T) {
+	bin := canaryBinary(t)
+	const head = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	fake := newRenderFake(head, nil)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+
+	findings := writeFindings(t, head)
+	for run := 1; run <= 2; run++ {
+		_, stderr, code := postFindings(t, bin, server.URL, findings)
+		fake.check(t)
+		if code != 0 {
+			t.Fatalf("run %d: exit=%d stderr=%s", run, code, stderr)
+		}
+		want := "posted LGTM"
+		if run == 2 {
+			want = "LGTM already posted"
+		}
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("run %d: want %q in stderr=%s", run, want, stderr)
+		}
+	}
+	reviews := fake.bodies(http.MethodPost, "/pulls/1/reviews")
+	if len(reviews) != 1 || !strings.Contains(reviews[0], `"body":"LGTM - no findings in aaaaaaa..bbbbbbb."`) {
+		t.Fatalf("want one LGTM review for the head, got %v", reviews)
 	}
 }
 
@@ -366,11 +433,25 @@ func (f *fakeGH) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.write(w, f.files)
 	case r.Method == http.MethodGet && path == prefix+"/pulls/1/reviews":
-		f.write(w, []any{})
+		reviews := []map[string]string{}
+		for _, body := range f.bodies(http.MethodPost, "/pulls/1/reviews") {
+			var review struct {
+				CommitID string `json:"commit_id"`
+				Body     string `json:"body"`
+			}
+			if err := json.Unmarshal([]byte(body), &review); err != nil {
+				f.note("decode posted review: " + err.Error())
+			}
+			reviews = append(reviews, map[string]string{"commit_id": review.CommitID, "body": review.Body})
+		}
+		f.write(w, reviews)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, prefix+"/commits/") && strings.HasSuffix(path, "/check-runs"):
 		sha := strings.TrimSuffix(strings.TrimPrefix(path, prefix+"/commits/"), "/check-runs")
 		runs := []map[string]string{}
-		if conclusion, ok := f.checks[sha]; ok {
+		f.mu.Lock()
+		conclusion, ok := f.checks[sha]
+		f.mu.Unlock()
+		if ok {
 			runs = append(runs, map[string]string{
 				"name": "unreal-review", "status": "completed", "conclusion": conclusion,
 			})
@@ -381,6 +462,19 @@ func (f *fakeGH) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && path == prefix+"/issues/1/comments":
 		f.write(w, map[string]any{"id": 2})
 	case r.Method == http.MethodPost && path == prefix+"/check-runs":
+		var run struct {
+			HeadSHA    string `json:"head_sha"`
+			Conclusion string `json:"conclusion"`
+		}
+		if err := json.Unmarshal(raw, &run); err != nil {
+			f.note("decode check run: " + err.Error())
+		}
+		f.mu.Lock()
+		if f.checks == nil {
+			f.checks = map[string]string{}
+		}
+		f.checks[run.HeadSHA] = run.Conclusion
+		f.mu.Unlock()
 		f.write(w, map[string]any{"id": 3})
 	default:
 		f.note("unexpected " + r.Method + " " + r.URL.RequestURI())

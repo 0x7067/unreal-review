@@ -64,12 +64,10 @@ else
 	note "info UNREAL_HARNESS_LLM_MODEL unset (live review skipped unless --model is passed)"
 fi
 
-if [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
-	note "info GitHub token env is set (dry-run with env token GETs the pull request)"
-elif command -v gh >/dev/null && gh auth token >/dev/null 2>&1; then
-	note "info gh auth token is available (posting without GH_TOKEN/GITHUB_TOKEN uses it; --dry-run does not)"
+if [ -n "${GH_TOKEN:-}" ]; then
+	note "info GH_TOKEN is set (dry-run GETs the pull request)"
 else
-	note "info no GitHub token (posting fails; --dry-run does not call the API)"
+	note "info GH_TOKEN unset (posting and --pr fail; --dry-run does not call the API)"
 fi
 
 if [ "$fail" -ne 0 ]; then

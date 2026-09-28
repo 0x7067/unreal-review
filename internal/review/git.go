@@ -23,10 +23,11 @@ type Spec struct {
 }
 
 type Pull struct {
-	BaseRef      string
 	BaseSHA      string
 	HeadSHA      string
 	ReviewedHead string
+	Title        string
+	Description  string
 	Reported     []findings.Finding
 }
 
@@ -111,14 +112,14 @@ type resolved struct {
 	baseSHA, headSHA string
 	mergeBase        bool
 	untracked        bool
-	reported         []findings.Finding
+	pull             Pull
 }
 
 type selection struct {
-	diff     string
-	source   findings.Source
-	files    []ChangedFile
-	reported []findings.Finding
+	diff   string
+	source findings.Source
+	files  []ChangedFile
+	pull   Pull
 }
 
 func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclude []string, pull PullResolver) (selection, error) {
@@ -145,8 +146,8 @@ func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclud
 			HeadSHA: r.headSHA,
 			DiffSHA: diffFingerprint(diff),
 		},
-		files:    files,
-		reported: r.reported,
+		files: files,
+		pull:  r.pull,
 	}, nil
 }
 
@@ -190,7 +191,7 @@ func resolvePull(ctx context.Context, workspace string, p Pull) (resolved, error
 	if p.HeadSHA == "" {
 		return resolved{}, fmt.Errorf("pull request has no head commit")
 	}
-	from, err := pullFullBase(ctx, workspace, p)
+	from, err := pullBase(ctx, workspace, p)
 	if err != nil {
 		return resolved{}, err
 	}
@@ -201,18 +202,16 @@ func resolvePull(ctx context.Context, workspace string, p Pull) (resolved, error
 	if err != nil {
 		return resolved{}, err
 	}
-	r.reported = p.Reported
+	r.pull = p
 	return r, nil
 }
 
-func pullFullBase(ctx context.Context, workspace string, p Pull) (string, error) {
-	if p.BaseRef != "" {
-		if ref := "origin/" + p.BaseRef; resolves(ctx, workspace, ref) {
-			return ref, nil
-		}
-	}
+func pullBase(ctx context.Context, workspace string, p Pull) (string, error) {
 	if p.BaseSHA == "" {
 		return "", fmt.Errorf("pull request has no base commit")
+	}
+	if !resolves(ctx, workspace, p.BaseSHA+"^{commit}") {
+		return "", fmt.Errorf("pull request base %s is not in the local repository; fetch it (actions/checkout needs fetch-depth: 0)", p.BaseSHA)
 	}
 	return p.BaseSHA, nil
 }

@@ -1,7 +1,10 @@
 package render
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"unreal-review/internal/diffmap"
@@ -9,7 +12,10 @@ import (
 	"unreal-review/internal/github"
 )
 
-const maxInlineComments = 50
+const (
+	maxInlineComments   = 50
+	droppedMarkerPrefix = "<!-- unreal-review dropped "
+)
 
 type GitHubOptions struct {
 	Owner      string
@@ -18,7 +24,7 @@ type GitHubOptions struct {
 	CommitID   string
 	Lines      diffmap.Map
 	HasLines   bool
-	Posted     []github.PostedComment
+	History    History
 }
 
 type GitHubResult struct {
@@ -26,15 +32,35 @@ type GitHubResult struct {
 	Dropped    []DroppedFinding
 	Duplicates []findings.Finding
 	LGTM       bool
+	LGTMPosted bool
 }
 
 func (r GitHubResult) PostReview() bool {
-	return len(r.Payload.Review.Comments) > 0 || len(r.Dropped) > 0 || r.LGTM
+	if r.LGTM {
+		return !r.LGTMPosted
+	}
+	return len(r.Payload.Review.Comments) > 0 || len(r.Dropped) > 0
 }
+
+func (r GitHubResult) Receipt() bool {
+	for _, item := range r.Dropped {
+		if item.Kind == DropOverCap {
+			return false
+		}
+	}
+	return true
+}
+
+type DropKind int
+
+const (
+	DropOutsidePatch DropKind = iota
+	DropOverCap
+)
 
 type DroppedFinding struct {
 	Finding findings.Finding
-	Reason  string
+	Kind    DropKind
 }
 
 func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
@@ -49,22 +75,16 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 			},
 		},
 	}
-	posted := postedFingerprints(opts.Posted)
+	prior := opts.History.posted()
 	var placed []findings.Finding
 	for _, finding := range report.Findings {
 		switch {
-		case posted[finding.ID]:
+		case alreadyReported(prior, finding):
 			result.Duplicates = append(result.Duplicates, finding)
 		case opts.HasLines && !commentable(opts.Lines, finding):
-			result.Dropped = append(result.Dropped, DroppedFinding{
-				Finding: finding,
-				Reason:  "line is not in the pull request diff",
-			})
+			result.Dropped = append(result.Dropped, DroppedFinding{Finding: finding, Kind: DropOutsidePatch})
 		case len(result.Payload.Review.Comments) >= maxInlineComments:
-			result.Dropped = append(result.Dropped, DroppedFinding{
-				Finding: finding,
-				Reason:  fmt.Sprintf("review already has %d inline comments", maxInlineComments),
-			})
+			result.Dropped = append(result.Dropped, DroppedFinding{Finding: finding, Kind: DropOverCap})
 		default:
 			result.Payload.Review.Comments = append(result.Payload.Review.Comments, githubComment(finding))
 			placed = append(placed, finding)
@@ -78,6 +98,7 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 	result.Payload.Review.Body = reviewBody(report.Summary, placed, result.Dropped, cost)
 	if len(report.Findings) == 0 {
 		result.LGTM = true
+		result.LGTMPosted = opts.History.HasLGTM(opts.CommitID)
 		result.Payload.Review.Body = "LGTM"
 		if report.Run != nil && report.Run.Source.BaseSHA != "" && report.Run.Source.HeadSHA != "" {
 			result.Payload.Review.Body = fmt.Sprintf("LGTM - no findings in %s..%s.", shortSHA(report.Run.Source.BaseSHA), shortSHA(report.Run.Source.HeadSHA))
@@ -86,25 +107,46 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 	return result
 }
 
-func postedFingerprints(comments []github.PostedComment) map[string]bool {
-	out := make(map[string]bool, len(comments))
-	for _, comment := range comments {
-		if id, ok := github.ParseFinding(comment.Body); ok {
-			out[id] = true
+type History struct {
+	Comments []github.PostedComment
+	Reviews  []github.PostedReview
+}
+
+func HistoryOf(state github.PullState) History {
+	return History{Comments: state.Comments, Reviews: state.Reviews}
+}
+
+func (h History) HasLGTM(commit string) bool {
+	for _, review := range h.Reviews {
+		if review.CommitID == commit && strings.HasPrefix(strings.TrimSpace(review.Body), "LGTM") {
+			return true
 		}
+	}
+	return false
+}
+
+func (h History) Reported() []findings.Finding {
+	items := h.posted()
+	out := make([]findings.Finding, len(items))
+	for i, item := range items {
+		out[i] = item.finding
 	}
 	return out
 }
 
-func ReportedFindings(comments []github.PostedComment) []findings.Finding {
-	var out []findings.Finding
-	for _, comment := range comments {
+type postedFinding struct {
+	finding findings.Finding
+}
+
+func (h History) posted() []postedFinding {
+	var out []postedFinding
+	for _, comment := range h.Comments {
 		id, ok := github.ParseFinding(comment.Body)
 		if !ok {
 			continue
 		}
 		severity, body := splitPostedBody(comment.Body)
-		out = append(out, findings.Finding{
+		out = append(out, postedFinding{finding: findings.Finding{
 			ID:        id,
 			Path:      comment.Path,
 			StartLine: comment.StartLine,
@@ -112,9 +154,126 @@ func ReportedFindings(comments []github.PostedComment) []findings.Finding {
 			Anchor:    anchorOf(comment.Side),
 			Severity:  severity,
 			Body:      body,
-		})
+		}})
+	}
+	for _, review := range h.Reviews {
+		for _, line := range strings.Split(review.Body, "\n") {
+			if item, ok := parseDroppedLine(line); ok {
+				out = append(out, postedFinding{finding: item})
+			}
+		}
 	}
 	return out
+}
+
+func alreadyReported(prior []postedFinding, finding findings.Finding) bool {
+	for _, item := range prior {
+		if item.finding.ID == finding.ID {
+			return true
+		}
+	}
+	return false
+}
+
+func droppedLine(finding findings.Finding) string {
+	anchor := ""
+	if finding.Anchor == findings.AnchorOld {
+		anchor = " old"
+	}
+	return fmt.Sprintf("- **%s** `%s`%s %s: %s %s %s",
+		finding.Severity, finding.Path, anchor,
+		formatLines(finding.StartLine, finding.EndLine),
+		strings.Join(strings.Fields(finding.Body), " "),
+		github.FindingMarker(finding.ID), droppedMarker(finding))
+}
+
+func parseDroppedLine(line string) (findings.Finding, bool) {
+	if finding, ok := parseDroppedMarker(line); ok {
+		return finding, true
+	}
+	id, ok := github.ParseFinding(line)
+	if !ok {
+		return findings.Finding{}, false
+	}
+	rest, ok := strings.CutPrefix(strings.TrimSpace(github.WithoutMarker(line)), "- **")
+	if !ok {
+		return findings.Finding{}, false
+	}
+	severity, rest, ok := strings.Cut(rest, "** `")
+	if !ok {
+		return findings.Finding{}, false
+	}
+	path, rest, ok := strings.Cut(rest, "` ")
+	if !ok {
+		return findings.Finding{}, false
+	}
+	anchor := findings.AnchorNew
+	if after, found := strings.CutPrefix(rest, "old "); found {
+		anchor, rest = findings.AnchorOld, after
+	}
+	lines, body, ok := strings.Cut(rest, ": ")
+	if !ok {
+		return findings.Finding{}, false
+	}
+	start, end, ok := parseLines(lines)
+	if !ok {
+		return findings.Finding{}, false
+	}
+	return findings.Finding{
+		ID:        id,
+		Path:      path,
+		StartLine: start,
+		EndLine:   end,
+		Anchor:    anchor,
+		Severity:  findings.Severity(severity),
+		Body:      strings.TrimSpace(body),
+	}, true
+}
+
+func droppedMarker(finding findings.Finding) string {
+	finding.Body = strings.Join(strings.Fields(finding.Body), " ")
+	raw, err := json.Marshal(finding)
+	if err != nil {
+		return ""
+	}
+	return droppedMarkerPrefix + base64.RawURLEncoding.EncodeToString(raw) + " -->"
+}
+
+func parseDroppedMarker(line string) (findings.Finding, bool) {
+	at := strings.Index(line, droppedMarkerPrefix)
+	if at < 0 {
+		return findings.Finding{}, false
+	}
+	rest := line[at+len(droppedMarkerPrefix):]
+	encoded, _, ok := strings.Cut(rest, " -->")
+	if !ok {
+		return findings.Finding{}, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return findings.Finding{}, false
+	}
+	var finding findings.Finding
+	if err := json.Unmarshal(raw, &finding); err != nil || finding.ID == "" {
+		return findings.Finding{}, false
+	}
+	return finding, true
+}
+
+func parseLines(text string) (int, int, bool) {
+	first, last, ranged := strings.Cut(text, "–")
+	start, err := strconv.Atoi(strings.TrimPrefix(first, "L"))
+	if err != nil {
+		return 0, 0, false
+	}
+	if !ranged {
+		return start, start, true
+	}
+	end, err := strconv.Atoi(strings.TrimPrefix(last, "L"))
+	if err != nil {
+		return 0, 0, false
+	}
+	return start, end, true
 }
 
 func anchorOf(side string) findings.Anchor {
@@ -215,12 +374,25 @@ func reviewBody(summary string, placed []findings.Finding, dropped []DroppedFind
 	if len(dropped) == 0 {
 		return strings.TrimSpace(b.String())
 	}
-	if b.Len() > 0 {
-		b.WriteByte('\n')
-	}
-	fmt.Fprintf(&b, "%d finding(s) were not posted as inline comments:\n", len(dropped))
+	var outside, overCap []findings.Finding
 	for _, item := range dropped {
-		fmt.Fprintf(&b, "- `%s` %s: %s\n", item.Finding.Path, formatLines(item.Finding.StartLine, item.Finding.EndLine), item.Reason)
+		if item.Kind == DropOverCap {
+			overCap = append(overCap, item.Finding)
+		} else {
+			outside = append(outside, item.Finding)
+		}
+	}
+	if len(outside) > 0 {
+		fmt.Fprintf(&b, "\nNot in the pull request diff, so not posted inline:\n")
+		for _, finding := range outside {
+			b.WriteString(droppedLine(finding) + "\n")
+		}
+	}
+	if len(overCap) > 0 {
+		fmt.Fprintf(&b, "\nNot posted, the review already has %d inline comments:\n", maxInlineComments)
+		for _, finding := range overCap {
+			fmt.Fprintf(&b, "- `%s` %s\n", finding.Path, formatLines(finding.StartLine, finding.EndLine))
+		}
 	}
 	return strings.TrimSpace(b.String())
 }

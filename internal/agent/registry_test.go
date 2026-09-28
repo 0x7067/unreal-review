@@ -103,7 +103,7 @@ func TestTranslateRecordsANormalizedFinding(t *testing.T) {
 	status := translator.Translate(ctx, llm.ToolCall{
 		CallID:    "call-3",
 		Name:      review.RecordFindingTool,
-		Arguments: `{"path":" cmd/run.go ","start_line":9,"end_line":12,"anchor":"old","severity":" note ","body":"The flag is parsed twice."}`,
+		Arguments: `{"path":" cmd/run.go ","start_line":9,"end_line":12,"anchor":"old","severity":" note ","body":"The flag is parsed twice.","id":" a1b2c3d4e5f60708 "}`,
 	})
 	if status.Error != "" {
 		t.Fatalf("translate: unexpected error %q", status.Error)
@@ -121,6 +121,7 @@ func TestTranslateRecordsANormalizedFinding(t *testing.T) {
 		t.Fatalf("decode finding: %v", err)
 	}
 	want := findings.Finding{
+		ID:        "a1b2c3d4e5f60708",
 		Path:      "cmd/run.go",
 		StartLine: 9,
 		EndLine:   12,
@@ -128,7 +129,6 @@ func TestTranslateRecordsANormalizedFinding(t *testing.T) {
 		Severity:  findings.SeverityNote,
 		Body:      "The flag is parsed twice.",
 	}
-	want.ID = findings.Fingerprint(want)
 	if finding != want {
 		t.Errorf("finding: got %+v, want %+v", finding, want)
 	}

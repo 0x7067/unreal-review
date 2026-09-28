@@ -71,6 +71,10 @@ func recordFindingDefinition() tool.Definition {
 					"type":        "string",
 					"description": "Markdown finding body.",
 				},
+				"id": map[string]any{
+					"type":        "string",
+					"description": "Id of an already-reported finding this one restates, from the list in the prompt. Omit for a new issue.",
+				},
 			},
 			"required": []any{"path", "start_line", "severity", "body"},
 		},
@@ -84,6 +88,7 @@ type recordFindingArgs struct {
 	Anchor    string `json:"anchor"`
 	Severity  string `json:"severity"`
 	Body      string `json:"body"`
+	ID        string `json:"id"`
 }
 
 type recordFindingTranslator struct{}
@@ -100,6 +105,7 @@ func (recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) to
 		Anchor:    findings.Anchor(args.Anchor),
 		Severity:  findings.Severity(args.Severity),
 		Body:      args.Body,
+		ID:        args.ID,
 	})
 	if err != nil {
 		return tool.ErrorStatus(err.Error(), 0)
