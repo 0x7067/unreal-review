@@ -2,3 +2,5 @@
 /findings.jsonl
 *.exe
 .DS_Store
+/.eval/
+/.worktrees/

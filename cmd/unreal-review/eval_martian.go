@@ -22,13 +22,14 @@ type martianFlags struct {
 }
 
 type martianSummary struct {
-	Corpus     string                `json:"corpus"`
-	Profile    string                `json:"profile"`
-	JudgeModel string                `json:"judge_model"`
-	Cases      []eval.MartianScore   `json:"cases"`
-	Total      evalTotals            `json:"total"`
-	BySeverity map[string]eval.Tally `json:"by_severity"`
-	JudgeCost  float64               `json:"judge_cost_usd"`
+	Corpus     string                 `json:"corpus"`
+	Profile    string                 `json:"profile"`
+	JudgeModel string                 `json:"judge_model"`
+	Cases      []eval.MartianScore    `json:"cases"`
+	Total      evalTotals             `json:"total"`
+	BySeverity map[string]eval.Tally  `json:"by_severity"`
+	ByProfile  map[string]eval.Counts `json:"by_profile"`
+	JudgeCost  float64                `json:"judge_cost_usd"`
 }
 
 func evalMartian(root, model string, harness agent.Harness, flags martianFlags) error {
@@ -39,11 +40,11 @@ func evalMartian(root, model string, harness agent.Harness, flags martianFlags) 
 	if err != nil {
 		return err
 	}
-	cases, err := eval.MartianProfile(all, flags.profile)
-	if err != nil {
+	if _, err := eval.MartianProfile(flags.profile); err != nil {
 		return err
 	}
-	if cases, err = selectMartian(cases, flags.cases); err != nil {
+	cases, err := selectMartian(all, flags.cases)
+	if err != nil {
 		return err
 	}
 	base, err := agent.OpenRouterBase()
@@ -61,7 +62,7 @@ func evalMartian(root, model string, harness agent.Harness, flags martianFlags) 
 			defer wg.Done()
 			slots <- struct{}{}
 			defer func() { <-slots }()
-			scores[i], errs[i] = eval.RunMartian(context.Background(), c, root, eval.Options{Model: model, Agent: harness}, judge)
+			scores[i], errs[i] = eval.RunMartian(context.Background(), c, root, eval.Options{Model: model, Agent: harness}, judge, flags.profile)
 			fmt.Fprintf(os.Stderr, "%s done\n", c.Name)
 		}()
 	}
@@ -71,7 +72,7 @@ func evalMartian(root, model string, harness agent.Harness, flags martianFlags) 
 			scores[i].Err = err.Error()
 		}
 	}
-	summary := martianSummary{Corpus: "martian", Profile: flags.profile, JudgeModel: flags.judgeModel, Cases: scores, BySeverity: eval.SumBySeverity(scores)}
+	summary := martianSummary{Corpus: "martian", Profile: flags.profile, JudgeModel: flags.judgeModel, Cases: scores, BySeverity: eval.SumBySeverity(scores), ByProfile: eval.SumProfiles(scores)}
 	plain := make([]eval.Score, len(scores))
 	for i, score := range scores {
 		plain[i] = score.Score
@@ -139,6 +140,14 @@ func printMartian(summary martianSummary) {
 			eval.Agreement(tally.Matched, tally.Gold), eval.Agreement(tally.SeverityHits, tally.Gold), tally.Matched, tally.Gold)
 	}
 	_ = writer.Flush()
-	fmt.Printf("profile %s, judge %s ($%.4f). Extras match no golden comment; the golden set is sparse on minor issues, so extras are not all false positives.\n",
+	writer = tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(writer, "\nmartian profile\tprecision\trecall\tf1\ttp\tfp\tfn")
+	for _, profile := range eval.MartianProfiles {
+		counts := summary.ByProfile[profile]
+		_, _ = fmt.Fprintf(writer, "%s\t%.1f\t%.1f\t%.1f\t%d\t%d\t%d\n", profile,
+			100*counts.Precision(), 100*counts.Recall(), 100*counts.F1(), counts.TP, counts.FP, counts.FN)
+	}
+	_ = writer.Flush()
+	fmt.Printf("profile %s, judge %s ($%.4f). Precision, recall, and F1 are Martian's leaderboard metrics summed over cases: fp counts every extra, and a match on a golden comment outside a profile counts in neither tp nor fp. Extras match no golden comment; the golden set is sparse on minor issues, so extras are not all false positives.\n",
 		summary.Profile, summary.JudgeModel, summary.JudgeCost)
 }

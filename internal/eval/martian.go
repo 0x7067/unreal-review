@@ -39,6 +39,8 @@ type MartianCase struct {
 
 var MartianSeverities = []string{"Critical", "High", "Medium", "Low"}
 
+var MartianProfiles = []string{"strict", "core", "all"}
+
 var martianProfiles = map[string][]string{
 	"strict": {"bug", "security", "concurrency", "data", "api"},
 	"core":   {"bug", "security", "concurrency", "data", "api", "perf", "test_gap", "doc_defect"},
@@ -53,7 +55,7 @@ func MartianCorpus() ([]MartianCase, error) {
 	return cases, nil
 }
 
-func MartianProfile(cases []MartianCase, profile string) ([]MartianCase, error) {
+func MartianProfile(profile string) (map[string]bool, error) {
 	categories, ok := martianProfiles[profile]
 	if !ok {
 		return nil, fmt.Errorf("unknown profile %q: use core, strict, or all", profile)
@@ -62,18 +64,7 @@ func MartianProfile(cases []MartianCase, profile string) ([]MartianCase, error) 
 	for _, category := range categories {
 		keep[category] = true
 	}
-	out := make([]MartianCase, 0, len(cases))
-	for _, c := range cases {
-		filtered := c
-		filtered.Comments = nil
-		for _, comment := range c.Comments {
-			if keep[comment.Category] {
-				filtered.Comments = append(filtered.Comments, comment)
-			}
-		}
-		out = append(out, filtered)
-	}
-	return out, nil
+	return keep, nil
 }
 
 func MartianSeverity(severity string) findings.Severity {
@@ -125,44 +116,106 @@ type Tally struct {
 	SeverityHits int `json:"severity_hits"`
 }
 
-type MartianScore struct {
-	Score
-	Repo         string           `json:"repo"`
-	URL          string           `json:"url"`
-	BySeverity   map[string]Tally `json:"by_severity"`
-	JudgeCostUSD float64          `json:"judge_cost_usd"`
-	JudgeErr     string           `json:"judge_err,omitempty"`
+type Counts struct {
+	TP int `json:"tp"`
+	FP int `json:"fp"`
+	FN int `json:"fn"`
 }
 
-func ScoreMartian(c MartianCase, report findings.Report, pairs []Pair) MartianScore {
+func (c Counts) Add(o Counts) Counts {
+	return Counts{TP: c.TP + o.TP, FP: c.FP + o.FP, FN: c.FN + o.FN}
+}
+
+func (c Counts) Precision() float64 {
+	return ratio(c.TP, c.TP+c.FP)
+}
+
+func (c Counts) Recall() float64 {
+	return ratio(c.TP, c.TP+c.FN)
+}
+
+func (c Counts) F1() float64 {
+	p, r := c.Precision(), c.Recall()
+	if p+r == 0 {
+		return 0
+	}
+	return 2 * p * r / (p + r)
+}
+
+func ratio(hits, total int) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(hits) / float64(total)
+}
+
+type MartianScore struct {
+	Score
+	Repo            string            `json:"repo"`
+	URL             string            `json:"url"`
+	MatchedExcluded int               `json:"matched_excluded"`
+	BySeverity      map[string]Tally  `json:"by_severity"`
+	ByProfile       map[string]Counts `json:"by_profile"`
+	Pairs           []Pair            `json:"pairs"`
+	JudgeCostUSD    float64           `json:"judge_cost_usd"`
+	JudgeErr        string            `json:"judge_err,omitempty"`
+}
+
+func ScoreMartian(c MartianCase, report findings.Report, pairs []Pair, profile string) MartianScore {
 	score := MartianScore{
-		Score:      Score{Name: c.Name, Class: c.Repo, Gold: len(c.Comments), Produced: len(report.Findings)},
+		Score:      Score{Name: c.Name, Class: c.Repo, Produced: len(report.Findings), Extra: len(report.Findings) - len(pairs)},
 		Repo:       c.Repo,
 		URL:        c.URL,
 		BySeverity: map[string]Tally{},
+		ByProfile:  map[string]Counts{},
+		Pairs:      pairs,
 	}
 	if report.Run != nil {
 		score.Status = string(report.Run.Status)
 		score.CostUSD = report.Run.Cost.AmountUSD
 		score.Requests = report.Run.Cost.Requests
 	}
-	for _, comment := range c.Comments {
+	matched := map[int]int{}
+	for _, p := range pairs {
+		matched[p.Golden] = p.Finding
+	}
+	for _, name := range MartianProfiles {
+		keep, _ := MartianProfile(name)
+		counts := Counts{FP: score.Extra}
+		for i, comment := range c.Comments {
+			_, hit := matched[i]
+			switch {
+			case !keep[comment.Category]:
+			case hit:
+				counts.TP++
+			default:
+				counts.FN++
+			}
+		}
+		score.ByProfile[name] = counts
+	}
+	keep, _ := MartianProfile(profile)
+	for i, comment := range c.Comments {
+		finding, hit := matched[i]
+		if !keep[comment.Category] {
+			if hit {
+				score.MatchedExcluded++
+			}
+			continue
+		}
 		tally := score.BySeverity[comment.Severity]
 		tally.Gold++
-		score.BySeverity[comment.Severity] = tally
-	}
-	for _, p := range pairs {
-		comment := c.Comments[p.Golden]
-		tally := score.BySeverity[comment.Severity]
-		tally.Matched++
-		score.Matched++
-		if report.Findings[p.Finding].Severity == MartianSeverity(comment.Severity) {
-			tally.SeverityHits++
-			score.SeverityHits++
+		score.Gold++
+		if hit {
+			tally.Matched++
+			score.Matched++
+			if report.Findings[finding].Severity == MartianSeverity(comment.Severity) {
+				tally.SeverityHits++
+				score.SeverityHits++
+			}
 		}
 		score.BySeverity[comment.Severity] = tally
 	}
-	score.Extra = score.Produced - score.Matched
 	return score
 }
 
@@ -242,7 +295,7 @@ func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Fin
 	return Verdict{Pairs: pairs, CostUSD: reply.Usage.Cost}, err
 }
 
-func RunMartian(ctx context.Context, c MartianCase, root string, opts Options, judge Judge) (MartianScore, error) {
+func RunMartian(ctx context.Context, c MartianCase, root string, opts Options, judge Judge, profile string) (MartianScore, error) {
 	dir := filepath.Join(root, c.Name)
 	head, err := CheckoutMartian(ctx, c, dir)
 	if err != nil {
@@ -259,7 +312,7 @@ func RunMartian(ctx context.Context, c MartianCase, root string, opts Options, j
 		Agent:     opts.Agent,
 	})
 	verdict, judgeErr := judge.Match(ctx, c, result.Report.Findings)
-	score := ScoreMartian(c, result.Report, verdict.Pairs)
+	score := ScoreMartian(c, result.Report, verdict.Pairs, profile)
 	score.JudgeCostUSD = verdict.CostUSD
 	score.DurationMS = time.Since(start).Milliseconds()
 	score.FindingsPath = findingsPath
@@ -319,6 +372,16 @@ func SumBySeverity(scores []MartianScore) map[string]Tally {
 			total.Matched += tally.Matched
 			total.SeverityHits += tally.SeverityHits
 			sum[severity] = total
+		}
+	}
+	return sum
+}
+
+func SumProfiles(scores []MartianScore) map[string]Counts {
+	sum := map[string]Counts{}
+	for _, score := range scores {
+		for profile, counts := range score.ByProfile {
+			sum[profile] = sum[profile].Add(counts)
 		}
 	}
 	return sum
