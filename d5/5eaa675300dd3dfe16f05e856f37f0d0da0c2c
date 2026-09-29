@@ -1,0 +1,20 @@
+.gitignore
+  h_29be57c0addd47 5-6
+cmd/unreal-review/eval_martian.go
+  h_29be57c0addd47 25-32,43,46-47,65,75,143-151
+internal/eval/martian.go
+  h_29be57c0addd47 42-43,58,67,119-151,154-161,164,166,170-171,178,180-205,207-215,298,315,379-388
+internal/eval/martian_test.go
+  h_29be57c0addd47 4,34,39-44,46-47,50-52,55-72,74-75,77-79,81-85,114-117,127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d55eaa675300dd3dfe16f05e856f37f0d0da0c2c",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
