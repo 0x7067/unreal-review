@@ -147,7 +147,6 @@ type record struct {
 	Anchor    string          `json:"anchor,omitempty"`
 	Severity  string          `json:"severity,omitempty"`
 	Body      string          `json:"body,omitempty"`
-	Summary   string          `json:"summary,omitempty"`
 	Cost      *Cost           `json:"cost,omitempty"`
 	Status    string          `json:"status,omitempty"`
 }
@@ -229,13 +228,7 @@ func reportFromRaw(raws []json.RawMessage) (Report, error) {
 		}
 		typ := rec.Type
 		if typ == "" {
-			if rec.Path != "" {
-				typ = TypeFinding
-			} else if rec.Body != "" || rec.Summary != "" {
-				typ = TypeSummary
-			} else {
-				return Report{}, fmt.Errorf("record %d: type must be set", i)
-			}
+			return Report{}, fmt.Errorf("record %d: type must be set", i)
 		}
 		switch typ {
 		case TypeRun:
@@ -252,9 +245,6 @@ func reportFromRaw(raws []json.RawMessage) (Report, error) {
 			report.Findings = append(report.Findings, finding)
 		case TypeSummary:
 			body := strings.TrimSpace(rec.Body)
-			if body == "" {
-				body = strings.TrimSpace(rec.Summary)
-			}
 			if body == "" {
 				return Report{}, fmt.Errorf("record %d: summary body must be set", i)
 			}
