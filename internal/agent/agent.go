@@ -42,12 +42,12 @@ const (
 	sessionDirectoryName  = ".local/state/unreal-agent/sessions"
 )
 
-// openRouterBase talks to openrouter.ai unless UNREAL_REVIEW_OPENROUTER_API
+// OpenRouterBase talks to openrouter.ai unless UNREAL_REVIEW_OPENROUTER_API
 // names a loopback origin (see LoopbackBaseURL). The offline canary points
 // that variable at a local server that returns 401. An empty value keeps the
 // public API. A non-loopback value is an error. The variable is not a
 // credential, so secret reexec leaves it in the environment.
-func openRouterBase() (string, error) {
+func OpenRouterBase() (string, error) {
 	base, err := LoopbackBaseURL(openRouterBaseEnv, os.Getenv(openRouterBaseEnv))
 	if err != nil {
 		return "", err
@@ -74,7 +74,7 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 		defer cancel()
 	}
 
-	base, err := openRouterBase()
+	base, err := OpenRouterBase()
 	if err != nil {
 		return review.AgentResult{}, err
 	}
@@ -148,7 +148,11 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 		return review.AgentResult{}, fmt.Errorf("create operation directory: %w", err)
 	}
 	registry := newRecordRegistry(tool.NewRegistry(tool.StaticTranslators{
-		Bash:      bash.New(bash.Config{Shell: "/bin/sh", Directory: req.Workspace, BaseDirectory: operationDirectory}),
+		Bash: newBoundedBash(req.Workspace, bash.New(bash.Config{
+			Shell:         "/bin/sh",
+			Directory:     req.Workspace,
+			BaseDirectory: operationDirectory,
+		})),
 		ViewImage: viewimage.New(viewimage.Config{Directory: req.Workspace}),
 	}, tool.BashName, tool.ViewImageName))
 

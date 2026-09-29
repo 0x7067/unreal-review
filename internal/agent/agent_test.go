@@ -330,12 +330,12 @@ func TestLoopbackModelAdapterRefusesOffHostRedirect(t *testing.T) {
 
 func TestOpenRouterBase(t *testing.T) {
 	t.Setenv(openRouterBaseEnv, "")
-	got, err := openRouterBase()
+	got, err := OpenRouterBase()
 	if err != nil || got != openRouterBaseURL {
 		t.Fatalf("empty override: got (%q, %v), want %q", got, err, openRouterBaseURL)
 	}
 	t.Setenv(openRouterBaseEnv, "  http://127.0.0.1:9/api/v1  ")
-	got, err = openRouterBase()
+	got, err = OpenRouterBase()
 	if err != nil || got != "http://127.0.0.1:9/api/v1" {
 		t.Fatalf("override: got (%q, %v)", got, err)
 	}
@@ -344,7 +344,7 @@ func TestOpenRouterBase(t *testing.T) {
 		"http://[::1]:9/api/v1",
 	} {
 		t.Setenv(openRouterBaseEnv, raw)
-		got, err = openRouterBase()
+		got, err = OpenRouterBase()
 		if err != nil || got != raw {
 			t.Fatalf("loopback %q: got (%q, %v)", raw, got, err)
 		}
@@ -356,7 +356,7 @@ func TestOpenRouterBase(t *testing.T) {
 		"file:///tmp/openrouter",
 	} {
 		t.Setenv(openRouterBaseEnv, raw)
-		if _, err = openRouterBase(); err == nil {
+		if _, err = OpenRouterBase(); err == nil {
 			t.Fatalf("%q: want an error", raw)
 		}
 	}

@@ -46,7 +46,8 @@ Render that file for GitHub inline comments, markdown, or another host.
 Usage:
   unreal-review run [--from <rev> [--to <rev>] | --commit <rev> | --branch <name> | --pr owner/repo#n] [--exclude <glob>] [paths...]
   unreal-review group [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>] [--exclude <glob>] [paths...]
-  unreal-review eval [--model <id>] [--out <dir>] [--json]
+  unreal-review eval [--model <id>] [--out <dir>] [--json] [--corpus planted|martian]
+                     [--profile core|strict|all] [--parallel N] [--cases a,b] [--judge-model <id>]
   unreal-review render github [--pr owner/repo#n] [--dry-run] [findings.jsonl]
   unreal-review render markdown [flags] [findings.jsonl]
 
@@ -64,7 +65,9 @@ unreal-review check run and names findings already posted so the agent
 does not restate them; render github then suppresses duplicates, tags comments with
 markers, and keeps a status comment with the cumulative cost. Eval
 runs a planted-issue corpus through the same pipeline as run and
-scores the findings file against the planted issues; it calls the
+scores the findings file against the planted issues; --corpus martian
+reviews the Martian Code Review Bench pull requests and matches findings
+to golden comments with an LLM judge. Eval calls the
 model and costs money. Render reads that document and produces a
 display-specific output. GitHub inline comments are a renderer, not
 the review itself. GitHub posting requires a complete review.

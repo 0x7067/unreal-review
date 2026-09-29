@@ -94,6 +94,54 @@ cases complete, recall 10/10, precision 10/11, severity 9/10, total cost
 USD 0.0219 over 32 requests. The miss on severity is `swallowed-error`; the
 extra finding is in `once-failure`.
 
+### Martian Code Review Bench
+
+```sh
+unreal-review eval --corpus martian --model openai/gpt-6-luna-pro
+unreal-review eval --corpus martian --profile strict --parallel 4 --cases grafana-79265,sentry-67876 --model openai/gpt-6-luna-pro
+```
+
+`--corpus martian` reviews the 50 pull requests of the Martian Code Review
+Bench offline set (cal.com, discourse, grafana, keycloak, sentry; 173 golden
+comments). The golden data is vendored in `internal/eval/martian.json` from
+[withmartian/code-review-benchmark](https://github.com/withmartian/code-review-benchmark)
+at commit `e616e849755441da38f18bf3adba2c9583b03803` (`offline/golden_comments`,
+MIT license), with the GitHub merge base and head SHA of each pull request
+pinned beside it. Each case does a shallow fetch of those two commits into a
+fresh repository under `--out` and reviews merge base to head.
+
+`--profile` picks the golden categories: `core` (default, Martian's default;
+158 comments: bug, security, concurrency, data, api, perf, test_gap,
+doc_defect), `strict` (139: the first five), or `all` (173: adds style and
+speculative). Golden comments have no line numbers, so an LLM judge
+(`--judge-model`, default `anthropic/claude-sonnet-5.5`, through OpenRouter)
+asks Martian's question, whether a finding identifies the same underlying
+issue as a golden comment, in one call per case; each finding matches at most
+one golden comment. Martian severity maps Critical and High to `error`,
+Medium to `warning`, and Low to `note`. The report gives recall and severity
+agreement overall and per Martian severity, and `extra` counts findings that
+match no golden comment. The judge always sees every golden comment, and the
+report also gives a built-in direct-match precision, recall, and F1 estimate
+for each of `strict`, `core`, and `all`, summed over cases: every extra counts
+against precision, and a match on a golden comment outside a profile counts as
+neither a hit nor an extra in that profile. These profile counts follow
+accounting, but comparable benchmark scores must be exported through Martian's
+pinned step 2/2.5/3 runner, which also extracts and deduplicates candidates. The
+JSON output carries the built-in judge's 0-based `pairs` and per-profile
+`tp`/`fp`/`fn` for each case. The golden set is sparse on minor issues, so
+extras are not all false positives. `--parallel` (default 8) runs cases at once.
+The planted corpus keeps its line-overlap matcher and stays the default. A
+severity with no golden comment in the selected cases prints `-` instead of a
+rate. A three-attempt full baseline was measured 2026-09-29 with
+`openai/gpt-6-luna-pro`. Findings were exported through Martian's runner at the
+pinned commit above, including steps 2, 2.5, and 3 with
+`anthropic/claude-sonnet-4.5` through OpenRouter. Mean precision/recall/F1 was
+35.2/34.5/34.8 for strict, 37.1/32.9/34.8 for core, and 39.3/32.9/35.8 for
+all. The attempts produced 93, 96, and 84 findings and cost $4.320 total for
+reviews. Each attempt completed 49 cases; `sentry-greptile-5` exceeded the
+200,000-byte review limit and was exported as an empty review. Martian runner
+scoring cost is not recorded by the runner.
+
 ## Findings file
 
 The JSONL schema is the product. Renderers turn it into GitHub comments, markdown, or another display. See [schema/findings-v1.md](schema/findings-v1.md).
