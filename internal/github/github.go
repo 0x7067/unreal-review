@@ -21,16 +21,6 @@ type Client struct {
 	HTTP    *http.Client
 }
 
-type PullRequest struct {
-	Number  int
-	Owner   string
-	Repo    string
-	BaseSHA string
-	HeadSHA string
-	Title   string
-	Body    string
-}
-
 type PullFile struct {
 	Path  string
 	Patch string
@@ -47,11 +37,6 @@ type PostedComment struct {
 type PostedReview struct {
 	CommitID string
 	Body     string
-}
-
-type IssueComment struct {
-	ID   int64
-	Body string
 }
 
 type PullState struct {
@@ -103,12 +88,11 @@ func (c *Client) http() *http.Client {
 	return http.DefaultClient
 }
 
-func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (PullRequest, error) {
-	var raw struct {
-		Number int    `json:"number"`
-		Title  string `json:"title"`
-		Body   string `json:"body"`
-		Base   struct {
+func (c *Client) PullState(ctx context.Context, owner, repo string, number int) (PullState, error) {
+	var pull struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+		Base  struct {
 			SHA string `json:"sha"`
 		} `json:"base"`
 		Head struct {
@@ -116,27 +100,11 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 		} `json:"head"`
 	}
 	path := fmt.Sprintf("/repos/%s/%s/pulls/%d", owner, repo, number)
-	if err := c.get(ctx, path, &raw); err != nil {
-		return PullRequest{}, err
-	}
-	return PullRequest{
-		Number:  raw.Number,
-		Owner:   owner,
-		Repo:    repo,
-		BaseSHA: raw.Base.SHA,
-		HeadSHA: raw.Head.SHA,
-		Title:   raw.Title,
-		Body:    raw.Body,
-	}, nil
-}
-
-func (c *Client) PullState(ctx context.Context, owner, repo string, number int) (PullState, error) {
-	pull, err := c.GetPullRequest(ctx, owner, repo, number)
-	if err != nil {
+	if err := c.get(ctx, path, &pull); err != nil {
 		return PullState{}, err
 	}
-	state := PullState{BaseSHA: pull.BaseSHA, HeadSHA: pull.HeadSHA, Title: pull.Title, Body: pull.Body}
-	issue, err := c.ListIssueComments(ctx, owner, repo, number)
+	state := PullState{BaseSHA: pull.Base.SHA, HeadSHA: pull.Head.SHA, Title: pull.Title, Body: pull.Body}
+	issue, err := c.listIssueComments(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err
 	}
@@ -146,17 +114,17 @@ func (c *Client) PullState(ctx context.Context, owner, repo string, number int) 
 			state.StatusCommentID = comment.ID
 		}
 	}
-	comments, err := c.ListReviewComments(ctx, owner, repo, number)
+	comments, err := c.listReviewComments(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err
 	}
 	state.Comments = comments
-	reviews, err := c.ListReviews(ctx, owner, repo, number)
+	reviews, err := c.listReviews(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err
 	}
 	state.Reviews = reviews
-	commits, err := c.ListPullCommits(ctx, owner, repo, number)
+	commits, err := c.listPullCommits(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err
 	}
@@ -175,8 +143,13 @@ type commentBody struct {
 	Body string `json:"body"`
 }
 
-func (c *Client) ListIssueComments(ctx context.Context, owner, repo string, number int) ([]IssueComment, error) {
-	var out []IssueComment
+type issueComment struct {
+	ID   int64
+	Body string
+}
+
+func (c *Client) listIssueComments(ctx context.Context, owner, repo string, number int) ([]issueComment, error) {
+	var out []issueComment
 	page := 1
 	for {
 		var raw []struct {
@@ -188,7 +161,7 @@ func (c *Client) ListIssueComments(ctx context.Context, owner, repo string, numb
 			return nil, err
 		}
 		for _, item := range raw {
-			out = append(out, IssueComment{ID: item.ID, Body: item.Body})
+			out = append(out, issueComment{ID: item.ID, Body: item.Body})
 		}
 		if len(raw) < 100 {
 			return out, nil
@@ -197,7 +170,7 @@ func (c *Client) ListIssueComments(ctx context.Context, owner, repo string, numb
 	}
 }
 
-func (c *Client) ListReviewComments(ctx context.Context, owner, repo string, number int) ([]PostedComment, error) {
+func (c *Client) listReviewComments(ctx context.Context, owner, repo string, number int) ([]PostedComment, error) {
 	var out []PostedComment
 	page := 1
 	for {
@@ -399,7 +372,7 @@ func NewHTTPClient() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
 }
 
-func (c *Client) ListPullCommits(ctx context.Context, owner, repo string, number int) ([]string, error) {
+func (c *Client) listPullCommits(ctx context.Context, owner, repo string, number int) ([]string, error) {
 	var out []string
 	page := 1
 	for {
@@ -461,7 +434,7 @@ func (c *Client) CreateCheckRun(ctx context.Context, owner, repo, sha, name, tit
 	return c.post(ctx, fmt.Sprintf("/repos/%s/%s/check-runs", owner, repo), body, nil)
 }
 
-func (c *Client) ListReviews(ctx context.Context, owner, repo string, number int) ([]PostedReview, error) {
+func (c *Client) listReviews(ctx context.Context, owner, repo string, number int) ([]PostedReview, error) {
 	var out []PostedReview
 	page := 1
 	for {
