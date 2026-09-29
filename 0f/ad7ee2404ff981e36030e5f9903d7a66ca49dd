@@ -1,0 +1,30 @@
+README.md
+  h_29be57c0addd47 91-120
+cmd/unreal-review/eval.go
+  h_29be57c0addd47 41-45,71-80,85
+cmd/unreal-review/eval_martian.go
+  h_29be57c0addd47 1-140
+cmd/unreal-review/main.go
+  h_29be57c0addd47 49-50,68-70
+internal/agent/agent.go
+  h_29be57c0addd47 45,50,77
+internal/agent/agent_test.go
+  h_29be57c0addd47 333,338,347,359
+internal/eval/martian.go
+  h_29be57c0addd47 1-325
+internal/eval/martian.json
+  h_29be57c0addd47 1-1367
+internal/eval/martian_test.go
+  h_29be57c0addd47 1-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0fad7ee2404ff981e36030e5f9903d7a66ca49dd",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
