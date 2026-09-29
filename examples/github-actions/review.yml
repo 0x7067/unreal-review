@@ -2,17 +2,19 @@ name: Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
 
 permissions: {}
 
 concurrency:
-  group: review-${{ github.event.pull_request.number }}
+  group: ${{ (github.event.action == 'edited' && github.event.changes.base == null) && github.run_id || format('review-{0}', github.event.pull_request.number) }}
   cancel-in-progress: true
 
 jobs:
   review:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'edited' || github.event.changes.base != null)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -50,13 +52,6 @@ jobs:
           name: unreal-review-findings
           path: findings.jsonl
           retention-days: 7
-      - name: Upload review session
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: unreal-review-session-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ~/.local/state/unreal-agent/sessions/
-          if-no-files-found: warn
 
   post:
     needs: review
