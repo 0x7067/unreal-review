@@ -38,6 +38,11 @@ func cmdEval(args []string) error {
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
 	asJSON := fs.Bool("json", false, "print machine-readable JSON instead of a table")
+	corpus := fs.String("corpus", "planted", "planted or martian")
+	profile := fs.String("profile", "core", "martian golden categories: core, strict, or all")
+	parallel := fs.Int("parallel", 8, "martian cases reviewed at once")
+	only := fs.String("cases", "", "comma-separated martian case names (default: all)")
+	judgeModel := fs.String("judge-model", "anthropic/claude-sonnet-5.5", "OpenRouter model that matches martian findings to golden comments")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -63,15 +68,21 @@ func cmdEval(args []string) error {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return fmt.Errorf("create eval dir: %w", err)
 	}
+	harness := agent.Harness{APIKey: key, ThinkingLevel: level, Timeout: *timeout}
+	switch *corpus {
+	case "planted":
+	case "martian":
+		return evalMartian(root, *model, harness, martianFlags{
+			profile: *profile, parallel: *parallel, cases: *only, judgeModel: *judgeModel, asJSON: *asJSON,
+		})
+	default:
+		return fmt.Errorf("unknown corpus %q: use planted or martian", *corpus)
+	}
 	scores := make([]eval.Score, 0, len(eval.Corpus))
 	for _, c := range eval.Corpus {
 		score, err := eval.Run(context.Background(), c, root, eval.Options{
 			Model: *model,
-			Agent: agent.Harness{
-				APIKey:        key,
-				ThinkingLevel: level,
-				Timeout:       *timeout,
-			},
+			Agent: harness,
 		})
 		if err != nil {
 			return err
