@@ -148,7 +148,11 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 		return review.AgentResult{}, fmt.Errorf("create operation directory: %w", err)
 	}
 	registry := newRecordRegistry(tool.NewRegistry(tool.StaticTranslators{
-		Bash:      bash.New(bash.Config{Shell: "/bin/sh", Directory: req.Workspace, BaseDirectory: operationDirectory}),
+		Bash: newBoundedBash(req.Workspace, bash.New(bash.Config{
+			Shell:         "/bin/sh",
+			Directory:     req.Workspace,
+			BaseDirectory: operationDirectory,
+		})),
 		ViewImage: viewimage.New(viewimage.Config{Directory: req.Workspace}),
 	}, tool.BashName, tool.ViewImageName))
 
