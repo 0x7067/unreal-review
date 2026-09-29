@@ -117,6 +117,10 @@ agreement overall and per Martian severity, and `extra` counts findings that
 match no golden comment. The golden set is sparse on minor issues, so extras
 are not all false positives. `--parallel` (default 8) runs cases at once.
 The planted corpus keeps its line-overlap matcher and stays the default.
+A severity with no golden comment in the selected cases prints `-` instead
+of a rate. A three-case smoke on 2026-09-29 (`grafana-107534`, `calcom-8087`,
+`keycloak-32918`, `openai/gpt-6-luna-pro`) completed 3 of 3 for $0.0819 in
+reviews plus $0.0066 in judging. A full 50-case run has not been recorded.
 
 ## Findings file
 

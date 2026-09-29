@@ -131,6 +131,10 @@ func printMartian(summary martianSummary) {
 	_, _ = fmt.Fprintln(writer, "\nmartian severity\tmaps to\trecall\tseverity\tfound\tgold")
 	for _, severity := range eval.MartianSeverities {
 		tally := summary.BySeverity[severity]
+		if tally.Gold == 0 {
+			_, _ = fmt.Fprintf(writer, "%s\t%s\t-\t-\t0\t0\n", severity, eval.MartianSeverity(severity))
+			continue
+		}
 		_, _ = fmt.Fprintf(writer, "%s\t%s\t%.2f\t%.2f\t%d\t%d\n", severity, eval.MartianSeverity(severity),
 			eval.Agreement(tally.Matched, tally.Gold), eval.Agreement(tally.SeverityHits, tally.Gold), tally.Matched, tally.Gold)
 	}
