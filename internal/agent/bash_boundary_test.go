@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/unreallabsai/unreal-agent/harness/llm"
 	"github.com/unreallabsai/unreal-agent/harness/operation"
@@ -112,6 +114,40 @@ func TestBoundedBashRejectsSymlinkRootOutsideWorkspace(t *testing.T) {
 	}
 	if len(ctx.specs) != 0 {
 		t.Fatalf("submitted %d shell operations, want none", len(ctx.specs))
+	}
+}
+
+func TestBoundedBashKeepsCancellationOnAllowedFind(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell process test")
+	}
+	workspace := t.TempDir()
+	bin := t.TempDir()
+	find := filepath.Join(bin, "find")
+	if err := os.WriteFile(find, []byte("#!/bin/sh\nparent=$PPID\nwhile kill -0 \"$parent\" 2>/dev/null; do :; done\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	translator := newBoundedBash(workspace, bash.New(bash.Config{
+		Shell:         "/bin/sh",
+		Directory:     workspace,
+		BaseDirectory: t.TempDir(),
+	}))
+	ctx := &recordingContext{}
+	status := translator.Translate(ctx, bashCall("find . -name dependency.rb"))
+	if status.Error != "" {
+		t.Fatalf("translate: %s", status.Error)
+	}
+
+	runCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := runSubmittedShell(runCtx, ctx)
+	if err == nil || runCtx.Err() != context.DeadlineExceeded {
+		t.Fatalf("run error = %v, context error = %v", err, runCtx.Err())
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("cancellation took %v", elapsed)
 	}
 }
 
