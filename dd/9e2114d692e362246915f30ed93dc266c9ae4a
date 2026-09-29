@@ -1,0 +1,27 @@
+.github/workflows/ci.yml
+  s_6cc6de7afd2887::t_c43499467c6ab0 30-31
+README.md
+  s_6cc6de7afd2887::t_a3a48823baca32 21-27
+examples/github-actions/review.yml
+  s_6cc6de7afd2887::t_af6ad853b4f7c7 5,10,15-17
+internal/findings/findings.go
+  s_6cc6de7afd2887::t_ef6a5255a0ed28 231
+internal/github/github.go
+  s_6cc6de7afd2887::t_4c1fec97ccbf45 91-95,103,106-107,117,122,127,146-152,164,173,375,437
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dd9e2114d692e362246915f30ed93dc266c9ae4a",
+  "prompts": {},
+  "sessions": {
+    "s_6cc6de7afd2887": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0de49-6b39-7373-86fc-b8f77f056fe2",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
