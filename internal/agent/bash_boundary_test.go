@@ -124,7 +124,7 @@ func TestBoundedBashKeepsCancellationOnAllowedFind(t *testing.T) {
 	workspace := t.TempDir()
 	bin := t.TempDir()
 	find := filepath.Join(bin, "find")
-	if err := os.WriteFile(find, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+	if err := os.WriteFile(find, []byte("#!/bin/sh\nwhile :; do :; done\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
