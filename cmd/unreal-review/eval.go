@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -68,6 +70,8 @@ func cmdEval(args []string) error {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return fmt.Errorf("create eval dir: %w", err)
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	harness := agent.Harness{APIKey: key, ThinkingLevel: level, Timeout: *timeout}
 	switch *corpus {
 	case "planted":
@@ -80,7 +84,7 @@ func cmdEval(args []string) error {
 	}
 	scores := make([]eval.Score, 0, len(eval.Corpus))
 	for _, c := range eval.Corpus {
-		score, err := eval.Run(context.Background(), c, root, eval.Options{
+		score, err := eval.Run(ctx, c, root, eval.Options{
 			Model: *model,
 			Agent: harness,
 		})
