@@ -114,13 +114,27 @@ issue as a golden comment, in one call per case; each finding matches at most
 one golden comment. Martian severity maps Critical and High to `error`,
 Medium to `warning`, and Low to `note`. The report gives recall and severity
 agreement overall and per Martian severity, and `extra` counts findings that
-match no golden comment. The golden set is sparse on minor issues, so extras
-are not all false positives. `--parallel` (default 8) runs cases at once.
-The planted corpus keeps its line-overlap matcher and stays the default.
-A severity with no golden comment in the selected cases prints `-` instead
-of a rate. A three-case smoke on 2026-09-29 (`grafana-107534`, `calcom-8087`,
-`keycloak-32918`, `openai/gpt-6-luna-pro`) completed 3 of 3 for $0.0819 in
-reviews plus $0.0066 in judging. A full 50-case run has not been recorded.
+match no golden comment. The judge always sees every golden comment, and the
+report also gives a built-in direct-match precision, recall, and F1 estimate
+for each of `strict`, `core`, and `all`, summed over cases: every extra counts
+against precision, and a match on a golden comment outside a profile counts as
+neither a hit nor an extra in that profile. These profile counts follow
+accounting, but comparable benchmark scores must be exported through Martian's
+pinned step 2/2.5/3 runner, which also extracts and deduplicates candidates. The
+JSON output carries the built-in judge's 0-based `pairs` and per-profile
+`tp`/`fp`/`fn` for each case. The golden set is sparse on minor issues, so
+extras are not all false positives. `--parallel` (default 8) runs cases at once.
+The planted corpus keeps its line-overlap matcher and stays the default. A
+severity with no golden comment in the selected cases prints `-` instead of a
+rate. A three-attempt full baseline was measured 2026-09-29 with
+`openai/gpt-6-luna-pro`. Findings were exported through Martian's runner at the
+pinned commit above, including steps 2, 2.5, and 3 with
+`anthropic/claude-sonnet-4.5` through OpenRouter. Mean precision/recall/F1 was
+35.2/34.5/34.8 for strict, 37.1/32.9/34.8 for core, and 39.3/32.9/35.8 for
+all. The attempts produced 93, 96, and 84 findings and cost $4.320 total for
+reviews. Each attempt completed 49 cases; `sentry-greptile-5` exceeded the
+200,000-byte review limit and was exported as an empty review. Martian runner
+scoring cost is not recorded by the runner.
 
 ## Findings file
 

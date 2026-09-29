@@ -148,6 +148,6 @@ func printMartian(summary martianSummary) {
 			100*counts.Precision(), 100*counts.Recall(), 100*counts.F1(), counts.TP, counts.FP, counts.FN)
 	}
 	_ = writer.Flush()
-	fmt.Printf("profile %s, judge %s ($%.4f). Precision, recall, and F1 are Martian's leaderboard metrics summed over cases: fp counts every extra, and a match on a golden comment outside a profile counts in neither tp nor fp. Extras match no golden comment; the golden set is sparse on minor issues, so extras are not all false positives.\n",
+	fmt.Printf("profile %s, judge %s ($%.4f). Precision, recall, and F1 use the built-in direct matcher with Martian's profile accounting: fp counts every extra, and a match on a golden comment outside a profile counts in neither tp nor fp. For comparable benchmark scores, export findings through Martian's pinned step 2/2.5/3 runner. Extras match no golden comment; the golden set is sparse on minor issues, so extras are not all false positives.\n",
 		summary.Profile, summary.JudgeModel, summary.JudgeCost)
 }
