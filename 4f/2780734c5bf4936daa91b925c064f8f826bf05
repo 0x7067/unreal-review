@@ -1,0 +1,31 @@
+README.md
+  s_fa93f3d225ef1e::t_f56dd535140f02 83-84
+internal/eval/martian.go
+  s_fa93f3d225ef1e::t_19070c95855e36 320,343-344
+internal/review/plan.go
+  s_da49090a4c7614::t_1c855f16429326 108-111,113-117,119-129,131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4f2780734c5bf4936daa91b925c064f8f826bf05",
+  "prompts": {},
+  "sessions": {
+    "s_da49090a4c7614": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "295dc7ae-64ce-4757-a2da-18b35a3a4ccb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_fa93f3d225ef1e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e3bcbaed-ca43-47da-9002-2fc633e6f8e0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
