@@ -1,0 +1,18 @@
+internal/agent/registry_test.go
+  h_29be57c0addd47 115-120,130-131
+internal/agent/strategy_test.go
+  h_29be57c0addd47 52
+internal/review/accounting_test.go
+  h_29be57c0addd47 66-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46bed4279236a82cd870cc427ca225fd3186792b",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
