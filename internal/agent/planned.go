@@ -314,15 +314,19 @@ func (p Planned) Run(ctx context.Context, req review.AgentRequest) (result revie
 		if e == nil {
 			report, e = focusedComplete(path, r.Cost)
 		}
+		var candidateSet map[string]findings.Finding
+		if e == nil && !job.discovery {
+			candidateSet = map[string]findings.Finding{}
+			for _, item := range job.candidates {
+				candidateSet[item.ID] = item
+			}
+			report.Findings, e = plannedRestoreCandidateIDs(report.Findings, candidateSet)
+		}
 		if e == nil {
 			report.Findings, e = focusedCoalesce(report.Findings)
 		}
 		if e == nil && !job.discovery {
-			set := map[string]findings.Finding{}
-			for _, item := range job.candidates {
-				set[item.ID] = item
-			}
-			e = plannedValidateOutput(report, set, job.preserve)
+			e = plannedValidateOutput(report, candidateSet, job.preserve)
 			if e == nil && strings.HasPrefix(job.stage, "consolidate:") && len(report.Findings) == 0 {
 				e = fmt.Errorf("planned: consolidation cannot discard every confirmed issue")
 			}
@@ -628,6 +632,40 @@ func plannedValidateOutput(r findings.Report, candidates map[string]findings.Fin
 	}
 	return nil
 }
+
+func plannedRestoreCandidateIDs(items []findings.Finding, candidates map[string]findings.Finding) ([]findings.Finding, error) {
+	restored := append([]findings.Finding{}, items...)
+	for i := range restored {
+		item := &restored[i]
+		if _, ok := candidates[item.ID]; ok {
+			continue
+		}
+		body := strings.TrimSpace(item.Body)
+		if !strings.HasPrefix(body, "[") {
+			return nil, fmt.Errorf("planned: unknown verifier ID %q", item.ID)
+		}
+		close := strings.IndexByte(body, ']')
+		if close <= 1 {
+			return nil, fmt.Errorf("planned: unknown verifier ID %q", item.ID)
+		}
+		candidateID := body[1:close]
+		original, ok := candidates[candidateID]
+		if !ok {
+			return nil, fmt.Errorf("planned: unknown verifier ID %q", item.ID)
+		}
+		if item.Path != original.Path || item.StartLine != original.StartLine || item.EndLine != original.EndLine || item.Anchor != original.Anchor {
+			return nil, fmt.Errorf("planned: verifier changed canonical location")
+		}
+		body = strings.TrimSpace(body[close+1:])
+		if body == "" {
+			return nil, fmt.Errorf("planned: verifier body missing after candidate ID")
+		}
+		item.ID = candidateID
+		item.Body = body
+	}
+	return restored, nil
+}
+
 func plannedCandidates(items []findings.Finding, preserve map[string]bool) ([]findings.Finding, error) {
 	out := []findings.Finding{}
 	byID := map[string]int{}

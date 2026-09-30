@@ -18,6 +18,35 @@ import (
 
 type plannedTestAgent func(context.Context, review.AgentRequest) (review.AgentResult, error)
 
+func TestPlannedRestoreCandidateIDsFromBodyPrefix(t *testing.T) {
+	candidate := plannedTestIssue("candidate-id")
+	candidates := map[string]findings.Finding{candidate.ID: candidate}
+	verified := candidate
+	verified.ID = "model-generated-id"
+	verified.Body = "[candidate-id] Confirmed production impact"
+	restored, err := plannedRestoreCandidateIDs([]findings.Finding{verified}, candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restored) != 1 || restored[0].ID != candidate.ID || restored[0].Body != "Confirmed production impact" {
+		t.Fatalf("restored = %+v", restored)
+	}
+	if err := plannedValidateOutput(findings.Report{Findings: restored}, candidates, nil); err != nil {
+		t.Fatalf("validate restored output: %v", err)
+	}
+
+	changed := verified
+	changed.StartLine++
+	if _, err := plannedRestoreCandidateIDs([]findings.Finding{changed}, candidates); err == nil || !strings.Contains(err.Error(), "canonical location") {
+		t.Fatalf("changed location error = %v", err)
+	}
+	unknown := verified
+	unknown.Body = "[not-a-candidate] Confirmed production impact"
+	if _, err := plannedRestoreCandidateIDs([]findings.Finding{unknown}, candidates); err == nil || !strings.Contains(err.Error(), "unknown verifier ID") {
+		t.Fatalf("unknown prefix error = %v", err)
+	}
+}
+
 func TestPlannedConsolidationTwoHundredCandidatesBoundedRounds(t *testing.T) {
 	req := plannedTestRequest(t)
 	issues := make([]findings.Finding, 200)
