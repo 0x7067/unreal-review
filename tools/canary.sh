@@ -34,6 +34,7 @@ case $VERIFY_RUN_ID in
 	;;
 esac
 mkdir -p "$VERIFY_ROOT"
+export VERIFY_ROOT=$(cd "$VERIFY_ROOT" && pwd)
 unset GH_TOKEN GITHUB_REPOSITORY UNREAL_HARNESS_LLM_MODEL OPENROUTER_API_KEY UNREAL_REVIEW_GITHUB_API UNREAL_REVIEW_OPENROUTER_API || true
 
 # lib.sh keys off $0, so sourcing it from this script would point at tools/.
@@ -42,6 +43,8 @@ FEATURES="$ROOT/.agents/skills/verify-unreal-review/features"
 SCRIPTS="$ROOT/.agents/skills/verify-unreal-review/scripts"
 VERIFY_EVIDENCE="$VERIFY_ROOT/evidence/$VERIFY_RUN_ID"
 VERIFY_SCRATCH="$VERIFY_ROOT/scratch/$VERIFY_RUN_ID"
+# Keep harness state in this run's disposable writable area, not the user's home.
+export UNREAL_REVIEW_SESSION_DIR="$VERIFY_SCRATCH/sessions"
 VERIFY_EXAMPLE="$ROOT/examples/findings.jsonl"
 EMPTY=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 
@@ -384,6 +387,7 @@ require_exit usage-help 0
 expect cli-usage.md "Usage:" "$(stdout_of usage-help)" "usage-help"
 expect cli-usage.md "unreal-review run" "$(stdout_of usage-help)" "usage-help"
 expect cli-usage.md "unreal-review group" "$(stdout_of usage-help)" "usage-help"
+expect cli-usage.md "UNREAL_REVIEW_SESSION_DIR" "$(stdout_of usage-help)" "usage-help"
 
 cli --name usage-required --
 require_exit usage-required 1
@@ -438,6 +442,21 @@ require_field "$VERIFY_SCRATCH/workspace.jsonl" status failed "range-workspace"
 require_field "$VERIFY_SCRATCH/workspace.jsonl" base HEAD "range-workspace"
 require_field "$VERIFY_SCRATCH/workspace.jsonl" head ABSENT "range-workspace"
 require_field_ne "$VERIFY_SCRATCH/workspace.jsonl" diff_sha "$EMPTY" "range-workspace"
+
+UNREAL_REVIEW_SESSION_DIR="$VERIFY_SCRATCH/custom-sessions" OPENROUTER_API_KEY=dummy cli --name range-session-dir -- run --model x --workspace "$VERIFY_FIXTURE" --out "$VERIFY_SCRATCH/session-dir.jsonl"
+require_exit range-session-dir 1
+expect review-git-range.md "401" "$(stderr_of range-session-dir)" "range-session-dir"
+session_id=$(run_json "$VERIFY_SCRATCH/session-dir.jsonl" id)
+session_file="$VERIFY_SCRATCH/custom-sessions/$session_id.session.jsonl"
+if [ ! -s "$session_file" ] || [ ! -d "$VERIFY_SCRATCH/custom-sessions/operations/$session_id" ]; then
+	miss "range-session-dir did not persist its session and operation directory"
+fi
+cp "$session_file" "$VERIFY_SCRATCH/session-dir.jsonl" "$VERIFY_EVIDENCE/range-session-dir/"
+
+UNREAL_REVIEW_SESSION_DIR=relative/sessions OPENROUTER_API_KEY=dummy cli --name range-session-relative -- run --model x --workspace "$VERIFY_FIXTURE" --out "$VERIFY_SCRATCH/session-relative.jsonl"
+require_exit range-session-relative 1
+expect review-git-range.md "UNREAL_REVIEW_SESSION_DIR must be an absolute path" "$(stderr_of range-session-relative)" "range-session-relative"
+require_absent "$(stderr_of range-session-relative)" "401" "range-session-relative"
 
 OPENROUTER_API_KEY=dummy cli --name range-detect -- run --model x --workspace "$VERIFY_FIXTURE" --branch HEAD --out "$VERIFY_SCRATCH/detect.jsonl"
 require_exit range-detect 0

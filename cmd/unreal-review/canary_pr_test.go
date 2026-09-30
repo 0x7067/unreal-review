@@ -31,7 +31,7 @@ const (
 
 func TestCanaryCLIEnvPinsOpenRouterLocal(t *testing.T) {
 	var got string
-	for _, entry := range cliEnv("http://127.0.0.1:1", "canary-token") {
+	for _, entry := range cliEnv(t, "http://127.0.0.1:1", "canary-token") {
 		if strings.HasPrefix(entry, "UNREAL_REVIEW_OPENROUTER_API=") {
 			got = strings.TrimPrefix(entry, "UNREAL_REVIEW_OPENROUTER_API=")
 		}
@@ -47,7 +47,7 @@ func TestCanaryRunPRRequiresToken(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(shim, "gh"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	env := cliEnv("", "")
+	env := cliEnv(t, "", "")
 	for i, entry := range env {
 		if strings.HasPrefix(entry, "PATH=") {
 			env[i] = "PATH=" + shim + string(os.PathListSeparator) + os.Getenv("PATH")
@@ -83,7 +83,7 @@ func TestCanaryRunPRNarrowsToLatestSuccessfulCheck(t *testing.T) {
 	defer server.Close()
 
 	out := filepath.Join(t.TempDir(), "findings.jsonl")
-	_, stderr, code := runCLI(t, bin, cliEnv(server.URL, "canary-token"),
+	_, stderr, code := runCLI(t, bin, cliEnv(t, server.URL, "canary-token"),
 		"run", "--model", "x", "--timeout", "5s",
 		"--workspace", dir,
 		"--pr", canaryOwner+"/"+canaryRepo+"#1",
@@ -332,7 +332,7 @@ func TestCanaryRenderRefusesHeadMismatch(t *testing.T) {
 
 func postFindings(t *testing.T, bin, api, findings string) (string, string, int) {
 	t.Helper()
-	return runCLI(t, bin, cliEnv(api, "canary-token"),
+	return runCLI(t, bin, cliEnv(t, api, "canary-token"),
 		"render", "github", "--pr", canaryOwner+"/"+canaryRepo+"#1", findings)
 }
 
@@ -702,12 +702,14 @@ func requireLocalOpenRouter(t *testing.T, env []string) {
 	}
 }
 
-func cliEnv(api, token string) []string {
+func cliEnv(t *testing.T, api, token string) []string {
+	t.Helper()
 	env := []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + os.Getenv("HOME"),
 		"OPENROUTER_API_KEY=dummy",
 		"UNREAL_REVIEW_OPENROUTER_API=" + canaryOpenRouterAPI,
+		"UNREAL_REVIEW_SESSION_DIR=" + filepath.Join(t.TempDir(), "sessions"),
 	}
 	if v := os.Getenv("TMPDIR"); v != "" {
 		env = append(env, "TMPDIR="+v)

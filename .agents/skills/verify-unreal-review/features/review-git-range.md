@@ -6,6 +6,8 @@
 
 - `range-empty` completes an empty `--from HEAD --to HEAD` range without starting the agent.
 - `range-workspace` with no range flags diffs the dirty tree and untracked files against `HEAD`.
+- `range-session-dir` stores harness sessions and operation data in the absolute directory named by `UNREAL_REVIEW_SESSION_DIR`.
+- `range-session-relative` rejects a relative session directory before calling the model.
 - `range-detect-from` uses `main` (or `master` / `origin/main` / `origin/master`) with `--branch HEAD`.
 - `range-missing-from` errors when `--branch` is set and no default branch name exists.
 - `range-to-only` errors when `--to` is set without `--from`.
@@ -21,6 +23,7 @@
 ## How to get to it (user POV)
 
 - `unreal-review run --out findings.jsonl` from a git checkout (staged, unstaged, and untracked vs `HEAD`).
+- `UNREAL_REVIEW_SESSION_DIR=/absolute/writable/sessions unreal-review run --out findings.jsonl` selects harness storage; unset or empty keeps `~/.local/state/unreal-agent/sessions`.
 - `unreal-review run --from <rev> --to <rev> --out findings.jsonl`.
 - `unreal-review run --from <rev> --out findings.jsonl` (working tree vs merge-base of that ref).
 - `unreal-review run --commit <rev> --out findings.jsonl`.
@@ -39,6 +42,8 @@ Preconditions:
 
 - **Empty range.** Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-empty -- run --model x --workspace "$VERIFY_FIXTURE" --from HEAD --to HEAD --out "$VERIFY_SCRATCH/empty.jsonl"`. Exit code `0`. `stderr.txt` contains `cost: USD 0.000000`. Copy `empty.jsonl` into the step directory. The `run` record has `status":"complete"`, `source.base` and `source.head` equal to `HEAD`, equal `base_sha`/`head_sha`, `diff_sha` equal to `$VERIFY_EMPTY_DIFF_SHA`, and a summary `No material issues: the selected range has no changes.`
 - **Workspace.** Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-workspace -- run --model x --workspace "$VERIFY_FIXTURE" --out "$VERIFY_SCRATCH/workspace.jsonl"`. Exit code `1` because dirty `hello.txt` and untracked `extra.txt` make a non-empty diff. `workspace.jsonl` has `"status":"failed"`, `"base":"HEAD"`, no `source.head` field, and a `diff_sha` other than `$VERIFY_EMPTY_DIFF_SHA`.
+- **Configured sessions (offline).** With `UNREAL_REVIEW_OPENROUTER_API` set to the loopback 401 stand-in used by `make canary`, run `UNREAL_REVIEW_SESSION_DIR="$VERIFY_SCRATCH/custom-sessions" OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-session-dir -- run --model x --workspace "$VERIFY_FIXTURE" --out "$VERIFY_SCRATCH/session-dir.jsonl"`. Exit code `1` with `401` in stderr, demonstrating that session storage succeeded before the local model failure. Read the review `id` from the findings run record; `$VERIFY_SCRATCH/custom-sessions/<id>.session.jsonl` is nonempty and `operations/<id>` exists under that directory. Copy the session and findings files into the step evidence directory.
+- **Relative session directory.** Run `UNREAL_REVIEW_SESSION_DIR=relative/sessions OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-session-relative -- run --model x --workspace "$VERIFY_FIXTURE" --out "$VERIFY_SCRATCH/session-relative.jsonl"`. Exit code `1`; stderr contains `UNREAL_REVIEW_SESSION_DIR must be an absolute path` and no `401`.
 - **Detect default branch.** Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-detect -- run --model x --workspace "$VERIFY_FIXTURE" --branch HEAD --out "$VERIFY_SCRATCH/detect.jsonl"`. Exit code `0`. The `run` record has `"base":"main"`, `"head":"HEAD"`, and `diff_sha` equal to `$VERIFY_EMPTY_DIFF_SHA` (HEAD is the tip of main; `--branch` does not include the dirty working tree).
 - **Missing default branch.** Create a second repo on `develop` with no `main`/`master`. Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-missing-from -- run --model x --workspace "$VERIFY_SCRATCH/repos/develop" --branch HEAD --out "$VERIFY_SCRATCH/develop.jsonl"`. Exit code `1`. `stderr.txt` contains `could not find main or master; set --from`.
 - **`--to` without `--from`.** Run `OPENROUTER_API_KEY=dummy scripts/cli.sh --name range-to-only -- run --model x --workspace "$VERIFY_FIXTURE" --to HEAD --out "$VERIFY_SCRATCH/to-only.jsonl"`. Exit code `1`. `stderr.txt` contains `set --from or use --branch`.
@@ -58,6 +63,7 @@ Preconditions:
 - `--to HEAD` is the commit, not the dirty tree. `--from main` with omitted `--to` includes uncommitted edits. `--branch` is committed only.
 - `--from`/`--to`, `--commit`, and `--branch` cannot be combined.
 - Empty diffs never start the agent, so `range-empty` exits 0 even with a dummy key.
+- Session storage is resolved only when the agent starts. Its override also applies to `eval`, requires existing filesystem write access, and does not relocate `--out` or `--agent-log`. Keep the same session directory when resuming; existing sessions are not moved automatically.
 - `--from`/`--to`/`--commit`/`--branch` accept a branch, tag, or SHA. The findings `source.base`/`source.head` store those strings; `*_sha` store the resolved objects.
 - Pathspecs are positional after `--`. `--exclude` is repeatable. Size does not omit files.
 - `range-live` spends OpenRouter credit. A dummy `OPENROUTER_API_KEY` is required on every other `run` in this file: the harness still calls the model and the 401 is the proof, but no request is billable.

@@ -75,6 +75,8 @@ the review itself. GitHub posting requires a complete review.
 Environment:
   OPENROUTER_API_KEY             required for run
   UNREAL_HARNESS_LLM_MODEL       default --model
+  UNREAL_REVIEW_SESSION_DIR     absolute harness session directory for run/eval
+                                unset/empty: ~/.local/state/unreal-agent/sessions
   GH_TOKEN                       required for --pr and to post a GitHub review
 `)
 }

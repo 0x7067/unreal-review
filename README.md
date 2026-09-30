@@ -10,6 +10,17 @@ go install ./cmd/unreal-review
 
 Set `OPENROUTER_API_KEY` and `UNREAL_HARNESS_LLM_MODEL` (an OpenRouter model id).
 
+The harness stores sessions and operation data under
+`~/.local/state/unreal-agent/sessions`. To use an existing writable area in a
+sandbox or cloud workspace, set `UNREAL_REVIEW_SESSION_DIR` to an absolute path,
+for example `/workspace/unreal-review-sessions`, outside the repository. The
+directory is created when the agent starts; relative paths and paths that cannot
+be created or written cause an error. This applies to `run` and `eval`. Unset or
+empty keeps the default. Keep the same directory when resuming a review; changing
+it does not migrate existing sessions. `--workspace`, `--out`, and `--agent-log`
+do not change session storage, and the setting grants no additional filesystem
+access.
+
 Install [golangci-lint](https://golangci-lint.run/) v2 for `make fmt` and `make lint`.
 
 ```sh

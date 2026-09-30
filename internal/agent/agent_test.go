@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/unreallabsai/unreal-agent/harness/llm"
+	"github.com/unreallabsai/unreal-agent/harness/session"
+	"github.com/unreallabsai/unreal-agent/harness/sessionstore/localfile"
 
 	"unreal-review/internal/findings"
 	"unreal-review/internal/review"
@@ -98,7 +101,8 @@ func recordedFinding() findings.Finding {
 }
 
 func TestRunRecordsFindingAndSummary(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	directory := filepath.Join(t.TempDir(), "new sessions")
+	t.Setenv(sessionDirectoryEnv, directory)
 	req := reviewRequest(t)
 	adapter := &scriptedAdapter{responses: []llm.Response{
 		toolCallResponse("resp-1"),
@@ -156,10 +160,94 @@ func TestRunRecordsFindingAndSummary(t *testing.T) {
 	if !sawToolResult {
 		t.Errorf("last request carries no tool result for call-1")
 	}
+
+	// Reopen from disk to prove the configured path holds resumable history.
+	store, err := localfile.New(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := store.Resume(t.Context(), session.ID(req.ReviewID))
+	if err != nil {
+		t.Fatalf("resume configured session: %v", err)
+	}
+	if restored.Snapshot.Session.ID != session.ID(req.ReviewID) || len(restored.ExternalInputIDs) == 0 {
+		t.Fatalf("configured session lost its identity or input history: %+v", restored)
+	}
+	info, err := os.Stat(filepath.Join(directory, "operations", req.ReviewID))
+	if err != nil || !info.IsDir() {
+		t.Fatalf("configured operation directory: info=%v err=%v", info, err)
+	}
+}
+
+func TestSessionDirectory(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"unset", "empty"} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(sessionDirectoryEnv, "")
+			if name == "unset" {
+				if err := os.Unsetenv(sessionDirectoryEnv); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := sessionDirectory()
+			want := filepath.Join(home, ".local/state/unreal-agent/sessions")
+			if err != nil || got != want {
+				t.Fatalf("default = (%q, %v), want %q", got, err, want)
+			}
+		})
+	}
+	t.Run("absolute override", func(t *testing.T) {
+		want := filepath.Join(t.TempDir(), "new sessions")
+		t.Setenv(sessionDirectoryEnv, want)
+		got, err := sessionDirectory()
+		if err != nil || got != want {
+			t.Fatalf("override = (%q, %v), want %q", got, err, want)
+		}
+	})
+	for _, directory := range []string{"relative/sessions", ".", "~/sessions", " "} {
+		t.Run(directory, func(t *testing.T) {
+			t.Setenv(sessionDirectoryEnv, directory)
+			if _, err := sessionDirectory(); err == nil || !strings.Contains(err.Error(), "UNREAL_REVIEW_SESSION_DIR must be an absolute path") {
+				t.Fatalf("relative override error = %v", err)
+			}
+		})
+	}
+}
+
+func TestRunRejectsInvalidSessionDirectoryBeforeModel(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(file, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, directory, want string
+	}{
+		{"relative", "relative/sessions", "resolve session directory: UNREAL_REVIEW_SESSION_DIR must be an absolute path"},
+		{"file", file, "open session store:"},
+		{"file parent", filepath.Join(file, "sessions"), "open session store:"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(sessionDirectoryEnv, tc.directory)
+			adapter := &scriptedAdapter{}
+			_, err := (Harness{}).run(t.Context(), adapter, reviewRequest(t))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("run error = %v, want %q", err, tc.want)
+			}
+			if len(adapter.requests) != 0 {
+				t.Fatal("invalid session directory reached the model")
+			}
+		})
+	}
+	if got, err := os.ReadFile(file); err != nil || string(got) != "keep" {
+		t.Fatalf("existing file changed: got %q, err=%v", got, err)
+	}
 }
 
 func TestRunCorrectsBrokenSummary(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv(sessionDirectoryEnv, t.TempDir())
 	req := reviewRequest(t)
 	adapter := &scriptedAdapter{responses: []llm.Response{
 		toolCallResponse("resp-1"),
@@ -198,7 +286,7 @@ func TestRunCorrectsBrokenSummary(t *testing.T) {
 }
 
 func TestRunFailsAfterRepeatedSummaryViolations(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv(sessionDirectoryEnv, t.TempDir())
 	req := reviewRequest(t)
 	adapter := &scriptedAdapter{responses: []llm.Response{
 		toolCallResponse("resp-1"),
@@ -229,7 +317,7 @@ func TestRunFailsAfterRepeatedSummaryViolations(t *testing.T) {
 }
 
 func TestRunRecordsCleanSummaryWithoutFindings(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv(sessionDirectoryEnv, t.TempDir())
 	req := reviewRequest(t)
 	summary := "No material issues in the reviewed registry and workflow changes."
 	adapter := &scriptedAdapter{responses: []llm.Response{
@@ -363,7 +451,7 @@ func TestOpenRouterBase(t *testing.T) {
 }
 
 func TestHarnessRunRejectsNonLoopbackOpenRouter(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv(sessionDirectoryEnv, t.TempDir())
 	t.Setenv(openRouterBaseEnv, "https://openrouter.ai/api/v1")
 	_, err := (Harness{APIKey: "dummy", ThinkingLevel: "high"}).Run(t.Context(), reviewRequest(t))
 	if err == nil || !strings.Contains(err.Error(), "not loopback") {
@@ -372,7 +460,7 @@ func TestHarnessRunRejectsNonLoopbackOpenRouter(t *testing.T) {
 }
 
 func TestHarnessRunUsesLocalOpenRouterAndReports401(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv(sessionDirectoryEnv, t.TempDir())
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)

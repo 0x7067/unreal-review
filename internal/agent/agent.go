@@ -40,6 +40,7 @@ const (
 	openRouterBaseEnv     = "UNREAL_REVIEW_OPENROUTER_API"
 	toolHeartbeatInterval = 10 * time.Minute
 	sessionDirectoryName  = ".local/state/unreal-agent/sessions"
+	sessionDirectoryEnv   = "UNREAL_REVIEW_SESSION_DIR"
 )
 
 // OpenRouterBase talks to openrouter.ai unless UNREAL_REVIEW_OPENROUTER_API
@@ -287,6 +288,12 @@ func openSession(ctx context.Context, store *localfile.Store, id session.ID) (se
 }
 
 func sessionDirectory() (string, error) {
+	if directory := os.Getenv(sessionDirectoryEnv); directory != "" {
+		if !filepath.IsAbs(directory) {
+			return "", fmt.Errorf("%s must be an absolute path", sessionDirectoryEnv)
+		}
+		return directory, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("find home directory: %w", err)
