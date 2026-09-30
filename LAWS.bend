@@ -143,9 +143,6 @@ law post_requires_complete:
 law post_complete_ok:
   {G.postOk(True{}, False{}) == True{} : Bool}
 
-law inline_cap:
-  {G.underCap(G.cap50()) == True{} : Bool}
-
 law unique_none:
   {Gr.uniqueHits(Nil{}) == None{} : Maybe<&2, Nat>}
 

@@ -14,7 +14,7 @@ import (
 //
 // Nothing tied that model to this code, so those proofs could stay green while
 // this package broke either one. These cases assert the same two properties of
-// the real clusterFiles: every input file lands in exactly one group, and every
+// the real clusterFilesEdges: every input file lands in exactly one group, and every
 // group it emits respects the caps.
 //
 // Groups of one file are exempt, matching CappedFiles in the model: a single
@@ -22,7 +22,7 @@ import (
 func TestClusterFilesHoldsBendInvariants(t *testing.T) {
 	for _, tc := range clusterScenarios() {
 		t.Run(tc.name, func(t *testing.T) {
-			groups := clusterFiles(tc.files)
+			groups := clusterFilesEdges(tc.files, nil)
 
 			want := pathCounts(tc.files)
 			var got []string
@@ -31,7 +31,7 @@ func TestClusterFilesHoldsBendInvariants(t *testing.T) {
 			}
 			sort.Strings(got)
 			if fmt.Sprint(got) != fmt.Sprint(want) {
-				t.Errorf("clusterFiles did not keep every file exactly once:\n want %v\n got  %v", want, got)
+				t.Errorf("clusterFilesEdges did not keep every file exactly once:\n want %v\n got  %v", want, got)
 			}
 
 			for _, g := range groups {
