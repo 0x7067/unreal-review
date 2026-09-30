@@ -1,0 +1,18 @@
+internal/agent/agent.go
+  h_29be57c0addd47 216-217
+internal/agent/strategy.go
+  h_29be57c0addd47 14
+internal/agent/strategy_test.go
+  h_29be57c0addd47 51,81,98-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d18aeb86f4855442be6c98a45f24a08d06442cbe",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
