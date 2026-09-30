@@ -85,6 +85,16 @@ show_findings() {
 	fi
 }
 
+# One dump for a non-zero review and for a smoke-gate miss, so the stderr and
+# findings output cannot drift apart again.
+fail_review() {
+	local message=$1 code=$2
+	echo "canary-live: $message" >&2
+	show_stderr
+	show_findings
+	exit "$code"
+}
+
 if [ $# -gt 0 ]; then
 	case $1 in
 	-h | --help | help)
@@ -155,10 +165,7 @@ code=$?
 set -e
 
 if [ "$code" -ne 0 ]; then
-	echo "canary-live: review exited $code" >&2
-	show_stderr
-	show_findings
-	exit "$code"
+	fail_review "review exited $code" "$code"
 fi
 
 set +e
@@ -202,8 +209,5 @@ PY
 gate=$?
 set -e
 if [ "$gate" -ne 0 ]; then
-	echo "canary-live: smoke gate failed" >&2
-	show_stderr
-	show_findings
-	exit "$gate"
+	fail_review "smoke gate failed" "$gate"
 fi
