@@ -61,6 +61,29 @@ sys.stdout.write(text)
 PY
 }
 
+show_stderr() {
+	if [ -s "$stderr" ]; then
+		redact_file "$stderr" >&2
+	fi
+}
+
+# Print the findings file before the EXIT trap deletes it. Cap the dump so a
+# long model reply stays readable; the run record is the first line.
+show_findings() {
+	if [ ! -s "$out" ]; then
+		echo "canary-live: findings: empty" >&2
+		return
+	fi
+	echo "canary-live: findings:" >&2
+	local redacted="$work/findings.redacted" lines
+	redact_file "$out" >"$redacted"
+	head -n 80 "$redacted" >&2
+	lines=$(wc -l <"$redacted" | tr -d ' ')
+	if [ "$lines" -gt 80 ]; then
+		echo "canary-live: findings truncated after 80 lines" >&2
+	fi
+}
+
 if [ $# -gt 0 ]; then
 	case $1 in
 	-h | --help | help)
@@ -132,12 +155,11 @@ set -e
 
 if [ "$code" -ne 0 ]; then
 	echo "canary-live: review exited $code" >&2
-	if [ -s "$stderr" ]; then
-		redact_file "$stderr" >&2
-	fi
+	show_stderr
 	exit "$code"
 fi
 
+set +e
 python3 - "$out" "$stderr" "$UNREAL_HARNESS_LLM_MODEL" "$EMPTY_DIFF_SHA" <<'PY'
 import json, pathlib, sys
 path, stderr_path, model, empty = sys.argv[1:5]
@@ -175,3 +197,11 @@ cost = next((line for line in stderr.splitlines() if line.startswith("cost:")), 
 print(f"canary-live: ok model={model} requests={requests}")
 print(f"canary-live: {cost}")
 PY
+gate=$?
+set -e
+if [ "$gate" -ne 0 ]; then
+	echo "canary-live: smoke gate failed" >&2
+	show_stderr
+	show_findings
+	exit "$gate"
+fi
