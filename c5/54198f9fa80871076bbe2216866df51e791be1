@@ -1,0 +1,22 @@
+.agents/skills/principle-test-behavior-not-implementation/SKILL.md
+  h_29be57c0addd47 1-37
+.claude/skills/principle-test-behavior-not-implementation
+  h_29be57c0addd47 1
+.cursor/skills/principle-test-behavior-not-implementation
+  h_29be57c0addd47 1
+.grok/skills/principle-test-behavior-not-implementation
+  h_29be57c0addd47 1
+AGENTS.md
+  h_29be57c0addd47 33-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c554198f9fa80871076bbe2216866df51e791be1",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
