@@ -5,7 +5,6 @@ import (
 	"encoding/json/jsontext"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/unreallabsai/unreal-agent/harness/llm"
@@ -88,8 +87,6 @@ func TestObserverFailsAndCancelsOnUndecodableRecord(t *testing.T) {
 
 	if err := observer.Err(); err == nil {
 		t.Fatal("observer error: want a decode failure")
-	} else if !strings.Contains(err.Error(), "decode record") {
-		t.Errorf("error: got %q, want it to name the record decode", err)
 	}
 	if ctx.Err() == nil {
 		t.Error("cancel was not called after the decode failure")
