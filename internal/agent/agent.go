@@ -213,7 +213,8 @@ func bashBudgetSystemPrompt(systemPrompt string, maxCalls int) string {
 	if maxCalls <= 0 {
 		return systemPrompt
 	}
-	return systemPrompt + fmt.Sprintf("\nThis run has a strict budget of %d Bash tool calls. Prioritize the highest-value evidence, then record supported findings and finalize before the budget is exhausted.", maxCalls)
+	return systemPrompt + fmt.Sprintf(`
+This run has a strict budget of %d Bash tool calls. The supplied task prompt already contains the changed scope, so start from it. Do not rerun the whole diff, diff stat, or name-only listing unless a precise ambiguity requires it. First identify the few highest-risk candidate defects. Use Bash only to test a concrete premise in callers, configuration, schemas, tests, or the base revision. Batch related narrow reads and searches into one command, use exact source revisions, and issue at most four Bash calls per model turn. Treat roughly the first three quarters of the budget as triage and reserve the rest for confirming the strongest candidates and their anchors. Record a finding as soon as its evidence is sufficient. Stop exploring low-confidence branches and finalize once no high-value premise remains; a clean result is valid.`, maxCalls)
 }
 
 type harnessSession struct {

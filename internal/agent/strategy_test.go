@@ -48,7 +48,7 @@ func TestReviewPipelineWiresAutomaticPlanningWithoutPerChildTimeouts(t *testing.
 	direct := planned.Direct.(Harness)
 	child := planned.Agent.(Harness)
 	verifier := planned.Verifier.(Harness)
-	if planned.Timeout != time.Minute || planned.Parallel != 4 || planned.Config != "single/high/bash=16" || child.Timeout != 0 || verifier.Timeout != 0 {
+	if planned.Timeout != time.Minute || planned.Parallel != 4 || planned.Config != "single/high/bash=32" || child.Timeout != 0 || verifier.Timeout != 0 {
 		t.Fatalf("pipeline=%+v direct=%+v child=%+v verifier=%+v", planned, direct, child, verifier)
 	}
 	if direct.MaxBashCalls != 0 || child.MaxBashCalls != plannedMaxBashCalls || verifier.MaxBashCalls != plannedMaxBashCalls {
@@ -78,7 +78,7 @@ func TestReviewPipelineUsesDiscoveryOnlyFocusedOnlyForPlans(t *testing.T) {
 	}
 	directHarness := direct.Agent.(Harness)
 	discoveryHarness := discovery.Agent.(Harness)
-	if planned.Parallel != 2 || planned.Config != "focused/high/bash=16" {
+	if planned.Parallel != 2 || planned.Config != "focused/high/bash=32" {
 		t.Fatalf("planned parallel/config = %d/%q", planned.Parallel, planned.Config)
 	}
 	if directHarness.MaxBashCalls != 0 || discoveryHarness.MaxBashCalls != plannedMaxBashCalls || verifier.MaxBashCalls != plannedMaxBashCalls {
@@ -95,7 +95,19 @@ func TestBashBudgetSystemPrompt(t *testing.T) {
 		t.Fatalf("unlimited prompt = %q", got)
 	}
 	got := bashBudgetSystemPrompt(base, plannedMaxBashCalls)
-	if !strings.HasPrefix(got, base) || !strings.Contains(got, "strict budget of 16 Bash tool calls") || !strings.Contains(got, "finalize before the budget is exhausted") {
+	for _, required := range []string{
+		"strict budget of 32 Bash tool calls",
+		"Do not rerun the whole diff",
+		"issue at most four Bash calls per model turn",
+		"reserve the rest for confirming the strongest candidates",
+		"Record a finding as soon as its evidence is sufficient",
+		"a clean result is valid",
+	} {
+		if !strings.Contains(got, required) {
+			t.Fatalf("bounded prompt missing %q: %q", required, got)
+		}
+	}
+	if !strings.HasPrefix(got, base) {
 		t.Fatalf("bounded prompt = %q", got)
 	}
 }

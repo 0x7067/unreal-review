@@ -11,7 +11,7 @@ import (
 
 // plannedMaxBashCalls bounds exploration in each planned discovery or
 // verification Run while leaving direct reviews unlimited.
-const plannedMaxBashCalls = 16
+const plannedMaxBashCalls = 32
 
 // Reviewer selects an adapter strategy without changing the review product.
 // Single remains the low-cost baseline until the focused strategy is measured.
