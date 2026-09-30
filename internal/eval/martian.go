@@ -83,7 +83,7 @@ type Pair struct {
 	Finding int `json:"finding"`
 }
 
-func ParsePairs(content string, golden, produced int) ([]Pair, error) {
+func parsePairs(content string, golden, produced int) ([]Pair, error) {
 	start, end := strings.Index(content, "{"), strings.LastIndex(content, "}")
 	if start < 0 || end < start {
 		return nil, fmt.Errorf("judge reply has no JSON object")
@@ -127,11 +127,19 @@ func (c Counts) Add(o Counts) Counts {
 }
 
 func (c Counts) Precision() float64 {
-	return ratio(c.TP, c.TP+c.FP)
+	denom := c.TP + c.FP
+	if denom == 0 {
+		return 0
+	}
+	return Agreement(c.TP, denom)
 }
 
 func (c Counts) Recall() float64 {
-	return ratio(c.TP, c.TP+c.FN)
+	denom := c.TP + c.FN
+	if denom == 0 {
+		return 0
+	}
+	return Agreement(c.TP, denom)
 }
 
 func (c Counts) F1() float64 {
@@ -140,13 +148,6 @@ func (c Counts) F1() float64 {
 		return 0
 	}
 	return 2 * p * r / (p + r)
-}
-
-func ratio(hits, total int) float64 {
-	if total == 0 {
-		return 0
-	}
-	return float64(hits) / float64(total)
 }
 
 type MartianScore struct {
@@ -225,7 +226,7 @@ type Judge struct {
 	Base   string
 }
 
-type Verdict struct {
+type verdict struct {
 	Pairs   []Pair
 	CostUSD float64
 }
@@ -245,9 +246,9 @@ func judgePrompt(c MartianCase, produced []findings.Finding) string {
 	return b.String()
 }
 
-func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Finding) (Verdict, error) {
+func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Finding) (verdict, error) {
 	if len(c.Comments) == 0 || len(produced) == 0 {
-		return Verdict{}, nil
+		return verdict{}, nil
 	}
 	body, err := json.Marshal(map[string]any{
 		"model":    j.Model,
@@ -255,25 +256,25 @@ func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Fin
 		"usage":    map[string]bool{"include": true},
 	})
 	if err != nil {
-		return Verdict{}, err
+		return verdict{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(j.Base, "/")+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return Verdict{}, err
+		return verdict{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+j.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return Verdict{}, fmt.Errorf("judge: %w", err)
+		return verdict{}, fmt.Errorf("judge: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return Verdict{}, fmt.Errorf("judge: %w", err)
+		return verdict{}, fmt.Errorf("judge: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return Verdict{}, fmt.Errorf("judge: %s: %s", resp.Status, strings.TrimSpace(string(raw)))
+		return verdict{}, fmt.Errorf("judge: %s: %s", resp.Status, strings.TrimSpace(string(raw)))
 	}
 	var reply struct {
 		Choices []struct {
@@ -286,18 +287,18 @@ func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Fin
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &reply); err != nil {
-		return Verdict{}, fmt.Errorf("judge: %w", err)
+		return verdict{}, fmt.Errorf("judge: %w", err)
 	}
 	if len(reply.Choices) == 0 {
-		return Verdict{CostUSD: reply.Usage.Cost}, fmt.Errorf("judge: no choices")
+		return verdict{CostUSD: reply.Usage.Cost}, fmt.Errorf("judge: no choices")
 	}
-	pairs, err := ParsePairs(reply.Choices[0].Message.Content, len(c.Comments), len(produced))
-	return Verdict{Pairs: pairs, CostUSD: reply.Usage.Cost}, err
+	pairs, err := parsePairs(reply.Choices[0].Message.Content, len(c.Comments), len(produced))
+	return verdict{Pairs: pairs, CostUSD: reply.Usage.Cost}, err
 }
 
 func RunMartian(ctx context.Context, c MartianCase, root string, opts Options, judge Judge, profile string) (MartianScore, error) {
 	dir := filepath.Join(root, c.Name)
-	head, err := CheckoutMartian(ctx, c, dir)
+	head, err := checkoutMartian(ctx, c, dir)
 	if err != nil {
 		return MartianScore{Score: Score{Name: c.Name}}, fmt.Errorf("set up %s: %w", c.Name, err)
 	}
@@ -325,7 +326,7 @@ func RunMartian(ctx context.Context, c MartianCase, root string, opts Options, j
 	return score, nil
 }
 
-func CheckoutMartian(ctx context.Context, c MartianCase, dir string) (string, error) {
+func checkoutMartian(ctx context.Context, c MartianCase, dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
