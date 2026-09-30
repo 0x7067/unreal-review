@@ -223,6 +223,26 @@ now use fixed author/committer dates and eval reuses an existing output. Local G
 regressions prove stable synthetic SHAs and that evaluation options do not force
 a fresh review.
 
+A later packed-plan acceptance run completed the same exact 252,701-byte source
+at diff SHA `b4588ae8...f6f94d`. The plan contained three local and three boundary
+tasks. All six discovery tasks completed privately, independent verification
+confirmed six findings, and semantic consolidation published one complete root
+report with two errors, two warnings, and two notes. Cumulative measured usage,
+including failed verifier/consolidator attempts that were durably accounted, was
+$0.48495583 across 96 requests. Recomputing the Git range reproduced both the
+252,701-byte size and full source SHA before acceptance.
+
+The run exposed two implementation defects that were fixed in-place and resumed
+without repeating completed discovery: verifier output sometimes preserved the
+canonical candidate ID only as an exact body prefix, and consolidation of already
+confirmed records redundantly explored the workspace. Candidate-ID recovery now
+requires an exact known ID and canonical location. Consolidation now has Bash
+disabled, uses only supplied confirmed records, and completed its final retry in
+16 seconds and two requests. The execution host's 600-second process cap still
+required durable resumes during slower stages. This is end-to-end execution and
+checkpoint evidence, not a Martian precision/recall score; quality comparison
+still requires the pinned judge and extraction pipeline.
+
 ### OpenRouter batching and decomposition diagnosis, 2026-09-30
 
 The packed Sentry plan is 252,701 bytes across 106 files at exact source SHA

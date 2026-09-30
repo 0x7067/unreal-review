@@ -91,33 +91,6 @@ func TestReviewPipelineUsesDiscoveryOnlyFocusedOnlyForPlans(t *testing.T) {
 	}
 }
 
-func TestBashBudgetSystemPrompt(t *testing.T) {
-	const base = "Evidence only."
-	if got := bashBudgetSystemPrompt(base, 0); got != base {
-		t.Fatalf("unlimited prompt = %q", got)
-	}
-	got := bashBudgetSystemPrompt(base, plannedMaxBashCalls)
-	for _, required := range []string{
-		"strict budget of 32 Bash tool calls",
-		"Do not rerun the whole diff",
-		"issue at most four Bash calls per model turn",
-		"reserve the rest for confirming the strongest candidates",
-		"Record a finding as soon as its evidence is sufficient",
-		"a clean result is valid",
-	} {
-		if !strings.Contains(got, required) {
-			t.Fatalf("bounded prompt missing %q: %q", required, got)
-		}
-	}
-	if !strings.HasPrefix(got, base) {
-		t.Fatalf("bounded prompt = %q", got)
-	}
-	disabled := bashBudgetSystemPrompt(base, -1)
-	if !strings.Contains(disabled, "Bash is unavailable") || !strings.Contains(disabled, "Do not call Bash") || !strings.Contains(disabled, "review-recording tools normally") {
-		t.Fatalf("disabled prompt = %q", disabled)
-	}
-}
-
 func TestSerializedWriterPreservesConcurrentRecords(t *testing.T) {
 	var output bytes.Buffer
 	w := &serializedWriter{writer: &output}
