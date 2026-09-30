@@ -126,27 +126,18 @@ func (h History) HasLGTM(commit string) bool {
 }
 
 func (h History) Reported() []findings.Finding {
-	items := h.posted()
-	out := make([]findings.Finding, len(items))
-	for i, item := range items {
-		out[i] = item.finding
-	}
-	return out
+	return h.posted()
 }
 
-type postedFinding struct {
-	finding findings.Finding
-}
-
-func (h History) posted() []postedFinding {
-	var out []postedFinding
+func (h History) posted() []findings.Finding {
+	var out []findings.Finding
 	for _, comment := range h.Comments {
 		id, ok := github.ParseFinding(comment.Body)
 		if !ok {
 			continue
 		}
 		severity, body := splitPostedBody(comment.Body)
-		out = append(out, postedFinding{finding: findings.Finding{
+		out = append(out, findings.Finding{
 			ID:        id,
 			Path:      comment.Path,
 			StartLine: comment.StartLine,
@@ -154,21 +145,21 @@ func (h History) posted() []postedFinding {
 			Anchor:    anchorOf(comment.Side),
 			Severity:  severity,
 			Body:      body,
-		}})
+		})
 	}
 	for _, review := range h.Reviews {
 		for _, line := range strings.Split(review.Body, "\n") {
 			if item, ok := parseDroppedLine(line); ok {
-				out = append(out, postedFinding{finding: item})
+				out = append(out, item)
 			}
 		}
 	}
 	return out
 }
 
-func alreadyReported(prior []postedFinding, finding findings.Finding) bool {
+func alreadyReported(prior []findings.Finding, finding findings.Finding) bool {
 	for _, item := range prior {
-		if item.finding.ID == finding.ID {
+		if item.ID == finding.ID {
 			return true
 		}
 	}
