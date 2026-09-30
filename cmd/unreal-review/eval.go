@@ -76,7 +76,7 @@ func cmdEval(args []string) error {
 	switch *corpus {
 	case "planted":
 	case "martian":
-		return evalMartian(root, *model, harness, martianFlags{
+		return evalMartian(ctx, root, *model, harness, martianFlags{
 			profile: *profile, parallel: *parallel, cases: *only, judgeModel: *judgeModel, asJSON: *asJSON,
 		})
 	default:
