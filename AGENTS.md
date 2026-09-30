@@ -21,9 +21,7 @@ A new backend, source, or renderer should plug in without changing the findings 
 
 ## Skills
 
-Project skills live only under `.agents/skills/`. The verification skill is [verify-unreal-review](.agents/skills/verify-unreal-review/SKILL.md). `.claude/skills`, `.grok/skills`, and `.cursor/skills` are relative symlinks to `../.agents/skills`. `.claude/settings.json` and the other tool hook and config files stay real files in their tool directories. Do not add `CLAUDE.md`, do not copy these instructions under a tool directory, and do not copy the skill tree back as regular files.
-
-A checkout with `core.symlinks` false writes those three links as text files. Run the scripts from `.agents/skills/verify-unreal-review/scripts/`.
+Canonical skills live in `.agents/skills/`; `.claude/skills`, `.grok/skills`, and `.cursor/skills` are real dirs that symlink each shared skill to it. Verification skill: [verify-unreal-review](.agents/skills/verify-unreal-review/SKILL.md) — run its scripts from `scripts/`. Tool config like `.claude/settings.json` stays a real file. No `CLAUDE.md`; do not copy these instructions into a tool directory.
 
 ## Checks
 
