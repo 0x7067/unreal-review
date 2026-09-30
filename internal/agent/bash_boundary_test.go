@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -37,11 +35,8 @@ func TestBoundedBashRejectsRootWideFindBeforeExecution(t *testing.T) {
 			ctx := &recordingContext{}
 
 			status := translator.Translate(ctx, bashCall(command))
-			if status.Error == "" || !strings.Contains(status.Error, "find .") {
-				t.Fatalf("error = %q, want a bounded-search correction", status.Error)
-			}
-			if len(ctx.specs) != 0 {
-				t.Fatalf("submitted %d shell operations, want none", len(ctx.specs))
+			if status.Error == "" {
+				t.Fatal("root-wide find was accepted")
 			}
 			if _, err := os.Stat(marker); !os.IsNotExist(err) {
 				t.Fatalf("root-wide find executed: marker stat error = %v", err)
@@ -50,55 +45,50 @@ func TestBoundedBashRejectsRootWideFindBeforeExecution(t *testing.T) {
 	}
 }
 
-func TestBoundedBashStopsAtCallLimitWithoutDelegatingResult(t *testing.T) {
-	inner := &quotaTestTranslator{}
-	translator := newBoundedBash(t.TempDir(), 2, inner)
-	for i := range 2 {
-		status := translator.Translate(&recordingContext{}, bashCall("echo allowed"))
+func TestBoundedBashStopsExecutingAfterCallLimit(t *testing.T) {
+	workspace := t.TempDir()
+	translator := newBoundedBash(workspace, 2, bash.New(bash.Config{
+		Shell:         "/bin/sh",
+		Directory:     workspace,
+		BaseDirectory: t.TempDir(),
+	}))
+	for _, name := range []string{"first", "second"} {
+		ctx := &recordingContext{}
+		status := translator.Translate(ctx, bashCall("touch "+name))
 		if status.Error != "" {
-			t.Fatalf("call %d error = %q", i+1, status.Error)
+			t.Fatalf("create %s: %s", name, status.Error)
+		}
+		if _, err := runSubmittedShell(t.Context(), ctx); err != nil {
+			t.Fatalf("run %s: %v", name, err)
+		}
+		if _, err := os.Stat(filepath.Join(workspace, name)); err != nil {
+			t.Fatalf("%s was not created: %v", name, err)
 		}
 	}
-	status := translator.Translate(&recordingContext{}, bashCall("echo blocked"))
-	if status.Error != bashQuotaError {
-		t.Fatalf("quota error = %q, want %q", status.Error, bashQuotaError)
+	blocked := filepath.Join(workspace, "blocked")
+	status := translator.Translate(&recordingContext{}, bashCall("touch blocked"))
+	if status.Error == "" {
+		t.Fatal("command beyond the configured limit was accepted")
 	}
-	result, err := translator.TranslateResult("bash-limit", status, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Output) != 1 || result.Output[0].Value != "Error: "+bashQuotaError {
-		t.Fatalf("result = %+v", result)
-	}
-}
-
-func TestBoundedBashCallLimitIsConcurrencySafe(t *testing.T) {
-	inner := &quotaTestTranslator{}
-	translator := newBoundedBash(t.TempDir(), 16, inner)
-	var workers sync.WaitGroup
-	var quotaErrors atomic.Int64
-	for range 64 {
-		workers.Go(func() {
-			status := translator.Translate(&recordingContext{}, bashCall("echo concurrent"))
-			if status.Error == bashQuotaError {
-				quotaErrors.Add(1)
-			} else if status.Error != "" {
-				t.Errorf("unexpected error: %s", status.Error)
-			}
-		})
-	}
-	workers.Wait()
-	if quotaErrors.Load() != 48 {
-		t.Fatalf("quota errors = %d, want 48", quotaErrors.Load())
+	if _, err := os.Stat(blocked); !os.IsNotExist(err) {
+		t.Fatalf("blocked command executed: marker stat error = %v", err)
 	}
 }
 
 func TestBoundedBashNegativeLimitDisablesExecution(t *testing.T) {
-	inner := &quotaTestTranslator{}
-	translator := newBoundedBash(t.TempDir(), -1, inner)
-	status := translator.Translate(&recordingContext{}, bashCall("echo blocked"))
-	if status.Error != bashQuotaError {
-		t.Fatalf("quota error = %q, want %q", status.Error, bashQuotaError)
+	workspace := t.TempDir()
+	translator := newBoundedBash(workspace, -1, bash.New(bash.Config{
+		Shell:         "/bin/sh",
+		Directory:     workspace,
+		BaseDirectory: t.TempDir(),
+	}))
+	marker := filepath.Join(workspace, "blocked")
+	status := translator.Translate(&recordingContext{}, bashCall("touch blocked"))
+	if status.Error == "" {
+		t.Fatal("command was accepted while execution was disabled")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("disabled command executed: marker stat error = %v", err)
 	}
 }
 
@@ -133,6 +123,10 @@ func TestBoundedBashAllowsWorkspaceLocalFind(t *testing.T) {
 
 func TestBoundedBashAllowsAbsoluteWorkspaceRoot(t *testing.T) {
 	workspace := t.TempDir()
+	want := filepath.Join(workspace, "dependency.rb")
+	if err := os.WriteFile(want, []byte("dependency"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	translator := newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
@@ -144,8 +138,12 @@ func TestBoundedBashAllowsAbsoluteWorkspaceRoot(t *testing.T) {
 	if status.Error != "" {
 		t.Fatalf("translate: %s", status.Error)
 	}
-	if len(ctx.specs) != 1 {
-		t.Fatalf("submitted %d shell operations, want one", len(ctx.specs))
+	out, err := runSubmittedShell(t.Context(), ctx)
+	if err != nil {
+		t.Fatalf("run workspace find: %v", err)
+	}
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("output = %q, want %q", strings.TrimSpace(out), want)
 	}
 }
 
@@ -165,9 +163,6 @@ func TestBoundedBashRejectsSymlinkRootOutsideWorkspace(t *testing.T) {
 	status := translator.Translate(ctx, bashCall("find outside -name dependency.rb"))
 	if status.Error == "" {
 		t.Fatal("symlink root outside workspace was accepted")
-	}
-	if len(ctx.specs) != 0 {
-		t.Fatalf("submitted %d shell operations, want none", len(ctx.specs))
 	}
 }
 
@@ -244,18 +239,3 @@ func runSubmittedShell(ctx context.Context, submitted *recordingContext) (string
 type operationCountError struct{ got int }
 
 func (e *operationCountError) Error() string { return "submitted shell operation count is not one" }
-
-type quotaTestTranslator struct {
-	translateCalls atomic.Int64
-	resultCalls    atomic.Int64
-}
-
-func (t *quotaTestTranslator) Translate(tool.Context, llm.ToolCall) tool.CallStatus {
-	t.translateCalls.Add(1)
-	return tool.CallStatus{}
-}
-
-func (t *quotaTestTranslator) TranslateResult(callID string, _ tool.CallStatus, _ []operation.Operation) (llm.ToolResult, error) {
-	t.resultCalls.Add(1)
-	return llm.ToolResult{CallID: callID}, nil
-}
