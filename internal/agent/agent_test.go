@@ -22,13 +22,11 @@ import (
 type scriptedAdapter struct {
 	mu        sync.Mutex
 	responses []llm.Response
-	requests  []llm.Request
 }
 
-func (a *scriptedAdapter) Respond(ctx context.Context, req llm.Request, _ llm.RequestOptions) (llm.Response, error) {
+func (a *scriptedAdapter) Respond(ctx context.Context, _ llm.Request, _ llm.RequestOptions) (llm.Response, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.requests = append(a.requests, req)
 	if len(a.responses) == 0 {
 		return llm.Response{}, errors.New("script exhausted")
 	}
