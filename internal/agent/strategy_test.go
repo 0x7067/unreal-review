@@ -37,6 +37,45 @@ func TestReviewerStrategyWiring(t *testing.T) {
 	}
 }
 
+func TestReviewPipelineWiresAutomaticPlanningWithoutPerChildTimeouts(t *testing.T) {
+	var log bytes.Buffer
+	h := Harness{APIKey: "dummy", ThinkingLevel: "high", Timeout: time.Minute, Log: &log}
+	pipeline, err := ReviewPipeline("single", h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := pipeline.(Planned)
+	child := planned.Agent.(Harness)
+	verifier := planned.Verifier.(Harness)
+	if planned.Timeout != time.Minute || planned.Parallel != 2 || planned.Config != "single/high" || child.Timeout != 0 || verifier.Timeout != 0 {
+		t.Fatalf("pipeline=%+v child=%+v verifier=%+v", planned, child, verifier)
+	}
+	if child.Log != verifier.Log {
+		t.Fatal("discovery and verification must share one serialized log writer")
+	}
+	if _, ok := child.Log.(*serializedWriter); !ok {
+		t.Fatalf("shared log must serialize writes: %T", child.Log)
+	}
+}
+
+func TestReviewPipelineUsesDiscoveryOnlyFocusedOnlyForPlans(t *testing.T) {
+	var log bytes.Buffer
+	h := Harness{APIKey: "dummy", ThinkingLevel: "high", Timeout: time.Minute, Log: &log}
+	pipeline, err := ReviewPipeline("focused", h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := pipeline.(Planned)
+	direct := planned.Direct.(Focused)
+	discovery := planned.Agent.(Focused)
+	if direct.DiscoveryOnly || !discovery.DiscoveryOnly {
+		t.Fatalf("direct=%+v discovery=%+v", direct, discovery)
+	}
+	if direct.Agent != discovery.Agent {
+		t.Fatal("direct and planned focused adapters must share the same serialized harness")
+	}
+}
+
 func TestSerializedWriterPreservesConcurrentRecords(t *testing.T) {
 	var output bytes.Buffer
 	w := &serializedWriter{writer: &output}

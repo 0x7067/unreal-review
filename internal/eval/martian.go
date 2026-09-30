@@ -250,11 +250,19 @@ func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Fin
 	if len(c.Comments) == 0 || len(produced) == 0 {
 		return verdict{}, nil
 	}
-	body, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"model":    j.Model,
 		"messages": []map[string]string{{"role": "user", "content": judgePrompt(c, produced)}},
 		"usage":    map[string]bool{"include": true},
-	})
+	}
+	if strings.HasPrefix(j.Model, "anthropic/") {
+		payload["provider"] = map[string]any{
+			"only":               []string{"anthropic"},
+			"allow_fallbacks":    false,
+			"require_parameters": true,
+		}
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return verdict{}, err
 	}
@@ -309,6 +317,7 @@ func RunMartian(ctx context.Context, c MartianCase, root string, opts Options, j
 		Spec:      review.Spec{Commit: head},
 		Out:       findingsPath,
 		Fresh:     true,
+		Decompose: opts.Decompose,
 		Model:     opts.Model,
 		Agent:     opts.Agent,
 	})
@@ -331,7 +340,8 @@ func checkoutMartian(ctx context.Context, c MartianCase, dir string) (string, er
 		return "", err
 	}
 	git := func(args ...string) (string, error) {
-		cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "user.name=eval", "-c", "user.email=eval@invalid"}, args...)...)
+		args = append([]string{"-c", "user.name=eval", "-c", "user.email=eval@invalid", "-c", "core.hooksPath=" + os.DevNull, "-c", "commit.gpgSign=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0", "-c", "core.fsmonitor=false"}, args...)
+		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = dir
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
@@ -342,7 +352,7 @@ func checkoutMartian(ctx context.Context, c MartianCase, dir string) (string, er
 		return strings.TrimSpace(string(out)), nil
 	}
 	steps := [][]string{
-		{"init", "-q"},
+		{"init", "--template=", "-q"},
 		{"fetch", "-q", "--depth=1", "https://github.com/" + c.Repo + ".git", c.Head, c.Base},
 	}
 	for _, step := range steps {

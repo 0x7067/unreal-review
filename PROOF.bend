@@ -6,6 +6,7 @@ import ./spec/checkpoint.bend as C
 import ./spec/github.bend as G
 import ./spec/group.bend as Gr
 import ./spec/focused.bend as Fo
+import ./spec/plan.bend as P
 import ./LAWS.bend as Laws
 
 def Laws.omitted_status_complete():
@@ -238,6 +239,111 @@ def Laws.oversized_diff_refused(empty, fresh, status, same):
   {==}
 
 def Laws.diff_within_limit_decides_as_before(empty, fresh, status, same):
+  {==}
+
+def Laws.invalid_plan_refused(empty, fresh, status, same):
+  {==}
+
+def Laws.valid_plan_decides_as_before(empty, fresh, status, same):
+  {==}
+
+def Laws.planned_prompt_cap():
+  {==}
+
+def Laws.planned_direct_threshold():
+  {==}
+
+def Laws.planned_all_units_bounded(sizes, ok):
+  P.boundsOf(sizes, P.promptCap(), ok)
+
+def Laws.planned_partition_no_gaps_or_overlap(spans, total, ok):
+  P.partitionOf(spans, 0n, total, ok)
+
+def Laws.planned_units_over_cap_refused():
+  {==}
+
+def Laws.planned_units_at_cap_allowed():
+  {==}
+
+def Laws.planned_full_ownership():
+  {==}
+
+def Laws.planned_ownership_gap_refused():
+  {==}
+
+def Laws.planned_ownership_overlap_refused():
+  {==}
+
+def Laws.planned_ownership_tail_required():
+  {==}
+
+def Laws.planned_giant_line_refused(total, spans, sizes, ids):
+  {==}
+
+def Laws.planned_boundary_context_can_overlap():
+  {==}
+
+def Laws.planned_boundary_cannot_own(spans, context):
+  {==}
+
+def Laws.bounded_full_plan_accepted():
+  {==}
+
+def Laws.unbounded_plan_refused():
+  {==}
+
+def Laws.planned_coverage_exact_all():
+  {==}
+
+def Laws.planned_coverage_missing_local():
+  {==}
+
+def Laws.planned_coverage_missing_boundary():
+  {==}
+
+def Laws.planned_coverage_missing_verification():
+  {==}
+
+def Laws.planned_coverage_same_digest_required():
+  {==}
+
+def Laws.planned_coverage_binds_digest(digest, returned, required, completed, verified, ok):
+  P.digestOf(digest, returned, required, completed, verified, ok)
+
+def Laws.planned_coverage_duplicate_refused():
+  {==}
+
+def Laws.planned_coverage_unexpected_refused():
+  {==}
+
+def Laws.planned_completion_needs_summary():
+  {==}
+
+def Laws.planned_completion_needs_cost():
+  {==}
+
+def Laws.planned_completion_needs_valid_plan():
+  {==}
+
+def Laws.planned_completion_needs_coverage():
+  {==}
+
+def Laws.planned_completion_needs_unchanged_source():
+  {==}
+
+def Laws.planned_completion_all_ready():
+  {==}
+
+def Laws.incomplete_planned_review_no_receipt():
+  {==}
+
+def Laws.incomplete_planned_review_not_complete():
+  {==}
+
+def Laws.changed_planned_source_not_complete():
+  {==}
+
+def Laws.complete_planned_pipeline():
   {==}
 
 # INTERNAL adapter lemmas. These certify the hand-written mechanics abstraction,

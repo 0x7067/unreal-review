@@ -20,6 +20,140 @@ import (
 
 type focusedTestModel struct{ responses []llm.Response }
 
+func TestFocusedVerifierSourcePrefixAndFinalPromptBound(t *testing.T) {
+	for _, mode := range []string{"near-cap-diff", "oversized-prefix"} {
+		t.Run(mode, func(t *testing.T) {
+			req := focusedTestRequest(t)
+			source := "Planned discovery task: large\nTask kind: local\nSelected destination: working tree; base abc; full_diff_sha source-sha.\n"
+			if mode == "near-cap-diff" {
+				req.Prompt = source + "```diff\n+near-cap-diff-payload\n" + strings.Repeat("x", review.MaxPlanPromptBytes-1024-len(source)-len("+near-cap-diff-payload\n")-12) + "```\n"
+			} else {
+				req.Prompt = source + strings.Repeat("p", review.MaxPlanPromptBytes-100) + "\n```diff\n+small\n```\n"
+			}
+			var mu sync.Mutex
+			discovery, verification := 0, 0
+			fake := focusedTestRunner(func(_ context.Context, child review.AgentRequest) (review.AgentResult, error) {
+				if focusedTestStage(child) == "verification" {
+					verification++
+					if len(child.Prompt) > review.MaxPlanPromptBytes || strings.Contains(child.Prompt, "near-cap-diff-payload") || strings.Contains(child.Prompt, "```diff") || !strings.Contains(child.Prompt, "full_diff_sha source-sha") {
+						return review.AgentResult{}, errors.New("focused verification source/framing unbounded")
+					}
+					items, e := focusedTestCandidates(child)
+					if e != nil {
+						return review.AgentResult{}, e
+					}
+					return focusedTestEmit(child, items)
+				}
+				mu.Lock()
+				discovery++
+				mu.Unlock()
+				if !strings.HasPrefix(child.Prompt, req.Prompt) {
+					return review.AgentResult{}, errors.New("discovery semantics changed")
+				}
+				return focusedTestEmit(child, []findings.Finding{focusedTestIssue("same")})
+			})
+			result, e := (Focused{Agent: fake}).Run(t.Context(), req)
+			if discovery != 4 {
+				t.Fatalf("discovery calls %d", discovery)
+			}
+			if mode == "near-cap-diff" {
+				if e != nil || verification != 1 || result.Cost.Requests != 5 {
+					t.Fatalf("near-cap %+v %v calls%d", result, e, verification)
+				}
+			} else {
+				if e == nil || !strings.Contains(e.Error(), "verification prompt exceeds") || verification != 0 || result.Cost.Requests != 4 {
+					t.Fatalf("oversized prefix %+v %v calls%d", result, e, verification)
+				}
+				if _, e := os.Stat(req.FindingsPath); !errors.Is(e, os.ErrNotExist) {
+					t.Fatal("unsupported prompt published")
+				}
+			}
+		})
+	}
+}
+
+func TestFocusedDiscoveryOnlyPlannedPipelineUsesOuterVerifier(t *testing.T) {
+	req := focusedTestRequest(t)
+	taskSource := "Selected destination: working tree; base abc; full_diff_sha source-sha.\n"
+	taskPrompt := taskSource + "```diff\n+bounded-planned-diff\n" + strings.Repeat("x", review.MaxPlanPromptBytes-1024-len(taskSource)-len("+bounded-planned-diff\n")-12) + "```\n"
+	req.Plan = &review.ReviewPlan{Version: "test", Digest: "mode-plan", Tasks: []review.PlanTask{{ID: "large", Kind: "local", Prompt: taskPrompt}}}
+	var mu sync.Mutex
+	lenses := map[string]bool{}
+	innerCalls, outerCalls := 0, 0
+	discovery := focusedTestRunner(func(_ context.Context, child review.AgentRequest) (review.AgentResult, error) {
+		stage := focusedTestStage(child)
+		if stage == "verification" || strings.Contains(child.Prompt, "Verification and semantic deduplication:") {
+			return review.AgentResult{}, errors.New("inner focused verifier was called")
+		}
+		if len(child.Prompt) > review.MaxPlanPromptBytes || child.Plan != nil || !strings.Contains(child.SystemPrompt, "UNVERIFIED") || !strings.Contains(child.Prompt, "bounded-planned-diff") {
+			return review.AgentResult{}, errors.New("unbounded or nonprivate focused discovery")
+		}
+		mu.Lock()
+		lenses[stage] = true
+		innerCalls++
+		mu.Unlock()
+		return focusedTestEmit(child, []findings.Finding{focusedTestIssue("shared")})
+	})
+	verifier := focusedTestRunner(func(_ context.Context, child review.AgentRequest) (review.AgentResult, error) {
+		outerCalls++
+		if len(child.Prompt) > review.MaxPlanPromptBytes || !strings.HasPrefix(child.Prompt, "Planned verification batch:") {
+			return review.AgentResult{}, errors.New("unexpected outer verifier framing")
+		}
+		if _, e := os.Stat(req.FindingsPath); !errors.Is(e, os.ErrNotExist) {
+			return review.AgentResult{}, errors.New("private candidates published early")
+		}
+		_, raw, ok := strings.Cut(child.Prompt, "Candidate JSON:\n")
+		if !ok {
+			return review.AgentResult{}, errors.New("no outer candidates")
+		}
+		var items []findings.Finding
+		if e := json.Unmarshal([]byte(raw), &items); e != nil {
+			return review.AgentResult{}, e
+		}
+		if len(items) != 1 || items[0].ID != "shared" {
+			return review.AgentResult{}, errors.New("private deterministic candidate union incorrect")
+		}
+		return focusedTestEmit(child, items)
+	})
+	result, e := (Planned{Agent: Focused{Agent: discovery, DiscoveryOnly: true}, Verifier: verifier}).Run(t.Context(), req)
+	if e != nil || innerCalls != 4 || len(lenses) != 4 || outerCalls != 1 || result.Cost.Requests != 5 || result.Coverage == nil {
+		t.Fatalf("pipeline %+v %v inner%d outer%d lenses%v", result, e, innerCalls, outerCalls, lenses)
+	}
+	report, e := findings.ReadFile(req.FindingsPath)
+	if e != nil || len(report.Findings) != 1 || strings.Contains(report.Summary, "UNVERIFIED") {
+		t.Fatalf("outer final report %+v %v", report, e)
+	}
+}
+
+func TestFocusedDiscoveryOnlyModeIsImmutableOnResume(t *testing.T) {
+	req := focusedTestRequest(t)
+	fake := focusedTestRunner(func(_ context.Context, child review.AgentRequest) (review.AgentResult, error) {
+		if focusedTestStage(child) == "verification" {
+			return review.AgentResult{}, errors.New("private mode invoked verifier")
+		}
+		return focusedTestEmit(child, []findings.Finding{focusedTestIssue("same")})
+	})
+	adapter := Focused{Agent: fake, DiscoveryOnly: true}
+	first, e := adapter.Run(t.Context(), req)
+	if e != nil || first.Cost.Requests != 4 {
+		t.Fatalf("private %+v %v", first, e)
+	}
+	report, e := findings.ReadFile(req.FindingsPath)
+	if e != nil || len(report.Findings) != 1 || !strings.Contains(report.Summary, "UNVERIFIED") {
+		t.Fatalf("private candidates %+v %v", report, e)
+	}
+	req.Resuming = true
+	req.PriorCost = first.Cost
+	again, e := adapter.Run(t.Context(), req)
+	if e != nil || again.Cost.Recorded() {
+		t.Fatalf("private resume %+v %v", again, e)
+	}
+	adapter.DiscoveryOnly = false
+	if _, e := adapter.Run(t.Context(), req); e == nil || !strings.Contains(e.Error(), "configuration/source mismatch") {
+		t.Fatalf("mode switch accepted %v", e)
+	}
+}
+
 func (m *focusedTestModel) Respond(_ context.Context, _ llm.Request, _ llm.RequestOptions) (llm.Response, error) {
 	if len(m.responses) == 0 {
 		return llm.Response{}, errors.New("focused model exhausted")
