@@ -1,0 +1,16 @@
+.codex/hooks.json
+  h_29be57c0addd47 46-47
+.cursor/hooks.json
+  h_29be57c0addd47 25-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "95c3e0d51b91ab062ca457fbec106111012df8ea",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
