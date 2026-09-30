@@ -1,0 +1,26 @@
+README.md
+  h_29be57c0addd47 83-85
+cmd/unreal-review/canary_large_test.go
+  h_29be57c0addd47 110-111,116,374,451-452,454-459,806
+docs/research/martian-improvements.md
+  h_29be57c0addd47 202-242
+internal/eval/martian.go
+  h_29be57c0addd47 315,330-376,381,391
+internal/eval/martian_test.go
+  h_29be57c0addd47 9-10,16-62
+internal/review/plan.go
+  h_29be57c0addd47 107-121,123-131,133-134,136-143,146,150
+internal/review/plan_test.go
+  h_29be57c0addd47 86-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29b79d5f65e5273e795ad61f76493ac65258b417",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
