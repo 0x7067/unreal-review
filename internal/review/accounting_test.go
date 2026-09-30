@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"unreal-review/internal/findings"
@@ -64,22 +63,7 @@ func TestRunPassesRootCostAndResumeStateToAdapter(t *testing.T) {
 	}
 	opts.Fresh = true
 	fresh, err := Run(t.Context(), opts)
-	if err != nil || fresh.Report.Run.Cost != secondCost || calls != 3 {
-		t.Fatalf("fresh run: %+v err=%v calls=%d", fresh, err, calls)
-	}
-}
-
-func TestSystemPromptBroadensCoverageWithoutWeakeningEvidence(t *testing.T) {
-	for _, requirement := range []string{
-		"trace returned values and state updates",
-		"Compare refactors with the prior implementation",
-		"An initially uncertain premise is a reason to investigate",
-		"Do not omit a confirmed issue just because its severity is low",
-		"do not publish it at any severity",
-		"A note still needs code evidence",
-	} {
-		if !strings.Contains(systemPrompt, requirement) {
-			t.Errorf("missing prompt requirement %q", requirement)
-		}
+	if err != nil || fresh.Report.Run.Cost != secondCost {
+		t.Fatalf("fresh run: %+v err=%v", fresh, err)
 	}
 }

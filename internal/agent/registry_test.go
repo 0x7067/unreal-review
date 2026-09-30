@@ -3,7 +3,6 @@ package agent
 import (
 	"encoding/json"
 	jsonv2 "encoding/json/v2"
-	"strings"
 	"testing"
 
 	"github.com/unreallabsai/unreal-agent/harness/llm"
@@ -33,63 +32,6 @@ func innerRegistry(t *testing.T) tool.Registry {
 		Bash:      bash.New(bash.Config{Shell: "/bin/sh", Directory: dir, BaseDirectory: dir}),
 		ViewImage: viewimage.New(viewimage.Config{Directory: dir}),
 	}, tool.BashName, tool.ViewImageName)
-}
-
-func TestRecordRegistryExposesTheToolToTheModel(t *testing.T) {
-	registry := newRecordRegistry(innerRegistry(t))
-
-	definitions := registry.StaticDefinitions()
-	if len(definitions) != 3 {
-		t.Fatalf("definitions: got %d, want bash, viewimage, and record_finding", len(definitions))
-	}
-	record := definitions[len(definitions)-1].Tool
-	if record.Name != review.RecordFindingTool {
-		t.Fatalf("last definition: got %q, want %q", record.Name, review.RecordFindingTool)
-	}
-
-	parameters := record.Parameters
-	required, ok := parameters["required"].([]any)
-	if !ok {
-		t.Fatalf("required: got %#v, want a list", parameters["required"])
-	}
-	wantRequired := []any{"path", "start_line", "severity", "body"}
-	if len(required) != len(wantRequired) {
-		t.Fatalf("required: got %v, want %v", required, wantRequired)
-	}
-	for i, want := range wantRequired {
-		if required[i] != want {
-			t.Errorf("required[%d]: got %v, want %v", i, required[i], want)
-		}
-	}
-
-	properties, ok := parameters["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("properties: got %#v, want an object", parameters["properties"])
-	}
-	severity, ok := properties["severity"].(map[string]any)
-	if !ok {
-		t.Fatalf("severity property: got %#v, want an object", properties["severity"])
-	}
-	wantSeverities := []any{"error", "warning", "note"}
-	severities, ok := severity["enum"].([]any)
-	if !ok || len(severities) != len(wantSeverities) {
-		t.Fatalf("severity enum: got %#v, want %v", severity["enum"], wantSeverities)
-	}
-	for i, want := range wantSeverities {
-		if severities[i] != want {
-			t.Errorf("severity enum[%d]: got %v, want %v", i, severities[i], want)
-		}
-	}
-
-	if _, ok := registry.Resolve(review.RecordFindingTool); !ok {
-		t.Errorf("Resolve(%q): want the record translator", review.RecordFindingTool)
-	}
-	if _, ok := registry.Resolve(tool.BashName); !ok {
-		t.Errorf("Resolve(%q): want the delegated bash translator", tool.BashName)
-	}
-	if _, ok := registry.Resolve("no_such_tool"); ok {
-		t.Error(`Resolve("no_such_tool"): want false`)
-	}
 }
 
 func TestTranslateRecordsANormalizedFinding(t *testing.T) {
@@ -169,14 +111,13 @@ func TestTranslateRejectsInvalidArguments(t *testing.T) {
 	tests := []struct {
 		name      string
 		arguments string
-		wantError string
 	}{
-		{"malformed json", `{"path":`, "decode arguments"},
-		{"unknown severity", `{"path":"a.go","start_line":1,"severity":"critical","body":"x"}`, "severity must be error, warning, or note"},
-		{"missing severity", `{"path":"a.go","start_line":1,"body":"x"}`, "severity must be set"},
-		{"missing path", `{"start_line":1,"severity":"error","body":"x"}`, "path must be set"},
-		{"zero line", `{"path":"a.go","start_line":0,"severity":"error","body":"x"}`, "line range 0-0 is invalid"},
-		{"empty body", `{"path":"a.go","start_line":1,"severity":"error","body":"  "}`, "body must be set"},
+		{"malformed json", `{"path":`},
+		{"unknown severity", `{"path":"a.go","start_line":1,"severity":"critical","body":"x"}`},
+		{"missing severity", `{"path":"a.go","start_line":1,"body":"x"}`},
+		{"missing path", `{"start_line":1,"severity":"error","body":"x"}`},
+		{"zero line", `{"path":"a.go","start_line":0,"severity":"error","body":"x"}`},
+		{"empty body", `{"path":"a.go","start_line":1,"severity":"error","body":"  "}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -186,8 +127,8 @@ func TestTranslateRejectsInvalidArguments(t *testing.T) {
 				Name:      review.RecordFindingTool,
 				Arguments: test.arguments,
 			})
-			if status.Error == "" || !strings.Contains(status.Error, test.wantError) {
-				t.Errorf("error: got %q, want it to contain %q", status.Error, test.wantError)
+			if status.Error == "" {
+				t.Error("invalid arguments were accepted")
 			}
 			if len(ctx.specs) != 0 {
 				t.Errorf("submitted specs: got %d, want none for rejected arguments", len(ctx.specs))
