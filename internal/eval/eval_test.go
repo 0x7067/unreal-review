@@ -9,7 +9,7 @@ import (
 func TestMatchOverlappingLines(t *testing.T) {
 	gold := []Gold{{Path: "cache.go", StartLine: 20, EndLine: 23, Severity: findings.SeverityError}}
 	produced := []findings.Finding{{Path: "cache.go", StartLine: 21, EndLine: 21}}
-	matched, severityHits, extra := Match(gold, produced)
+	matched, severityHits, extra := match(gold, produced)
 	if matched != 1 || severityHits != 0 || extra != 0 {
 		t.Fatalf("matched=%d severityHits=%d extra=%d, want 1 0 0", matched, severityHits, extra)
 	}
@@ -18,7 +18,7 @@ func TestMatchOverlappingLines(t *testing.T) {
 func TestMatchIgnoresDisjointLines(t *testing.T) {
 	gold := []Gold{{Path: "cache.go", StartLine: 20, EndLine: 23, Severity: findings.SeverityError}}
 	produced := []findings.Finding{{Path: "cache.go", StartLine: 5, EndLine: 8}}
-	matched, _, extra := Match(gold, produced)
+	matched, _, extra := match(gold, produced)
 	if matched != 0 {
 		t.Fatalf("matched=%d, want 0", matched)
 	}
@@ -30,7 +30,7 @@ func TestMatchIgnoresDisjointLines(t *testing.T) {
 func TestMatchRequiresSamePath(t *testing.T) {
 	gold := []Gold{{Path: "cache.go", StartLine: 20, EndLine: 23, Severity: findings.SeverityError}}
 	produced := []findings.Finding{{Path: "other.go", StartLine: 20, EndLine: 23}}
-	matched, _, extra := Match(gold, produced)
+	matched, _, extra := match(gold, produced)
 	if matched != 0 || extra != 1 {
 		t.Fatalf("matched=%d extra=%d, want 0 1", matched, extra)
 	}
@@ -42,7 +42,7 @@ func TestMatchSpanningFindingCountsOnce(t *testing.T) {
 		{Path: "cache.go", StartLine: 20, EndLine: 22, Severity: findings.SeverityError},
 	}
 	produced := []findings.Finding{{Path: "cache.go", StartLine: 10, EndLine: 22}}
-	matched, severityHits, extra := Match(gold, produced)
+	matched, severityHits, extra := match(gold, produced)
 	if matched != 1 || severityHits != 0 || extra != 0 {
 		t.Fatalf("matched=%d severityHits=%d extra=%d, want 1 0 0", matched, severityHits, extra)
 	}
@@ -55,7 +55,7 @@ func TestMatchDuplicateFindingsCountAsExtra(t *testing.T) {
 		{Path: "cache.go", StartLine: 22, EndLine: 22, Severity: findings.SeverityError},
 		{Path: "cache.go", StartLine: 22, EndLine: 23, Severity: findings.SeverityError},
 	}
-	matched, _, extra := Match(gold, produced)
+	matched, _, extra := match(gold, produced)
 	if matched != 1 || extra != 2 {
 		t.Fatalf("matched=%d extra=%d, want 1 2", matched, extra)
 	}
@@ -67,7 +67,7 @@ func TestMatchCountsUnmatchedProducedAsExtra(t *testing.T) {
 		{Path: "cache.go", StartLine: 20, EndLine: 23},
 		{Path: "cache.go", StartLine: 27, EndLine: 31},
 	}
-	matched, _, extra := Match(gold, produced)
+	matched, _, extra := match(gold, produced)
 	if matched != 1 || extra != 1 {
 		t.Fatalf("matched=%d extra=%d, want 1 1", matched, extra)
 	}
@@ -76,7 +76,7 @@ func TestMatchCountsUnmatchedProducedAsExtra(t *testing.T) {
 func TestMatchSeverityAgreesWhenEqual(t *testing.T) {
 	gold := []Gold{{Path: "cache.go", StartLine: 20, EndLine: 23, Severity: findings.SeverityError}}
 	produced := []findings.Finding{{Path: "cache.go", StartLine: 21, EndLine: 21, Severity: findings.SeverityError}}
-	matched, severityHits, extra := Match(gold, produced)
+	matched, severityHits, extra := match(gold, produced)
 	if matched != 1 || severityHits != 1 || extra != 0 {
 		t.Fatalf("matched=%d severityHits=%d extra=%d, want 1 1 0", matched, severityHits, extra)
 	}
@@ -85,7 +85,7 @@ func TestMatchSeverityAgreesWhenEqual(t *testing.T) {
 func TestMatchSeverityMissesWhenWeaker(t *testing.T) {
 	gold := []Gold{{Path: "server.go", StartLine: 15, EndLine: 19, Severity: findings.SeverityWarning}}
 	produced := []findings.Finding{{Path: "server.go", StartLine: 16, EndLine: 18, Severity: findings.SeverityError}}
-	matched, severityHits, _ := Match(gold, produced)
+	matched, severityHits, _ := match(gold, produced)
 	if matched != 1 || severityHits != 0 {
 		t.Fatalf("matched=%d severityHits=%d, want 1 0: finding the leak but grading it error is not agreement", matched, severityHits)
 	}
@@ -97,7 +97,7 @@ func TestMatchSeverityGradesTheConsumingFinding(t *testing.T) {
 		{Path: "server.go", StartLine: 15, EndLine: 19, Severity: findings.SeverityError},
 		{Path: "server.go", StartLine: 16, EndLine: 16, Severity: findings.SeverityWarning},
 	}
-	matched, severityHits, extra := Match(gold, produced)
+	matched, severityHits, extra := match(gold, produced)
 	if matched != 1 || severityHits != 0 || extra != 1 {
 		t.Fatalf("matched=%d severityHits=%d extra=%d, want 1 0 1", matched, severityHits, extra)
 	}
@@ -142,7 +142,7 @@ func TestScoreReportReadsRunStatus(t *testing.T) {
 			{Path: "cache.go", StartLine: 21, EndLine: 21, Severity: findings.SeverityError},
 		},
 	}
-	score := ScoreReport(c, report)
+	score := scoreReport(c, report)
 	if !score.Completed() {
 		t.Fatal("want completed")
 	}

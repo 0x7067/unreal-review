@@ -88,7 +88,7 @@ func TestScoreMartianLeaderboardMetricsPerProfile(t *testing.T) {
 
 func TestParsePairsDropsOutOfBoundsAndDuplicates(t *testing.T) {
 	reply := "Here you go:\n```json\n" + `{"matches":[{"golden":0,"finding":1},{"golden":0,"finding":2},{"golden":1,"finding":1},{"golden":2,"finding":0},{"golden":-1,"finding":0},{"golden":1,"finding":3},{"golden":1,"finding":0}]}` + "\n```"
-	pairs, err := ParsePairs(reply, 2, 3)
+	pairs, err := parsePairs(reply, 2, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestParsePairsDropsOutOfBoundsAndDuplicates(t *testing.T) {
 }
 
 func TestParsePairsRejectsProse(t *testing.T) {
-	if _, err := ParsePairs("no matches found", 1, 1); err == nil {
+	if _, err := parsePairs("no matches found", 1, 1); err == nil {
 		t.Fatal("want error for a reply without JSON")
 	}
 }

@@ -70,18 +70,18 @@ func Agreement(hits, total int) float64 {
 	return float64(hits) / float64(total)
 }
 
-func ScoreReport(c Case, report findings.Report) Score {
+func scoreReport(c Case, report findings.Report) Score {
 	score := Score{Name: c.Name, Class: c.Class, Gold: len(c.Gold), Produced: len(report.Findings)}
 	if report.Run != nil {
 		score.Status = string(report.Run.Status)
 		score.CostUSD = report.Run.Cost.AmountUSD
 		score.Requests = report.Run.Cost.Requests
 	}
-	score.Matched, score.SeverityHits, score.Extra = Match(c.Gold, report.Findings)
+	score.Matched, score.SeverityHits, score.Extra = match(c.Gold, report.Findings)
 	return score
 }
 
-func Match(gold []Gold, produced []findings.Finding) (matched, severityHits, extra int) {
+func match(gold []Gold, produced []findings.Finding) (matched, severityHits, extra int) {
 	consumed := make([]bool, len(gold))
 	for _, f := range produced {
 		hit := -1
@@ -111,7 +111,7 @@ type Options struct {
 
 func Run(ctx context.Context, c Case, root string, opts Options) (Score, error) {
 	dir := filepath.Join(root, c.Name)
-	if err := Setup(ctx, c, dir); err != nil {
+	if err := setup(ctx, c, dir); err != nil {
 		return Score{Name: c.Name}, fmt.Errorf("set up %s: %w", c.Name, err)
 	}
 	findingsPath := filepath.Join(dir, "findings.jsonl")
@@ -123,7 +123,7 @@ func Run(ctx context.Context, c Case, root string, opts Options) (Score, error) 
 		Model:     opts.Model,
 		Agent:     opts.Agent,
 	})
-	score := ScoreReport(c, result.Report)
+	score := scoreReport(c, result.Report)
 	score.DurationMS = time.Since(start).Milliseconds()
 	score.FindingsPath = findingsPath
 	if runErr != nil {
@@ -132,7 +132,7 @@ func Run(ctx context.Context, c Case, root string, opts Options) (Score, error) 
 	return score, nil
 }
 
-func Setup(ctx context.Context, c Case, dir string) error {
+func setup(ctx context.Context, c Case, dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
