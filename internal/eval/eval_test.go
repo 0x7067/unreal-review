@@ -1,10 +1,65 @@
 package eval
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"unreal-review/internal/findings"
+	"unreal-review/internal/review"
 )
+
+type resumeAgent struct {
+	calls int
+}
+
+func (a *resumeAgent) Run(ctx context.Context, req review.AgentRequest) (review.AgentResult, error) {
+	a.calls++
+	if a.calls == 1 {
+		return review.AgentResult{}, context.Canceled
+	}
+	summary := findings.CleanVerdict + ": planted defect confirmed."
+	finding := findings.Finding{
+		ID:        "resume-1",
+		Path:      "cache.go",
+		StartLine: 1,
+		EndLine:   2,
+		Anchor:    findings.AnchorNew,
+		Severity:  findings.SeverityError,
+		Body:      "planted defect",
+	}
+	if err := findings.WriteFile(req.FindingsPath, findings.Report{Findings: []findings.Finding{finding}, Summary: summary}); err != nil {
+		return review.AgentResult{}, err
+	}
+	return review.AgentResult{Cost: findings.Cost{Currency: "USD", Requests: 1, AmountUSD: 1, InputTokens: 10}}, nil
+}
+
+func TestRunResumesInterruptedPlantedCase(t *testing.T) {
+	c := Case{
+		Name:   "resume-case",
+		Class:  "test",
+		Base:   map[string]string{"cache.go": "package main\n\nfunc main() {}\n"},
+		Change: map[string]string{"cache.go": "package main\n\nfunc main() { panic(\"bug\") }\n"},
+		Gold:   []Gold{{Path: "cache.go", StartLine: 1, EndLine: 2, Severity: findings.SeverityError}},
+	}
+	agent := &resumeAgent{}
+	root := t.TempDir()
+	first, err := Run(t.Context(), c, root, Options{Agent: agent})
+	if err == nil && first.Err == "" {
+		t.Fatal("first run should fail like an interrupted review")
+	}
+	score, err := Run(t.Context(), c, root, Options{Agent: agent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if score.Matched != 1 {
+		t.Fatalf("matched=%d, want 1 after resume", score.Matched)
+	}
+	if _, err := os.Stat(filepath.Join(root, c.Name, "findings.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestMatchOverlappingLines(t *testing.T) {
 	gold := []Gold{{Path: "cache.go", StartLine: 20, EndLine: 23, Severity: findings.SeverityError}}
