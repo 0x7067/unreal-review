@@ -1,0 +1,53 @@
+.agents/skills/entire-search/SKILL.md
+  s_b1134115a829bc::t_a443d1032b534a 1-22
+.claude/settings.json
+  s_b1134115a829bc::t_e8534cf332574d 3-55,58,64-89
+.claude/skills/entire-search
+  s_b1134115a829bc::t_76e47f1c7660c5 1
+.claude/skills/entire/SKILL.md
+  s_b1134115a829bc::t_bad1d83b20283e 1-15
+.claude/skills/verify-unreal-review
+  s_b1134115a829bc::t_3fa683df05e32c 1
+.codex/agents/entire.toml
+  s_b1134115a829bc::t_dfc97f336848ba 1-13
+.codex/hooks.json
+  s_b1134115a829bc::t_dcbf441c1de8f5 3-38,41,46-87
+.cursor/hooks.json
+  s_b1134115a829bc::t_812096ee8683ef 3-22,25-38,41-42
+.cursor/skills/entire-search
+  s_b1134115a829bc::t_65145802d88298 1
+.cursor/skills/verify-unreal-review
+  s_b1134115a829bc::t_1c314d1ddcfc68 1
+.entire/.gitignore
+  s_b1134115a829bc::t_41e12d7d2602da 1-5
+.entire/settings.json
+  s_b1134115a829bc::t_225b4ad37f4557 1-9
+.grok/skills/entire-search
+  s_b1134115a829bc::t_f300c50193abc6 1
+.grok/skills/verify-unreal-review
+  s_b1134115a829bc::t_5d6953f06e0659 1
+.opencode/plugins/entire.ts
+  s_b1134115a829bc::t_71ebdc1a8f8caf 1-269
+.opencode/skills/entire-search
+  s_b1134115a829bc::t_0001312a661599 1
+.pi/extensions/entire/index.ts
+  s_b1134115a829bc::t_f2d30fc18146c2 1-147
+.pi/skills/entire-search
+  s_b1134115a829bc::t_7547e7a6646762 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03abad296532672cfb1a3408e4c965ba893176ef",
+  "prompts": {},
+  "sessions": {
+    "s_b1134115a829bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "405a5bce-9dd3-4994-8874-c471a7e27dfc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
