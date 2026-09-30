@@ -544,11 +544,7 @@ func (p Planned) Run(ctx context.Context, req review.AgentRequest) (result revie
 		if e != nil {
 			return result, e
 		}
-		shrunk := len(next) < len(final)
 		final = next
-		if !shrunk {
-			break
-		}
 	}
 	live := map[string]bool{}
 	for _, item := range final {

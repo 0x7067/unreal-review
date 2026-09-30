@@ -2,9 +2,13 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -135,4 +139,111 @@ func TestPlannedForwardsUnplannedReview(t *testing.T) {
 	if len(report.Findings) != 1 || report.Findings[0].ID != "direct" || report.Summary != "Confirmed a defect" {
 		t.Fatalf("unplanned report = %+v", report)
 	}
+}
+
+func TestPlannedConsolidationReshufflesCrossBatchDuplicates(t *testing.T) {
+	req := plannedTestRequest(t)
+	duplicateA := plannedTestIssue("dup-a")
+	duplicateB := plannedTestIssue("dup-b")
+	duplicateB.Body = "Duplicate candidate for issue dup-a on the same line"
+	pad := func(tag string, n int) string {
+		return strings.Repeat(fmt.Sprintf("Distinct confirmed defect %s padding token%d ", tag, n), 40)
+	}
+	localA := []findings.Finding{duplicateA, duplicateB}
+	for i := range 260 {
+		filler := plannedTestIssue(fmt.Sprintf("filler-a%03d", i))
+		filler.Body = pad("a", i)
+		localA = append(localA, filler)
+	}
+	localB := []findings.Finding{}
+	for i := range 200 {
+		filler := plannedTestIssue(fmt.Sprintf("filler-b%03d", i))
+		filler.Body = pad("b", i)
+		localB = append(localB, filler)
+	}
+	union := append(append([]findings.Finding{}, localA...), localB...)
+	groups, err := plannedBatches(union)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) < 2 {
+		t.Fatal("test fixture: fillers should split the union into multiple batches")
+	}
+	var mergeMu sync.Mutex
+	var stageMu sync.Mutex
+	stage := 0
+	merges := 0
+	fake := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		switch {
+		case strings.Contains(r.Prompt, "verify:"):
+			items, err := plannedTestCandidates(r.Prompt)
+			if err != nil {
+				return review.AgentResult{}, err
+			}
+			return plannedTestEmit(r, items)
+		case strings.Contains(r.Prompt, "consolidate:"):
+			items, err := plannedTestCandidates(r.Prompt)
+			if err != nil {
+				return review.AgentResult{}, err
+			}
+			hasA, hasB := false, false
+			for _, item := range items {
+				if item.ID == "dup-a" {
+					hasA = true
+				}
+				if item.ID == "dup-b" {
+					hasB = true
+				}
+			}
+			kept := []findings.Finding{}
+			for _, item := range items {
+				if hasA && hasB && item.ID == "dup-b" {
+					mergeMu.Lock()
+					merges++
+					mergeMu.Unlock()
+					continue
+				}
+				kept = append(kept, item)
+			}
+			return plannedTestEmit(r, kept)
+		}
+		stageMu.Lock()
+		stage++
+		discovery := stage
+		stageMu.Unlock()
+		if discovery == 1 {
+			return plannedTestEmit(r, localA)
+		}
+		return plannedTestEmit(r, localB)
+	})
+
+	if _, err := (Planned{Agent: fake, Verifier: fake, Consolidator: fake}).Run(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	report, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodies := map[string]int{}
+	for _, item := range report.Findings {
+		bodies[strings.Join(strings.Fields(item.Body), " ")]++
+	}
+	if n := bodies["Confirmed defect dup-a"]; n != 1 {
+		t.Fatalf("cross-batch duplicate reached the public report %d times: %+v", n, report.Findings)
+	}
+	if merges == 0 {
+		t.Fatal("no consolidation batch ever merged")
+	}
+}
+
+func plannedTestCandidates(prompt string) ([]findings.Finding, error) {
+	_, raw, ok := strings.Cut(prompt, "Candidate JSON:\n")
+	if !ok {
+		return nil, fmt.Errorf("test: no candidate JSON in prompt")
+	}
+	items := []findings.Finding{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &items); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
