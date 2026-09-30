@@ -1,0 +1,21 @@
+cmd/unreal-review/eval_cases_test.go
+  s_da49090a4c7614::t_5822d759e63011 1-45
+internal/review/agent.go
+  s_da49090a4c7614::t_e4eabeeda28cc6 20-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b2d08c15dea86306f38860ab68c15ffb1c8e0b5f",
+  "prompts": {},
+  "sessions": {
+    "s_da49090a4c7614": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "295dc7ae-64ce-4757-a2da-18b35a3a4ccb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
