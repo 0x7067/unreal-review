@@ -1,0 +1,20 @@
+internal/review/git_test.go
+  h_29be57c0addd47 454,458,462,466,527
+internal/review/group_import_test.go
+  h_29be57c0addd47 218
+internal/review/plan_test.go
+  h_29be57c0addd47 383,389,404,446,536
+internal/review/planned_root_test.go
+  h_29be57c0addd47 106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "486be52af8247c4fc60d370fe38719c103ab69e5",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
