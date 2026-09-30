@@ -32,7 +32,7 @@ type martianSummary struct {
 	JudgeCost  float64                `json:"judge_cost_usd"`
 }
 
-func evalMartian(root, model string, harness agent.Harness, flags martianFlags) error {
+func evalMartian(ctx context.Context, root, model string, harness agent.Harness, flags martianFlags) error {
 	if flags.parallel < 1 {
 		return fmt.Errorf("--parallel must be at least 1")
 	}
@@ -62,7 +62,7 @@ func evalMartian(root, model string, harness agent.Harness, flags martianFlags) 
 			defer wg.Done()
 			slots <- struct{}{}
 			defer func() { <-slots }()
-			scores[i], errs[i] = eval.RunMartian(context.Background(), c, root, eval.Options{Model: model, Agent: harness}, judge, flags.profile)
+			scores[i], errs[i] = eval.RunMartian(ctx, c, root, eval.Options{Model: model, Agent: harness}, judge, flags.profile)
 			fmt.Fprintf(os.Stderr, "%s done\n", c.Name)
 		}()
 	}
