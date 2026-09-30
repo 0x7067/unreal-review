@@ -37,6 +37,7 @@ Canonical skills live in `.agents/skills/`; `.claude/skills`, `.grok/skills`, an
 - A dummy `OPENROUTER_API_KEY` stays on the `run` steps whose recipe expects `401`, and `UNREAL_REVIEW_OPENROUTER_API` points those calls at a local stand-in that returns that status.
 - The release binary honors `UNREAL_REVIEW_OPENROUTER_API` and `UNREAL_REVIEW_GITHUB_API` only when the URL host is loopback (`127.0.0.1`, `::1`, or `localhost`).
 - Any other value is an error.
+- `make canary-live` is a live OpenRouter smoke, separate from `make canary`. It builds `bin/unreal-review` and reviews one committed one-line change in a temporary repository (`run --commit HEAD`, `--thinking-level low`). It requires `OPENROUTER_API_KEY` and `UNREAL_HARNESS_LLM_MODEL` (documented model `openai/gpt-6-luna-pro`), calls `https://openrouter.ai/api/v1`, and exits non-zero if either variable is unset or if `UNREAL_REVIEW_OPENROUTER_API` is set. It is not part of the required CI `canary` job.
 - CI jobs `check` and `canary` are the pair that must pass on pull requests and on pushes to `main` (both also run on `workflow_dispatch`).
 - Marking those two checks required is a GitHub branch-protection setting.
 - Workflow `Review` (`.github/workflows/review.yml`) is live dogfood: it reviews a same-repo pull request with the base commit's binary and posts to GitHub.
