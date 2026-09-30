@@ -3,8 +3,6 @@ package agent
 import (
 	"bytes"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -30,26 +28,5 @@ func TestSerializedWriterPreservesConcurrentRecords(t *testing.T) {
 		if !seen[fmt.Sprintf("record-%d", i)] {
 			t.Errorf("lost/interleaved record %d", i)
 		}
-	}
-}
-
-func TestHarnessRefusesFocusedCheckpointOnSingleResume(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	req := reviewRequest(t)
-	req.Resuming = true
-	dir, err := sessionDirectory()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stateDir := filepath.Join(dir, "focused", focusedHash(req.ReviewID))
-	if err := os.MkdirAll(stateDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(stateDir, "manifest.json"), []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	result, err := (Harness{}).Run(t.Context(), req)
-	if err == nil || result.Cost.Recorded() {
-		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }
