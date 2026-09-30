@@ -63,6 +63,8 @@ type Harness struct {
 	ThinkingLevel string
 	Log           io.Writer
 	Timeout       time.Duration
+	// MaxBashCalls limits Bash tool calls within one Run. Zero is unlimited.
+	MaxBashCalls int
 }
 
 var _ review.Agent = Harness{}
@@ -161,7 +163,7 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 		return review.AgentResult{}, fmt.Errorf("create operation directory: %w", err)
 	}
 	registry := newRecordRegistry(tool.NewRegistry(tool.StaticTranslators{
-		Bash: newBoundedBash(req.Workspace, bash.New(bash.Config{
+		Bash: newBoundedBash(req.Workspace, h.MaxBashCalls, bash.New(bash.Config{
 			Shell:         "/bin/sh",
 			Directory:     req.Workspace,
 			BaseDirectory: operationDirectory,
@@ -173,13 +175,14 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	observerID := store.AddObserver(observer.Observe)
 	defer store.RemoveObserver(observerID)
 
+	systemPrompt := bashBudgetSystemPrompt(req.SystemPrompt, h.MaxBashCalls)
 	s := harnessSession{
 		id:           sessionID,
 		store:        store,
 		llm:          adapter,
 		registry:     registry,
 		model:        llm.Model{ID: req.Model, ReasoningEffort: llm.ReasoningEffort(h.ThinkingLevel)},
-		systemPrompt: req.SystemPrompt,
+		systemPrompt: systemPrompt,
 	}
 	coordinatorErr := s.turn(runCtx, inbox.ID(sessionID), req.Prompt)
 	for attempt := 0; coordinatorErr == nil; attempt++ {
@@ -204,6 +207,13 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	}
 
 	return review.AgentResult{Cost: observer.Cost()}, coordinatorErr
+}
+
+func bashBudgetSystemPrompt(systemPrompt string, maxCalls int) string {
+	if maxCalls <= 0 {
+		return systemPrompt
+	}
+	return systemPrompt + fmt.Sprintf("\nThis run has a strict budget of %d Bash tool calls. Prioritize the highest-value evidence, then record supported findings and finalize before the budget is exhausted.", maxCalls)
 }
 
 type harnessSession struct {

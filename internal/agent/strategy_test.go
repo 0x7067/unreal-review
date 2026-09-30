@@ -39,16 +39,20 @@ func TestReviewerStrategyWiring(t *testing.T) {
 
 func TestReviewPipelineWiresAutomaticPlanningWithoutPerChildTimeouts(t *testing.T) {
 	var log bytes.Buffer
-	h := Harness{APIKey: "dummy", ThinkingLevel: "high", Timeout: time.Minute, Log: &log}
+	h := Harness{APIKey: "dummy", ThinkingLevel: "high", Timeout: time.Minute, Log: &log, MaxBashCalls: 99}
 	pipeline, err := ReviewPipeline("single", h)
 	if err != nil {
 		t.Fatal(err)
 	}
 	planned := pipeline.(Planned)
+	direct := planned.Direct.(Harness)
 	child := planned.Agent.(Harness)
 	verifier := planned.Verifier.(Harness)
-	if planned.Timeout != time.Minute || planned.Parallel != 2 || planned.Config != "single/high" || child.Timeout != 0 || verifier.Timeout != 0 {
-		t.Fatalf("pipeline=%+v child=%+v verifier=%+v", planned, child, verifier)
+	if planned.Timeout != time.Minute || planned.Parallel != 4 || planned.Config != "single/high/bash=16" || child.Timeout != 0 || verifier.Timeout != 0 {
+		t.Fatalf("pipeline=%+v direct=%+v child=%+v verifier=%+v", planned, direct, child, verifier)
+	}
+	if direct.MaxBashCalls != 0 || child.MaxBashCalls != plannedMaxBashCalls || verifier.MaxBashCalls != plannedMaxBashCalls {
+		t.Fatalf("bash budgets: direct=%d child=%d verifier=%d", direct.MaxBashCalls, child.MaxBashCalls, verifier.MaxBashCalls)
 	}
 	if child.Log != verifier.Log {
 		t.Fatal("discovery and verification must share one serialized log writer")
@@ -68,11 +72,31 @@ func TestReviewPipelineUsesDiscoveryOnlyFocusedOnlyForPlans(t *testing.T) {
 	planned := pipeline.(Planned)
 	direct := planned.Direct.(Focused)
 	discovery := planned.Agent.(Focused)
+	verifier := planned.Verifier.(Harness)
 	if direct.DiscoveryOnly || !discovery.DiscoveryOnly {
 		t.Fatalf("direct=%+v discovery=%+v", direct, discovery)
 	}
-	if direct.Agent != discovery.Agent {
-		t.Fatal("direct and planned focused adapters must share the same serialized harness")
+	directHarness := direct.Agent.(Harness)
+	discoveryHarness := discovery.Agent.(Harness)
+	if planned.Parallel != 2 || planned.Config != "focused/high/bash=16" {
+		t.Fatalf("planned parallel/config = %d/%q", planned.Parallel, planned.Config)
+	}
+	if directHarness.MaxBashCalls != 0 || discoveryHarness.MaxBashCalls != plannedMaxBashCalls || verifier.MaxBashCalls != plannedMaxBashCalls {
+		t.Fatalf("bash budgets: direct=%d discovery=%d verifier=%d", directHarness.MaxBashCalls, discoveryHarness.MaxBashCalls, verifier.MaxBashCalls)
+	}
+	if directHarness.Log != discoveryHarness.Log || discoveryHarness.Log != verifier.Log {
+		t.Fatal("direct, discovery, and verification must share one serialized log writer")
+	}
+}
+
+func TestBashBudgetSystemPrompt(t *testing.T) {
+	const base = "Evidence only."
+	if got := bashBudgetSystemPrompt(base, 0); got != base {
+		t.Fatalf("unlimited prompt = %q", got)
+	}
+	got := bashBudgetSystemPrompt(base, plannedMaxBashCalls)
+	if !strings.HasPrefix(got, base) || !strings.Contains(got, "strict budget of 16 Bash tool calls") || !strings.Contains(got, "finalize before the budget is exhausted") {
+		t.Fatalf("bounded prompt = %q", got)
 	}
 }
 

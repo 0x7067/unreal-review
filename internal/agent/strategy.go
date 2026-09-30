@@ -9,6 +9,10 @@ import (
 	"unreal-review/internal/review"
 )
 
+// plannedMaxBashCalls bounds exploration in each planned discovery or
+// verification Run while leaving direct reviews unlimited.
+const plannedMaxBashCalls = 16
+
 // Reviewer selects an adapter strategy without changing the review product.
 // Single remains the low-cost baseline until the focused strategy is measured.
 func Reviewer(strategy string, harness Harness) (review.Agent, error) {
@@ -16,7 +20,7 @@ func Reviewer(strategy string, harness Harness) (review.Agent, error) {
 	case "single":
 		return harness, nil
 	case "focused":
-		if harness.Log != nil {
+		if _, serialized := harness.Log.(*serializedWriter); harness.Log != nil && !serialized {
 			harness.Log = &serializedWriter{writer: harness.Log}
 		}
 		timeout := harness.Timeout
@@ -35,18 +39,26 @@ func ReviewPipeline(strategy string, harness Harness) (review.Agent, error) {
 	}
 	timeout := harness.Timeout
 	harness.Timeout = 0
-	selected, err := Reviewer(strategy, harness)
+	harness.MaxBashCalls = 0
+	direct, err := Reviewer(strategy, harness)
 	if err != nil {
 		return nil, err
 	}
-	plannedDiscovery := selected
-	if focused, ok := selected.(Focused); ok {
+	budgeted := harness
+	budgeted.MaxBashCalls = plannedMaxBashCalls
+	plannedDiscovery, err := Reviewer(strategy, budgeted)
+	if err != nil {
+		return nil, err
+	}
+	parallel := 4
+	if focused, ok := plannedDiscovery.(Focused); ok {
 		focused.DiscoveryOnly = true
 		plannedDiscovery = focused
+		parallel = 2 // Each focused child already fans out across four lenses.
 	}
 	return Planned{
-		Direct: selected, Agent: plannedDiscovery, Verifier: harness, Timeout: timeout,
-		Config: strings.TrimSpace(strategy) + "/" + harness.ThinkingLevel, Parallel: 2,
+		Direct: direct, Agent: plannedDiscovery, Verifier: budgeted, Timeout: timeout,
+		Config: fmt.Sprintf("%s/%s/bash=%d", strings.TrimSpace(strategy), harness.ThinkingLevel, plannedMaxBashCalls), Parallel: parallel,
 	}, nil
 }
 

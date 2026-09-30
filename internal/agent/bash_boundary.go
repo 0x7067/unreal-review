@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"unicode"
 
 	"github.com/unreallabsai/unreal-agent/harness/llm"
@@ -17,18 +18,25 @@ import (
 // for process lifetime and cancellation.
 type boundedBash struct {
 	workspace string
+	maxCalls  int64
+	calls     atomic.Int64
 	inner     tool.Translator
 }
 
-func newBoundedBash(workspace string, inner tool.Translator) tool.Translator {
+const bashQuotaError = "bash call limit reached; stop exploring, record all supported findings, and finalize the review"
+
+func newBoundedBash(workspace string, maxCalls int, inner tool.Translator) tool.Translator {
 	workspace = filepath.Clean(workspace)
 	if resolved, err := filepath.EvalSymlinks(workspace); err == nil {
 		workspace = resolved
 	}
-	return boundedBash{workspace: workspace, inner: inner}
+	return &boundedBash{workspace: workspace, maxCalls: int64(maxCalls), inner: inner}
 }
 
-func (b boundedBash) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
+func (b *boundedBash) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
+	if !b.takeCall() {
+		return tool.ErrorStatus(bashQuotaError, 0)
+	}
 	command, err := bashCommand(call.Arguments)
 	if err != nil {
 		return tool.ErrorStatus(err.Error(), 0)
@@ -39,7 +47,25 @@ func (b boundedBash) Translate(ctx tool.Context, call llm.ToolCall) tool.CallSta
 	return b.inner.Translate(ctx, call)
 }
 
-func (b boundedBash) TranslateResult(callID string, status tool.CallStatus, operations []operation.Operation) (llm.ToolResult, error) {
+func (b *boundedBash) takeCall() bool {
+	if b.maxCalls <= 0 {
+		return true
+	}
+	for {
+		calls := b.calls.Load()
+		if calls >= b.maxCalls {
+			return false
+		}
+		if b.calls.CompareAndSwap(calls, calls+1) {
+			return true
+		}
+	}
+}
+
+func (b *boundedBash) TranslateResult(callID string, status tool.CallStatus, operations []operation.Operation) (llm.ToolResult, error) {
+	if status.Error == bashQuotaError {
+		return recordResult(callID, status), nil
+	}
 	return b.inner.TranslateResult(callID, status, operations)
 }
 
@@ -56,7 +82,7 @@ func bashCommand(arguments string) (string, error) {
 	return *args.Command, nil
 }
 
-func (b boundedBash) validateFind(command string) error {
+func (b *boundedBash) validateFind(command string) error {
 	words, simple, err := simpleShellWords(command)
 	if err != nil {
 		if mentionsFind(command) {
@@ -100,7 +126,7 @@ func (b boundedBash) validateFind(command string) error {
 	return nil
 }
 
-func (b boundedBash) withinWorkspace(root string) bool {
+func (b *boundedBash) withinWorkspace(root string) bool {
 	candidate := root
 	if !filepath.IsAbs(candidate) {
 		candidate = filepath.Join(b.workspace, candidate)

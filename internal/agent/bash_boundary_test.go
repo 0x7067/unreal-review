@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -48,6 +50,68 @@ func TestBoundedBashRejectsRootWideFindBeforeExecution(t *testing.T) {
 	}
 }
 
+func TestBoundedBashStopsAtCallLimitWithoutDelegatingResult(t *testing.T) {
+	inner := &quotaTestTranslator{}
+	translator := newBoundedBash(t.TempDir(), 2, inner)
+	for i := range 2 {
+		status := translator.Translate(&recordingContext{}, bashCall("echo allowed"))
+		if status.Error != "" {
+			t.Fatalf("call %d error = %q", i+1, status.Error)
+		}
+	}
+	status := translator.Translate(&recordingContext{}, bashCall("echo blocked"))
+	if status.Error != bashQuotaError {
+		t.Fatalf("quota error = %q, want %q", status.Error, bashQuotaError)
+	}
+	result, err := translator.TranslateResult("bash-limit", status, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inner.resultCalls.Load() != 0 {
+		t.Fatalf("inner TranslateResult called %d times, want zero", inner.resultCalls.Load())
+	}
+	if len(result.Output) != 1 || result.Output[0].Value != "Error: "+bashQuotaError {
+		t.Fatalf("result = %+v", result)
+	}
+	if inner.translateCalls.Load() != 2 {
+		t.Fatalf("inner Translate called %d times, want 2", inner.translateCalls.Load())
+	}
+}
+
+func TestBoundedBashCallLimitIsConcurrencySafe(t *testing.T) {
+	inner := &quotaTestTranslator{}
+	translator := newBoundedBash(t.TempDir(), 16, inner)
+	var workers sync.WaitGroup
+	var quotaErrors atomic.Int64
+	for range 64 {
+		workers.Go(func() {
+			status := translator.Translate(&recordingContext{}, bashCall("echo concurrent"))
+			if status.Error == bashQuotaError {
+				quotaErrors.Add(1)
+			} else if status.Error != "" {
+				t.Errorf("unexpected error: %s", status.Error)
+			}
+		})
+	}
+	workers.Wait()
+	if inner.translateCalls.Load() != 16 || quotaErrors.Load() != 48 {
+		t.Fatalf("inner calls = %d, quota errors = %d; want 16 and 48", inner.translateCalls.Load(), quotaErrors.Load())
+	}
+}
+
+func TestBoundedBashZeroLimitIsUnlimited(t *testing.T) {
+	inner := &quotaTestTranslator{}
+	translator := newBoundedBash(t.TempDir(), 0, inner)
+	for range 64 {
+		if status := translator.Translate(&recordingContext{}, bashCall("echo unlimited")); status.Error != "" {
+			t.Fatalf("unexpected error: %s", status.Error)
+		}
+	}
+	if inner.translateCalls.Load() != 64 {
+		t.Fatalf("inner calls = %d, want 64", inner.translateCalls.Load())
+	}
+}
+
 func TestBoundedBashAllowsWorkspaceLocalFind(t *testing.T) {
 	workspace := t.TempDir()
 	want := filepath.Join(workspace, "vendor", "i18n-0.7.0", "lib", "i18n", "backend", "fallbacks.rb")
@@ -57,7 +121,7 @@ func TestBoundedBashAllowsWorkspaceLocalFind(t *testing.T) {
 	if err := os.WriteFile(want, []byte("fallbacks"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	translator := newBoundedBash(workspace, bash.New(bash.Config{
+	translator := newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
 		BaseDirectory: t.TempDir(),
@@ -79,7 +143,7 @@ func TestBoundedBashAllowsWorkspaceLocalFind(t *testing.T) {
 
 func TestBoundedBashAllowsAbsoluteWorkspaceRoot(t *testing.T) {
 	workspace := t.TempDir()
-	translator := newBoundedBash(workspace, bash.New(bash.Config{
+	translator := newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
 		BaseDirectory: t.TempDir(),
@@ -101,7 +165,7 @@ func TestBoundedBashRejectsSymlinkRootOutsideWorkspace(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(workspace, "outside")); err != nil {
 		t.Skipf("create symlink: %v", err)
 	}
-	translator := newBoundedBash(workspace, bash.New(bash.Config{
+	translator := newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
 		BaseDirectory: t.TempDir(),
@@ -128,7 +192,7 @@ func TestBoundedBashKeepsCancellationOnAllowedFind(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	translator := newBoundedBash(workspace, bash.New(bash.Config{
+	translator := newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
 		BaseDirectory: t.TempDir(),
@@ -161,7 +225,7 @@ func testBoundedBash(t *testing.T, workspace, marker string) interface {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return newBoundedBash(workspace, bash.New(bash.Config{
+	return newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
 		BaseDirectory: t.TempDir(),
@@ -190,3 +254,18 @@ func runSubmittedShell(ctx context.Context, submitted *recordingContext) (string
 type operationCountError struct{ got int }
 
 func (e *operationCountError) Error() string { return "submitted shell operation count is not one" }
+
+type quotaTestTranslator struct {
+	translateCalls atomic.Int64
+	resultCalls    atomic.Int64
+}
+
+func (t *quotaTestTranslator) Translate(tool.Context, llm.ToolCall) tool.CallStatus {
+	t.translateCalls.Add(1)
+	return tool.CallStatus{}
+}
+
+func (t *quotaTestTranslator) TranslateResult(callID string, _ tool.CallStatus, _ []operation.Operation) (llm.ToolResult, error) {
+	t.resultCalls.Add(1)
+	return llm.ToolResult{CallID: callID}, nil
+}
