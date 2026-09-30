@@ -319,7 +319,7 @@ func TestPlannedPrivateBoundedConcurrencyCoverageAndOverlap(t *testing.T) {
 	})
 	consolidate := plannedTestAgent(func(ctx context.Context, child review.AgentRequest) (review.AgentResult, error) {
 		consolidationCalls++
-		if !strings.HasPrefix(child.Prompt, "Planned consolidation") || !strings.Contains(child.Prompt, "different bugs on overlapping lines") || !strings.Contains(child.SystemPrompt, "Do not inspect the workspace or call tools") {
+		if !strings.HasPrefix(child.Prompt, "Planned consolidation") || !strings.Contains(child.Prompt, "different bugs on overlapping lines") || !strings.Contains(child.SystemPrompt, "Do not inspect the workspace or call Bash/ViewImage") || !strings.Contains(child.SystemPrompt, "Use record_finding for every retained candidate") {
 			return review.AgentResult{}, errors.New("consolidation contract missing")
 		}
 		return plannedTestVerifier(ctx, child)

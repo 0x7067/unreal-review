@@ -113,7 +113,7 @@ func TestBashBudgetSystemPrompt(t *testing.T) {
 		t.Fatalf("bounded prompt = %q", got)
 	}
 	disabled := bashBudgetSystemPrompt(base, -1)
-	if !strings.Contains(disabled, "Bash is unavailable") || !strings.Contains(disabled, "Do not call tools") {
+	if !strings.Contains(disabled, "Bash is unavailable") || !strings.Contains(disabled, "Do not call Bash") || !strings.Contains(disabled, "review-recording tools normally") {
 		t.Fatalf("disabled prompt = %q", disabled)
 	}
 }

@@ -216,7 +216,7 @@ func bashBudgetSystemPrompt(systemPrompt string, maxCalls int) string {
 	}
 	if maxCalls < 0 {
 		return systemPrompt + `
-	Bash is unavailable for this run. Do not call tools. Work only from the supplied candidate data and finalize directly.`
+	Bash is unavailable for this run. Do not call Bash. Use the review-recording tools normally, work only from the supplied candidate data, and finalize directly.`
 	}
 	return systemPrompt + fmt.Sprintf(`
 This run has a strict budget of %d Bash tool calls. The supplied task prompt already contains the changed scope, so start from it. Do not rerun the whole diff, diff stat, or name-only listing unless a precise ambiguity requires it. First identify the few highest-risk candidate defects. Use Bash only to test a concrete premise in callers, configuration, schemas, tests, or the base revision. Batch related narrow reads and searches into one command, use exact source revisions, and issue at most four Bash calls per model turn. Treat roughly the first three quarters of the budget as triage and reserve the rest for confirming the strongest candidates and their anchors. Record a finding as soon as its evidence is sufficient. Stop exploring low-confidence branches and finalize once no high-value premise remains; a clean result is valid.`, maxCalls)
