@@ -1,11 +1,43 @@
 package eval
 
 import (
+	"context"
+	"encoding/json"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"unreal-review/internal/findings"
 )
+
+func TestAnthropicJudgePinsAnthropicProvider(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer key" {
+			t.Fatalf("authorization=%q", r.Header.Get("Authorization"))
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		provider, ok := body["provider"].(map[string]any)
+		if !ok || provider["allow_fallbacks"] != false || provider["require_parameters"] != true {
+			t.Fatalf("provider=%#v", body["provider"])
+		}
+		only, ok := provider["only"].([]any)
+		if !ok || len(only) != 1 || only[0] != "anthropic" {
+			t.Fatalf("provider.only=%#v", provider["only"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"matches\":[{\"golden\":0,\"finding\":0}]}"}}],"usage":{"cost":0.01}}`))
+	}))
+	defer server.Close()
+	c := MartianCase{Title: "change", Comments: []MartianComment{{Comment: "bug"}}}
+	got, err := (Judge{APIKey: "key", Model: "anthropic/claude-sonnet-4.5", Base: server.URL}).Match(context.Background(), c, []findings.Finding{{Path: "x", StartLine: 1, EndLine: 1}})
+	if err != nil || len(got.Pairs) != 1 || got.CostUSD != 0.01 {
+		t.Fatalf("verdict=%+v err=%v", got, err)
+	}
+}
 
 func TestMartianSeverityMapsToReviewSeverity(t *testing.T) {
 	cases := map[string]findings.Severity{

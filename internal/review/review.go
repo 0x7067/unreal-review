@@ -38,6 +38,7 @@ type Options struct {
 	Exclude   []string
 	Out       string
 	Fresh     bool
+	Decompose bool
 	Model     string
 	Agent     Agent
 	Pull      PullResolver
@@ -70,11 +71,15 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return result, nil
 	}
 
-	if len(diff) > maxBriefDiff {
-		return Result{}, fmt.Errorf(
-			"diff is %d bytes, over the %d-byte review limit; narrow it with pathspecs or split it with unreal-review group",
-			len(diff), maxBriefDiff,
-		)
+	var plan *ReviewPlan
+	if len(diff) > maxBriefDiff || opts.Decompose {
+		plan, err = buildReviewPlan(ctx, workspace, selected)
+		if err != nil {
+			return Result{}, fmt.Errorf("cannot safely decompose selected diff: %w", err)
+		}
+		if err := ValidatePlan(plan); err != nil {
+			return Result{}, fmt.Errorf("invalid review plan: %w", err)
+		}
 	}
 
 	checkpoint, err := loadCheckpoint(opts.Out)
@@ -132,16 +137,36 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return result, err
 	}
 
+	prompt := reviewPrompt(selected)
+	if plan != nil {
+		destination := "working tree (read changed files here, not git show HEAD)"
+		if source.Head != "" {
+			destination = "selected commit " + source.HeadSHA + " (use git show for this commit, not the checked-out files)"
+		}
+		prompt = fmt.Sprintf("Review every local and boundary task in plan %s. Source base %s head %s full diff SHA %s (%d bytes). Destination: %s. Read old code at the merge-base of those source commits when a base exists; root commits and added files have no old content. Publish only after all task discovery and verification are complete. Never report partial coverage as clean.\n", plan.Digest, source.BaseSHA, source.HeadSHA, source.DiffSHA, len(diff), destination)
+	}
 	agentResult, agentErr := opts.Agent.Run(ctx, AgentRequest{
 		Workspace:    workspace,
 		ReviewID:     runMeta.ID,
 		FindingsPath: findingsPath,
-		Prompt:       reviewPrompt(selected),
+		Prompt:       prompt,
 		SystemPrompt: systemPrompt,
 		Model:        opts.Model,
 		PriorCost:    runMeta.Cost,
 		Resuming:     resuming,
+		Plan:         plan,
 	})
+	if agentErr == nil && plan != nil {
+		agentErr = ValidateCoverage(plan, agentResult.Coverage)
+		if agentErr == nil {
+			currentDiff, e := collectDiff(ctx, workspace, selected.rangeSpec, pathspecScope(opts.Paths, opts.Exclude))
+			if e != nil {
+				agentErr = fmt.Errorf("revalidate planned review source: %w", e)
+			} else if diffFingerprint(currentDiff) != source.DiffSHA {
+				agentErr = fmt.Errorf("planned review source changed during execution; start a fresh review")
+			}
+		}
+	}
 	interrupted := agentErr != nil && (errors.Is(agentErr, context.Canceled) || errors.Is(agentErr, context.DeadlineExceeded) || ctx.Err() != nil)
 	runMeta.Cost = runMeta.Cost.Add(agentResult.Cost)
 

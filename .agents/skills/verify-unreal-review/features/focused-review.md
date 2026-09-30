@@ -44,5 +44,5 @@ Preconditions:
 - For working-tree reviews, place `--out` outside the reviewed workspace or Git-ignore the output and its `.work` file before starting. Untracked generated artifacts otherwise change the diff fingerprint. Planted eval fixtures exclude their own output automatically.
 - Stage manifests/sessions live under HOME in the agent adapter. Preserve them for resume. `--fresh` changes the root id and isolates old state.
 - Costs durably captured in completed/failed stage records can be reconciled after parent checkpoint interruption. A hard process kill while an underlying provider request is still in flight can still leave unknown billed usage, as with the single harness.
-- The 200,000-byte root diff limit remains. `group` prints scopes but does not execute one aggregate review.
+- Large diffs are automatically decomposed and coverage-gated. Combining that path with `--strategy focused` runs focused discovery inside each bounded task and can multiply cost substantially.
 - Fake-provider success demonstrates pipeline integration, not improved defect recall. A planted-corpus pilot also does not establish a Martian leaderboard improvement.

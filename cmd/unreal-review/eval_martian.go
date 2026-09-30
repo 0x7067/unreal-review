@@ -20,6 +20,7 @@ type martianFlags struct {
 	cases      string
 	judgeModel string
 	asJSON     bool
+	decompose  bool
 }
 
 type martianSummary struct {
@@ -63,7 +64,7 @@ func evalMartian(ctx context.Context, root, model string, reviewer review.Agent,
 			defer wg.Done()
 			slots <- struct{}{}
 			defer func() { <-slots }()
-			scores[i], errs[i] = eval.RunMartian(ctx, c, root, eval.Options{Model: model, Agent: reviewer}, judge, flags.profile)
+			scores[i], errs[i] = eval.RunMartian(ctx, c, root, eval.Options{Model: model, Agent: reviewer, Decompose: flags.decompose}, judge, flags.profile)
 			fmt.Fprintf(os.Stderr, "%s done\n", c.Name)
 		}()
 	}

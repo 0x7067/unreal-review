@@ -40,6 +40,7 @@ func cmdEval(args []string) error {
 	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
 	strategy := fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
+	decompose := fs.Bool("decompose", false, "use bounded aggregate scopes for every review case")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
 	asJSON := fs.Bool("json", false, "print machine-readable JSON instead of a table")
 	corpus := fs.String("corpus", "planted", "planted or martian")
@@ -61,7 +62,7 @@ func cmdEval(args []string) error {
 	if err != nil {
 		return err
 	}
-	reviewer, err := agent.Reviewer(*strategy, agent.Harness{APIKey: key, ThinkingLevel: level, Timeout: *timeout})
+	reviewer, err := agent.ReviewPipeline(*strategy, agent.Harness{APIKey: key, ThinkingLevel: level, Timeout: *timeout})
 	if err != nil {
 		return err
 	}
@@ -89,7 +90,7 @@ func cmdEval(args []string) error {
 	case "planted":
 	case "martian":
 		return evalMartian(ctx, root, *model, reviewer, key, martianFlags{
-			profile: *profile, parallel: *parallel, cases: *only, judgeModel: *judgeModel, asJSON: *asJSON,
+			profile: *profile, parallel: *parallel, cases: *only, judgeModel: *judgeModel, asJSON: *asJSON, decompose: *decompose,
 		})
 	default:
 		return fmt.Errorf("unknown corpus %q: use planted or martian", *corpus)
@@ -97,8 +98,9 @@ func cmdEval(args []string) error {
 	scores := make([]eval.Score, 0, len(planted))
 	for _, c := range planted {
 		score, err := eval.Run(ctx, c, root, eval.Options{
-			Model: *model,
-			Agent: reviewer,
+			Model:     *model,
+			Agent:     reviewer,
+			Decompose: *decompose,
 		})
 		if err != nil {
 			return err
