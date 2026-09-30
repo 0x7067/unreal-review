@@ -61,7 +61,7 @@ func TestClusterFilesPairsJSTests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files))
+	got := groupPaths(clusterFilesEdges(files, nil))
 	want := [][]string{
 		{"lib/__tests__/bar.test.ts", "lib/bar.ts"},
 		{"src/foo.test.ts", "src/foo.ts"},
@@ -81,7 +81,7 @@ func TestClusterFilesLocaleFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files))
+	got := groupPaths(clusterFilesEdges(files, nil))
 	if len(got) != 2 {
 		t.Fatalf("groups: %v", got)
 	}
@@ -96,7 +96,7 @@ func TestClusterFilesLocaleFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = groupPaths(clusterFiles(files))
+	got = groupPaths(clusterFilesEdges(files, nil))
 	if len(got) != 2 {
 		t.Fatalf("locale dirs: %v", got)
 	}
@@ -111,7 +111,7 @@ func TestClusterFilesLocaleFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = groupPaths(clusterFiles(files))
+	got = groupPaths(clusterFilesEdges(files, nil))
 	if len(got) != 2 {
 		t.Fatalf("go files should not strip locale: %v", got)
 	}
@@ -120,7 +120,7 @@ func TestClusterFilesLocaleFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = groupPaths(clusterFiles(files))
+	got = groupPaths(clusterFilesEdges(files, nil))
 	if len(got) != 2 {
 		t.Fatalf("docs lang dirs: %v", got)
 	}
@@ -137,7 +137,7 @@ func TestClusterFilesPackageLocalTests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files))
+	got := groupPaths(clusterFilesEdges(files, nil))
 	want := [][]string{
 		{"internal/session/compare.go", "internal/session/compare_test.go"},
 		{"internal/viewer/compare_test.go", "internal/viewer/handler.go"},
@@ -157,7 +157,7 @@ func TestClusterFilesHeaderPair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files))
+	got := groupPaths(clusterFilesEdges(files, nil))
 	if len(got) != 2 {
 		t.Fatalf("groups: %v", got)
 	}
@@ -174,7 +174,7 @@ func TestClusterFilesStemCompanions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files))
+	got := groupPaths(clusterFilesEdges(files, nil))
 	want := [][]string{
 		{"Button.module.css", "Button.stories.tsx", "Button.tsx"},
 		{"README.md"},
@@ -192,7 +192,7 @@ func TestClusterFilesStemCompanions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = groupPaths(clusterFiles(files))
+	got = groupPaths(clusterFilesEdges(files, nil))
 	want = [][]string{
 		{"pkg/bar.go"},
 		{"pkg/foo.go", "pkg/foo_linux.go"},
@@ -212,7 +212,7 @@ func TestClusterFilesJavaTest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files))
+	got := groupPaths(clusterFilesEdges(files, nil))
 	want := [][]string{
 		{"src/Foo.java", "test/FooTest.java"},
 		{"test/OrphanTest.java"},
@@ -232,7 +232,7 @@ func TestClusterFilesLockfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files))
+	got := groupPaths(clusterFilesEdges(files, nil))
 	want := [][]string{
 		{"go.mod", "go.sum"},
 		{"main.go"},
@@ -256,7 +256,7 @@ func TestClusterFilesPacksFatDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files))
+	got := groupPaths(clusterFilesEdges(files, nil))
 	if len(got) != 2 {
 		t.Fatalf("groups: %d %v", len(got), got)
 	}
@@ -278,7 +278,7 @@ func TestClusterFilesSplitsOversizedDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := groupPaths(clusterFiles(files))
+	got := groupPaths(clusterFilesEdges(files, nil))
 	if len(got) != 2 {
 		t.Fatalf("groups: %d %v", len(got), got)
 	}
@@ -381,7 +381,7 @@ func TestClusterFilesNestedDirectoryPathspecs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	groups := clusterFiles(files)
+	groups := clusterFilesEdges(files, nil)
 	got := groupPaths(groups)
 	want := [][]string{{"cmd/main.go"}, {"cmd/sub/x.go"}}
 	if len(got) != len(want) {

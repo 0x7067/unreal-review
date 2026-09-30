@@ -137,10 +137,6 @@ const (
 	maxGroupLines = 2000
 )
 
-func clusterFiles(files []ChangedFile) []FileGroup {
-	return clusterFilesEdges(files, nil)
-}
-
 func clusterFilesEdges(files []ChangedFile, edges []importEdge) []FileGroup {
 	if len(files) == 0 {
 		return nil
