@@ -1,0 +1,14 @@
+docs/research/martian-improvements.md
+  h_29be57c0addd47 1-123,125-259,261-265,267-273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c77e588d7084948e6c3c040f0d9c64e588f2028",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
