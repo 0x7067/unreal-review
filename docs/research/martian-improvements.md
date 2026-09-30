@@ -239,6 +239,60 @@ can run up to eight discovery agents concurrently. The focused verifier's
 candidate budget is explicitly bounded rather than truncated. It does not
 remove the 200KB root diff limit.
 
+### Live planted pilot, 2026-09-30
+
+A small real OpenRouter pilot used `openai/gpt-6-luna-pro`, thinking `high`.
+The single run exercised all 11 planted cases with a 90-second per-case
+limit: 10 completed, 9/10 goldens matched, 10 findings and one benchmark
+extra, $0.03829457 across 46 requests. `body-leak` paused at the deadline.
+This run used the broader single prompt, not a controlled old-prompt baseline.
+
+The focused comparison selected three seeded defects and a clean control.
+Its first invocation had a two-minute whole-DAG deadline. Race and once-failure
+paused without publishing hypotheses; each then completed after one additional
+two-minute continuation. The table uses final cumulative cost and requests,
+not just the successful continuation's incremental usage:
+
+| case | single findings | focused findings | single USD / requests | focused USD / requests | focused first invocation |
+|---|---:|---:|---:|---:|---|
+| race | 1 | 1 | 0.002920990 / 5 | 0.023929800 / 25 | paused at 120s, then resumed |
+| wrap-break | 1 | 1 | 0.003301710 / 4 | 0.019213595 / 22 | complete in 90s |
+| once-failure | 2 | 3 | 0.007001470 / 7 | 0.034177545 / 26 | paused at 120s, then resumed |
+| clean | 0 | 0 | 0.002237760 / 3 | 0.015820400 / 18 | complete in 68s |
+| **paired total** | **4** | **5** | **0.015461930 / 19** | **0.093141340 / 91** | **2/4 initially complete, 4/4 after resume** |
+
+Both strategies contained all three seeded defects after continuation, and
+both left the clean control clean. **No seeded-defect recall gain was observed.**
+Focused cost 6.02 times the paired single run and made 4.79 times as many
+requests. It must remain opt-in, not a presumed improvement.
+
+For once-failure, both reported permanently cached dial failure and ignored
+subsequent addresses. Focused additionally reported returning a closed cached
+connection after `Conn.Close`; the fixture exposes that behavior. The sparse
+one-golden case therefore has one single-pass benchmark extra and two focused
+extras, not demonstrated false accusations. Its overlapping-line matcher can
+also consume the address warning before the actual dial-failure error, so
+severity agreement is not issue-identity validation here. All three bodies
+and the implementation were inspected rather than equating overlap with truth.
+
+The live continuation exposed a pre-existing fixture problem: generated
+`findings.jsonl` and `.work` files were untracked within the source workspace
+and changed its fingerprint. Ignoring only those eval-owned artifacts in
+`.git/info/exclude` restored the original diff. Both continuations retained
+their root IDs/source SHAs and accumulated cost correctly. The implementation
+now excludes those fixture outputs before the base commit and includes a
+pause/resume regression test. Working-tree users should keep output outside
+the selected source or ignore it before starting.
+
+Captured commands, stdout, stderr, exit status and final JSONL live locally
+under `$JCODE_SCRATCH_DIR/unreal-review-focused-pilot/{evidence,scratch}/pilot/`.
+The compiled review logic corresponds to `b2d08c1`; pilot runs used its
+pre-commit worktree based on `4df8087`, before the fixture-hardening follow-up.
+Different deadlines, continuations, one attempt, and tiny hand-planted Go
+examples make this a functionality/cost pilot, not a controlled statistical
+quality comparison or a new Martian score. Final `make check`, `make canary`,
+and race tests passed, including compiled loopback-provider workflows.
+
 ### Measurement before changing the default
 
 1. Compare single and focused on the planted corpus, including the clean
