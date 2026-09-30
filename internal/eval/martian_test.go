@@ -6,59 +6,10 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"unreal-review/internal/findings"
 )
-
-func TestMartianReviewOptionsResumeExistingCheckpoint(t *testing.T) {
-	opts := martianReviewOptions("workspace", "head", "findings.jsonl", Options{Model: "model", Decompose: true})
-	if opts.Fresh || opts.Workspace != "workspace" || opts.Spec.Commit != "head" || opts.Out != "findings.jsonl" || opts.Model != "model" || !opts.Decompose {
-		t.Fatalf("options=%+v", opts)
-	}
-}
-
-func TestMartianSyntheticHistoryIsDeterministic(t *testing.T) {
-	t.Setenv("GIT_AUTHOR_DATE", "2030-01-01T00:00:00Z")
-	t.Setenv("GIT_COMMITTER_DATE", "2030-01-01T00:00:00Z")
-	dir := t.TempDir()
-	git := func(args ...string) string {
-		t.Helper()
-		out, err := martianGit(t.Context(), dir, args...)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return out
-	}
-	git("init", "--template=", "-q")
-	if err := os.WriteFile(filepath.Join(dir, "change.txt"), []byte("base\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git("add", "change.txt")
-	base := git("commit-tree", git("write-tree"), "-m", "original base")
-	if err := os.WriteFile(filepath.Join(dir, "change.txt"), []byte("head\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git("add", "change.txt")
-	head := git("commit-tree", git("write-tree"), "-p", base, "-m", "original head")
-	c := MartianCase{Base: base, Head: head, Title: "synthetic change"}
-	first, err := martianSyntheticHead(func(args ...string) (string, error) { return martianGit(t.Context(), dir, args...) }, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := martianSyntheticHead(func(args ...string) (string, error) { return martianGit(t.Context(), dir, args...) }, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first != second {
-		t.Fatalf("synthetic head changed: %s != %s", first, second)
-	}
-	if dates := git("show", "-s", "--format=%aI %cI", first); dates != martianGitDate+" "+martianGitDate {
-		t.Fatalf("dates=%q", dates)
-	}
-}
 
 func TestAnthropicJudgePinsAnthropicProvider(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

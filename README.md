@@ -80,9 +80,8 @@ diff:
 unreal-review run --decompose --from origin/main --to HEAD --out findings.jsonl
 ```
 
-The planner packs deterministic locality groups together up to the prompt
-budget, assigns every byte of the selected unified diff to exactly one local
-task, and splits oversized hunks at whole-line boundaries while preserving
+The planner assigns every byte of the selected unified diff to exactly one
+local task, splits oversized hunks at whole-line boundaries while preserving
 old/new coordinates, and adds boundary tasks for cross-scope contracts. Every
 task prompt is at most 120,000 serialized bytes. Task candidate output stays
 private. Bounded independent verification and consolidation must process the
