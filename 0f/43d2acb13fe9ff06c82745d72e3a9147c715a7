@@ -1,0 +1,61 @@
+.agents/skills/verify-unreal-review/features/README.md
+  s_fa93f3d225ef1e::t_6d507344796f52 51
+.agents/skills/verify-unreal-review/features/focused-review.md
+  s_fa93f3d225ef1e::t_4a065b67348684 47
+.agents/skills/verify-unreal-review/features/large-review.md
+  s_fa93f3d225ef1e::t_a30c269c5f4596 1-48
+AGENTS.md
+  s_fa93f3d225ef1e::t_84fa2731211f13 13,19-25
+LAWS.bend
+  s_fa93f3d225ef1e::t_c341a441ff3572 7,288-289,303-436
+PROOF.bend
+  s_fa93f3d225ef1e::t_de7767ebeb904b 9,244-348
+README.md
+  s_fa93f3d225ef1e::t_f56dd535140f02 75-98,104-107,192-196
+internal/agent/focused_test.go
+  s_fa93f3d225ef1e::t_4eebcec9efcb9b 23-156
+internal/agent/planned.go
+  s_fa93f3d225ef1e::t_7e3c61f9ecf243 1-695
+internal/agent/planned_test.go
+  s_fa93f3d225ef1e::t_c8f4f06429fa31 1-578
+internal/agent/strategy_test.go
+  s_fa93f3d225ef1e::t_3c9922cd8d87c5 40-78
+internal/eval/martian.go
+  s_fa93f3d225ef1e::t_19070c95855e36 253,257-265,320,343-344,355
+internal/eval/martian_test.go
+  s_fa93f3d225ef1e::t_8f28181a6dafc1 4-5,7-8,14-41
+internal/review/bend_consts_test.go
+  s_fa93f3d225ef1e::t_f6c4915d46294f 14-35
+internal/review/plan.go
+  s_da49090a4c7614::t_1c855f16429326 1-647
+internal/review/plan_test.go
+  s_da49090a4c7614::t_4e92a01c8f6d15 1-524
+internal/review/plan_types.go
+  s_fa93f3d225ef1e::t_bee9ecd354d71f 1-39
+internal/review/review.go
+  s_fa93f3d225ef1e::t_8e455efe7ff300 41,74-82,140-147,152,157,159-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f43d2acb13fe9ff06c82745d72e3a9147c715a7",
+  "prompts": {},
+  "sessions": {
+    "s_da49090a4c7614": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "295dc7ae-64ce-4757-a2da-18b35a3a4ccb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_fa93f3d225ef1e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e3bcbaed-ca43-47da-9002-2fc633e6f8e0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
