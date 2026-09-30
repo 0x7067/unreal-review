@@ -118,9 +118,6 @@ def Laws.post_requires_complete():
 def Laws.post_complete_ok():
   {==}
 
-def Laws.inline_cap():
-  {==}
-
 def Laws.unique_none():
   {==}
 
