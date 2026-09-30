@@ -1,0 +1,20 @@
+internal/agent/agent_test.go
+  h_29be57c0addd47 288,297
+internal/agent/bash_boundary_test.go
+  h_29be57c0addd47 91-92
+internal/agent/focused_test.go
+  h_29be57c0addd47 51-52,55-56,102-103,135
+internal/agent/planned_test.go
+  h_29be57c0addd47 268,293,297-298,309,537-538
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7d833901d32de3565ed5dbe9e4a22a81d0d02faa",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
