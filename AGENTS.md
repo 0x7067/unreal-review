@@ -30,6 +30,10 @@ A new backend, source, or renderer should plug in without changing the findings 
 
 Canonical skills live in `.agents/skills/`; `.claude/skills`, `.grok/skills`, and `.cursor/skills` are real dirs that symlink each shared skill to it. Verification skill: [verify-unreal-review](.agents/skills/verify-unreal-review/SKILL.md) — run its scripts from `scripts/`. Tool config like `.claude/settings.json` stays a real file. No `CLAUDE.md`; do not copy these instructions into a tool directory.
 
+## Testing
+
+Apply [principle-test-behavior-not-implementation](.agents/skills/principle-test-behavior-not-implementation/SKILL.md) whenever writing, changing, reviewing, or keeping a test. Exercise the subject through its real contract and assert a literal user-observable result or artifact. Delete tests that only pin constants, prompts, error text, call counts, helper routing, configuration shape, mocks, empty values, or fixtures. If the test would still pass when the subject does no useful work, it is not a test.
+
 ## Checks
 
 - `make check` (fmt, lint, vet, test, prove).
