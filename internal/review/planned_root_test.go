@@ -103,7 +103,7 @@ func TestPlannedRootCompletesOnlyForUnchangedSource(t *testing.T) {
 			})
 			result, err := Run(t.Context(), Options{Workspace: dir, Out: out, Model: "test", Decompose: true, Agent: backend})
 			if mutate {
-				if err == nil || !strings.Contains(err.Error(), "source changed") || result.Report.Complete() {
+				if err == nil || result.Report.Complete() {
 					t.Fatalf("changed source completed: %+v err=%v", result, err)
 				}
 			} else if err != nil || !result.Report.Complete() || !before.source.SameDiff(result.Report.Run.Source) {

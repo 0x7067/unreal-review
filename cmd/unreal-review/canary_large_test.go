@@ -76,30 +76,34 @@ func TestCanaryLargeDiffProducesCompletePublicReport(t *testing.T) {
 		t.Fatalf("fixture diff is only %d bytes", len(diff))
 	}
 
-	server := httptest.NewServer(cleanCanaryProvider{})
-	defer server.Close()
-	out := filepath.Join(t.TempDir(), "findings.jsonl")
-	_, stderr, code := runCLI(t, bin, focusedCanaryEnv(t, server.URL),
-		"run", "--model", "canary-model", "--timeout", "45s",
-		"--workspace", dir, "--from", base, "--to", head, "--out", out,
-	)
-	if code != 0 {
-		t.Fatalf("large review exit=%d stderr=%s", code, stderr)
-	}
-	report, err := findings.ReadFile(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Run == nil || !report.Complete() || report.Run.Status != findings.StatusComplete {
-		t.Fatalf("incomplete report: %+v", report)
-	}
-	if report.Run.Source.BaseSHA != base || report.Run.Source.HeadSHA != head || report.Run.Source.DiffSHA == "" {
-		t.Fatalf("report is not bound to the selected source: %+v", report.Run.Source)
-	}
-	if len(report.Findings) != 0 {
-		t.Fatalf("private partial findings leaked into public report: %+v", report.Findings)
-	}
-	if report.Summary != "No material issues: all planned local and boundary scopes were reviewed and verified." {
-		t.Fatalf("summary=%q", report.Summary)
+	for _, strategy := range []string{"single", "focused"} {
+		t.Run(strategy, func(t *testing.T) {
+			server := httptest.NewServer(cleanCanaryProvider{})
+			defer server.Close()
+			out := filepath.Join(t.TempDir(), "findings.jsonl")
+			_, stderr, code := runCLI(t, bin, focusedCanaryEnv(t, server.URL),
+				"run", "--strategy", strategy, "--model", "canary-model", "--timeout", "45s",
+				"--workspace", dir, "--from", base, "--to", head, "--out", out,
+			)
+			if code != 0 {
+				t.Fatalf("large review exit=%d stderr=%s", code, stderr)
+			}
+			report, err := findings.ReadFile(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Run == nil || !report.Complete() || report.Run.Status != findings.StatusComplete {
+				t.Fatalf("incomplete report: %+v", report)
+			}
+			if report.Run.Source.BaseSHA != base || report.Run.Source.HeadSHA != head || report.Run.Source.DiffSHA == "" {
+				t.Fatalf("report is not bound to the selected source: %+v", report.Run.Source)
+			}
+			if len(report.Findings) != 0 {
+				t.Fatalf("private partial findings leaked into public report: %+v", report.Findings)
+			}
+			if report.Summary != "No material issues: all planned local and boundary scopes were reviewed and verified." {
+				t.Fatalf("summary=%q", report.Summary)
+			}
+		})
 	}
 }
