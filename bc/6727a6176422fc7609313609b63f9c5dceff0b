@@ -1,0 +1,14 @@
+internal/agent/bash_boundary_test.go
+  h_29be57c0addd47 38-39,48-57,59-65,68-71,73-74,79-91,126-129,141-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc6727a6176422fc7609313609b63f9c5dceff0b",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
