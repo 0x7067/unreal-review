@@ -48,8 +48,11 @@ func (b *boundedBash) Translate(ctx tool.Context, call llm.ToolCall) tool.CallSt
 }
 
 func (b *boundedBash) takeCall() bool {
-	if b.maxCalls <= 0 {
+	if b.maxCalls == 0 {
 		return true
+	}
+	if b.maxCalls < 0 {
+		return false
 	}
 	for {
 		calls := b.calls.Load()

@@ -305,21 +305,29 @@ func TestPlannedPrivateBoundedConcurrencyCoverageAndOverlap(t *testing.T) {
 		return plannedTestEmit(child, []findings.Finding{plannedTestIssue(plannedTestTask(child))})
 	})
 	go func() { <-arrived; <-arrived; close(release) }()
+	verificationCalls := 0
+	consolidationCalls := 0
 	verify := plannedTestAgent(func(ctx context.Context, child review.AgentRequest) (review.AgentResult, error) {
+		verificationCalls++
 		if _, e := os.Stat(req.FindingsPath); !errors.Is(e, os.ErrNotExist) {
 			return review.AgentResult{}, errors.New("premature publish")
 		}
 		if !strings.Contains(child.Prompt, "working tree from base abc") || strings.Contains(child.Prompt, "large root diff") {
 			return review.AgentResult{}, errors.New("source context lost")
 		}
-		if strings.HasPrefix(child.Prompt, "Planned consolidation") && !strings.Contains(child.Prompt, "different bugs on overlapping lines") {
-			return review.AgentResult{}, errors.New("overlap heuristic")
+		return plannedTestVerifier(ctx, child)
+	})
+	consolidate := plannedTestAgent(func(ctx context.Context, child review.AgentRequest) (review.AgentResult, error) {
+		consolidationCalls++
+		if !strings.HasPrefix(child.Prompt, "Planned consolidation") || !strings.Contains(child.Prompt, "different bugs on overlapping lines") || !strings.Contains(child.SystemPrompt, "Do not inspect the workspace or call tools") {
+			return review.AgentResult{}, errors.New("consolidation contract missing")
 		}
 		return plannedTestVerifier(ctx, child)
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	result, e := (Planned{Agent: discover, Verifier: verify}).Run(ctx, req)
+	planned := Planned{Agent: discover, Verifier: verify, Consolidator: consolidate}
+	result, e := planned.Run(ctx, req)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -333,9 +341,12 @@ func TestPlannedPrivateBoundedConcurrencyCoverageAndOverlap(t *testing.T) {
 	if result.Cost.Requests != 5 {
 		t.Fatalf("cost %+v", result.Cost)
 	}
+	if verificationCalls != 1 || consolidationCalls != 1 {
+		t.Fatalf("verification calls=%d consolidation calls=%d", verificationCalls, consolidationCalls)
+	}
 	req.Resuming = true
 	req.PriorCost = result.Cost
-	again, e := (Planned{Agent: discover, Verifier: verify}).Run(ctx, req)
+	again, e := planned.Run(ctx, req)
 	if e != nil || again.Cost.Recorded() || again.Coverage == nil {
 		t.Fatalf("completed resume %+v %v", again, e)
 	}

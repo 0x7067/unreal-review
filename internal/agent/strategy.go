@@ -9,8 +9,9 @@ import (
 	"unreal-review/internal/review"
 )
 
-// plannedMaxBashCalls bounds exploration in each planned discovery or
-// verification Run while leaving direct reviews unlimited.
+// plannedMaxBashCalls bounds evidence gathering in each planned discovery or
+// verification Run while leaving direct reviews unlimited. Consolidation only
+// compares confirmed records and has Bash disabled.
 const plannedMaxBashCalls = 32
 
 // Reviewer selects an adapter strategy without changing the review product.
@@ -46,6 +47,8 @@ func ReviewPipeline(strategy string, harness Harness) (review.Agent, error) {
 	}
 	budgeted := harness
 	budgeted.MaxBashCalls = plannedMaxBashCalls
+	consolidator := harness
+	consolidator.MaxBashCalls = -1
 	plannedDiscovery, err := Reviewer(strategy, budgeted)
 	if err != nil {
 		return nil, err
@@ -57,7 +60,7 @@ func ReviewPipeline(strategy string, harness Harness) (review.Agent, error) {
 		parallel = 2 // Each focused child already fans out across four lenses.
 	}
 	return Planned{
-		Direct: direct, Agent: plannedDiscovery, Verifier: budgeted, Timeout: timeout,
+		Direct: direct, Agent: plannedDiscovery, Verifier: budgeted, Consolidator: consolidator, Timeout: timeout,
 		Config: fmt.Sprintf("%s/%s/bash=%d", strings.TrimSpace(strategy), harness.ThinkingLevel, plannedMaxBashCalls), Parallel: parallel,
 	}, nil
 }

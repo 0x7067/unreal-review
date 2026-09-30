@@ -112,6 +112,18 @@ func TestBoundedBashZeroLimitIsUnlimited(t *testing.T) {
 	}
 }
 
+func TestBoundedBashNegativeLimitDisablesExecution(t *testing.T) {
+	inner := &quotaTestTranslator{}
+	translator := newBoundedBash(t.TempDir(), -1, inner)
+	status := translator.Translate(&recordingContext{}, bashCall("echo blocked"))
+	if status.Error != bashQuotaError {
+		t.Fatalf("quota error = %q, want %q", status.Error, bashQuotaError)
+	}
+	if inner.translateCalls.Load() != 0 {
+		t.Fatalf("inner calls = %d, want zero", inner.translateCalls.Load())
+	}
+}
+
 func TestBoundedBashAllowsWorkspaceLocalFind(t *testing.T) {
 	workspace := t.TempDir()
 	want := filepath.Join(workspace, "vendor", "i18n-0.7.0", "lib", "i18n", "backend", "fallbacks.rb")
