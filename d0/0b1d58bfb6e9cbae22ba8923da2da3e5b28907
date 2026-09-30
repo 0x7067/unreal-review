@@ -1,0 +1,18 @@
+internal/agent/agent_test.go
+  h_29be57c0addd47 324-325
+internal/agent/focused_test.go
+  h_29be57c0addd47 17,22-29,31,33-41,43,53,55-56,58-61,64-65,67,69-70,72,75-77,81,83,85,87-90,92,94-97,100-102,106-107,114-116,137-140,142-143
+internal/agent/planned_test.go
+  h_29be57c0addd47 20,25-42,45,47-55,57,63-64,67-68,74-77,91-94,100,102-105,107-110,112-113,117-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d00b1d58bfb6e9cbae22ba8923da2da3e5b28907",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
