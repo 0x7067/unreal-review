@@ -11,28 +11,6 @@ import (
 // package, and it keeps its own copies of the caps. Nothing else ties the two
 // together: the laws would stay green while proving things about numbers the
 // program no longer uses. Pin each shared constant to the one it models.
-func TestBendPlanCapsMatchGo(t *testing.T) {
-	src, err := os.ReadFile("../../spec/plan.bend")
-	if err != nil {
-		t.Fatalf("read spec/plan.bend: %v", err)
-	}
-	for _, tc := range []struct {
-		def  string
-		want int
-	}{{"maxPromptBytes", MaxPlanPromptBytes}, {"directThreshold", maxBriefDiff}} {
-		pat := "(?m)^def " + regexp.QuoteMeta(tc.def) + "\\(\\) -> Nat:\\n  (\\d+)n$"
-		match := regexp.MustCompile(pat).FindSubmatch(src)
-		if match == nil {
-			t.Errorf("spec/plan.bend: want literal def %s() -> Nat:, found none", tc.def)
-			continue
-		}
-		got, err := strconv.Atoi(string(match[1]))
-		if err != nil || got != tc.want {
-			t.Errorf("spec/plan.bend %s()=%d err=%v, Go uses %d", tc.def, got, err, tc.want)
-		}
-	}
-}
-
 func TestBendModelCapsMatchGo(t *testing.T) {
 	src, err := os.ReadFile("../../spec/group.bend")
 	if err != nil {

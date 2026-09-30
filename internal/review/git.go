@@ -116,11 +116,10 @@ type resolved struct {
 }
 
 type selection struct {
-	rangeSpec resolved
-	diff      string
-	source    findings.Source
-	files     []ChangedFile
-	pull      Pull
+	diff   string
+	source findings.Source
+	files  []ChangedFile
+	pull   Pull
 }
 
 func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclude []string, pull PullResolver) (selection, error) {
@@ -138,8 +137,7 @@ func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclud
 		return selection{}, err
 	}
 	return selection{
-		rangeSpec: r,
-		diff:      diff,
+		diff: diff,
 		source: findings.Source{
 			Kind:    "git",
 			Base:    r.base,

@@ -4,7 +4,6 @@ import ./spec/range.bend as R
 import ./spec/checkpoint.bend as C
 import ./spec/github.bend as G
 import ./spec/group.bend as Gr
-import ./spec/plan.bend as P
 
 law omitted_status_complete:
   {F.complete(F.StatusNone{}) == True{} : Bool}
@@ -285,8 +284,6 @@ law receipt_over_cap_blocks:
   for +ds: List<&2, G.Drop>
   {G.receipt(G.OverCap{} <> ds) == False{} : Bool}
 
-# Applies to the unplanned path. Oversized review may instead use a validated
-# bounded full-ownership plan through decidePlanned, never an unbounded prompt.
 law oversized_diff_refused:
   for empty: Bool
   for fresh: Bool
@@ -300,137 +297,3 @@ law diff_within_limit_decides_as_before:
   for status: F.Status
   for same: Bool
   {C.decideReview(False{}, empty, fresh, status, same) == C.decideEmpty(empty, fresh, status, same) : C.Decision}
-
-law invalid_plan_refused:
-  for empty: Bool
-  for fresh: Bool
-  for status: F.Status
-  for same: Bool
-  {C.decidePlanned(False{}, empty, fresh, status, same) == C.RefuseOversized{} : C.Decision}
-
-law valid_plan_decides_as_before:
-  for empty: Bool
-  for fresh: Bool
-  for status: F.Status
-  for same: Bool
-  {C.decidePlanned(True{}, empty, fresh, status, same) == C.decideEmpty(empty, fresh, status, same) : C.Decision}
-
-law planned_direct_threshold:
-  {P.directThreshold() == 200000n : Nat}
-
-law planned_prompt_cap:
-  {P.promptCap() == 120000n : Nat}
-
-law planned_all_units_bounded:
-  for +sizes: List<&2, Nat>
-  for ok: {P.unitsBounded(P.promptCap(), sizes) == True{} : Bool}
-  P.Bounds(sizes, P.promptCap())
-
-law planned_partition_no_gaps_or_overlap:
-  for +spans: List<&2, P.Span>
-  for +total: Nat
-  for ok: {P.fullOwnership(total, spans) == True{} : Bool}
-  P.Partition(spans, 0n, total)
-
-# Small Nat cap exercises the same generic serialized-byte bound without
-# reducing a 120000-successor numeral in every proof.
-law planned_units_over_cap_refused:
-  {P.unitsBounded(3n, [2n, 4n]) == False{} : Bool}
-
-law planned_units_at_cap_allowed:
-  {P.unitsBounded(3n, [2n, 3n]) == True{} : Bool}
-
-law planned_full_ownership:
-  {P.fullOwnership(5n, [P.Own{0n, 2n}, P.Own{2n, 5n}]) == True{} : Bool}
-
-law planned_ownership_gap_refused:
-  {P.fullOwnership(5n, [P.Own{0n, 2n}, P.Own{3n, 5n}]) == False{} : Bool}
-
-law planned_ownership_overlap_refused:
-  {P.fullOwnership(5n, [P.Own{0n, 3n}, P.Own{2n, 5n}]) == False{} : Bool}
-
-law planned_ownership_tail_required:
-  {P.fullOwnership(5n, [P.Own{0n, 2n}]) == False{} : Bool}
-
-law planned_giant_line_refused:
-  for total: Nat
-  for spans: List<&2, P.Span>
-  for sizes: List<&2, Nat>
-  for ids: List<&2, Nat>
-  {P.validPlan(False{}, True{}, total, spans, sizes, ids) == False{} : Bool}
-
-law planned_boundary_context_can_overlap:
-  {P.boundaryOwnership([], [P.Own{0n, 3n}, P.Own{2n, 5n}]) == True{} : Bool}
-
-law planned_boundary_cannot_own:
-  for spans: List<&2, P.Span>
-  for context: List<&2, P.Span>
-  {P.boundaryOwnership(P.Own{0n, 1n} <> spans, context) == False{} : Bool}
-
-law bounded_full_plan_accepted:
-  {C.decidePlanned(P.validPlan(True{}, True{}, 5n, [P.Own{0n, 2n}, P.Own{2n, 5n}], [3n, 3n], [0n, 1n]), False{}, True{}, F.StatusNone{}, True{}) == C.Start{} : C.Decision}
-
-law unbounded_plan_refused:
-  {C.decidePlanned(P.validPlan(True{}, True{}, 5n, [P.Own{0n, 2n}], [3n], [0n]), False{}, True{}, F.StatusNone{}, True{}) == C.RefuseOversized{} : C.Decision}
-
-# IDs 0,1,2 exemplify two local tasks and a boundary task. Coverage
-# ordering is immaterial, but missing/duplicate/unexpected IDs are forbidden.
-law planned_coverage_exact_all:
-  {P.coverage(7n, 7n, [0n, 1n, 2n], [2n, 0n, 1n], [0n, 1n, 2n]) == True{} : Bool}
-
-law planned_coverage_missing_local:
-  {C.canCompletePlanned(True{}, True{}, True{}, 7n, 7n, [0n, 1n, 2n], [1n, 2n], [0n, 1n, 2n], True{}) == False{} : Bool}
-
-law planned_coverage_missing_boundary:
-  {C.canCompletePlanned(True{}, True{}, True{}, 7n, 7n, [0n, 1n, 2n], [0n, 1n], [0n, 1n, 2n], True{}) == False{} : Bool}
-
-law planned_coverage_missing_verification:
-  {C.canCompletePlanned(True{}, True{}, True{}, 7n, 7n, [0n, 1n, 2n], [0n, 1n, 2n], [0n, 1n], True{}) == False{} : Bool}
-
-law planned_coverage_same_digest_required:
-  {C.canCompletePlanned(True{}, True{}, True{}, 7n, 8n, [0n, 1n, 2n], [0n, 1n, 2n], [0n, 1n, 2n], True{}) == False{} : Bool}
-
-law planned_coverage_binds_digest:
-  for +digest: Nat
-  for +returned: Nat
-  for +required: List<&2, Nat>
-  for +completed: List<&2, Nat>
-  for +verified: List<&2, Nat>
-  for ok: {P.coverage(digest, returned, required, completed, verified) == True{} : Bool}
-  {digest == returned : Nat}
-
-law planned_coverage_duplicate_refused:
-  {P.coverage(7n, 7n, [0n, 1n], [0n, 1n, 1n], [0n, 1n]) == False{} : Bool}
-
-law planned_coverage_unexpected_refused:
-  {P.coverage(7n, 7n, [0n, 1n], [0n, 1n, 2n], [0n, 1n]) == False{} : Bool}
-
-law planned_completion_needs_summary:
-  {P.complete(False{}, True{}, True{}, True{}, True{}) == False{} : Bool}
-
-law planned_completion_needs_cost:
-  {P.complete(True{}, False{}, True{}, True{}, True{}) == False{} : Bool}
-
-law planned_completion_needs_valid_plan:
-  {P.complete(True{}, True{}, False{}, True{}, True{}) == False{} : Bool}
-
-law planned_completion_needs_coverage:
-  {P.complete(True{}, True{}, True{}, False{}, True{}) == False{} : Bool}
-
-law planned_completion_needs_unchanged_source:
-  {P.complete(True{}, True{}, True{}, True{}, False{}) == False{} : Bool}
-
-law planned_completion_all_ready:
-  {P.complete(True{}, True{}, True{}, True{}, True{}) == True{} : Bool}
-
-law incomplete_planned_review_no_receipt:
-  {Bool.and(G.postOk(C.canCompletePlanned(True{}, True{}, True{}, 7n, 7n, [0n, 1n], [0n], [0n, 1n], True{}), False{}), G.receipt([])) == False{} : Bool}
-
-law incomplete_planned_review_not_complete:
-  {C.finishStatus(C.canCompletePlanned(True{}, True{}, True{}, 7n, 7n, [0n, 1n], [0n], [0n, 1n], True{}), False{}) == F.StatusFailed{} : F.Status}
-
-law changed_planned_source_not_complete:
-  {C.finishStatus(C.canCompletePlanned(True{}, True{}, True{}, 7n, 7n, [0n, 1n], [0n, 1n], [0n, 1n], False{}), False{}) == F.StatusFailed{} : F.Status}
-
-law complete_planned_pipeline:
-  {C.finishStatus(C.canCompletePlanned(True{}, True{}, True{}, 7n, 7n, [0n, 1n], [1n, 0n], [0n, 1n], True{}), False{}) == F.StatusComplete{} : F.Status}

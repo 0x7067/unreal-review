@@ -22,10 +22,8 @@ type AgentRequest struct {
 	// whose caller was interrupted before publishing its checkpoint.
 	PriorCost findings.Cost
 	Resuming  bool
-	Plan      *ReviewPlan
 }
 
 type AgentResult struct {
-	Cost     findings.Cost
-	Coverage *PlanCoverage
+	Cost findings.Cost
 }

@@ -72,39 +72,18 @@ the whole review invocation, not each pass. More discovery may find more real
 defects or more noise, so focused is not the default until repeated benchmark
 measurements establish its tradeoff. Notes can be posted inline on GitHub.
 
-Diffs above 200,000 bytes automatically use a bounded aggregate plan instead
-of one unbounded prompt. `--decompose` exercises the same path for a smaller
-diff:
-
-```sh
-unreal-review run --decompose --from origin/main --to HEAD --out findings.jsonl
-```
-
-The planner assigns every byte of the selected unified diff to exactly one
-local task, splits oversized hunks at whole-line boundaries while preserving
-old/new coordinates, and adds boundary tasks for cross-scope contracts. Every
-task prompt is at most 120,000 serialized bytes. Task candidate output stays
-private. Bounded independent verification and consolidation must process the
-output from every local and boundary task before the single parent checkpoint
-can become complete.
-Interrupted runs retain completed artifacts and cumulative cost. Changed source,
-model, strategy, plan, or missing adapter state refuses continuation instead of
-publishing partial coverage as clean. An indivisible line, source context, or
-whole-plan scope manifest that cannot fit is rejected explicitly, never
-truncated.
-
-`group` remains a deterministic planning/debugging command. It prints related
-pathspec groups and a separate `run` command for each, but those independent
-outputs are not the aggregate reviewed-head receipt:
+`run` refuses a diff over 200,000 bytes rather than reviewing only part of it. To review a large change in pieces, run `group` on the same git range. It prints related file groups and a `run` command for each (`unreal-review group -h` for range flags):
 
 ```sh
 unreal-review group --from origin/main --to HEAD
 ```
 
-The findings-v1 public schema and renderers are unchanged. Aggregate task state
-lives under `~/.local/state/unreal-agent/sessions/planned/`. See the
-[DAG research and pilot note](docs/research/martian-improvements.md) for design
-evidence and measurement limitations.
+Each `run` writes its own findings file and `diff_sha`.
+`group` plans these scopes but does not execute or aggregate them. Its line
+limit allows an oversized singleton file, so a group is not guaranteed to fit
+the byte limit. Focused reviews retain the same 200,000-byte root diff limit.
+The [DAG research note](docs/research/martian-improvements.md) separates the
+implemented recall strategy from future dependency-aware large-PR execution.
 
 ```sh
 unreal-review render markdown findings.jsonl
@@ -189,11 +168,9 @@ pinned commit above, including steps 2, 2.5, and 3 with
 `anthropic/claude-sonnet-4.5` through OpenRouter. Mean precision/recall/F1 was
 35.2/34.5/34.8 for strict, 37.1/32.9/34.8 for core, and 39.3/32.9/35.8 for
 all. The attempts produced 93, 96, and 84 findings and cost $4.320 total for
-reviews. In that historical build each attempt completed 49 cases;
-`sentry-greptile-5` exceeded the then-current 200,000-byte direct-review limit
-and was exported as an empty review. Automatic bounded decomposition now covers
-that size class, but it still requires a new measured benchmark run. Martian
-runner scoring cost is not recorded by the runner.
+reviews. Each attempt completed 49 cases; `sentry-greptile-5` exceeded the
+200,000-byte review limit and was exported as an empty review. Martian runner
+scoring cost is not recorded by the runner.
 
 ## Findings file
 

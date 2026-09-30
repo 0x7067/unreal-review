@@ -104,7 +104,7 @@ tools cannot establish statistical equivalence. No verified runner-scoring
 cost estimate is available. Do not promise that 10k judge calls cost only a
 few dollars.
 
-## 2. `group` provided decomposition; aggregate execution is now implemented
+## 2. We already have decomposition, not aggregate execution
 
 `unreal-review group` selects the same git range and prints pathspec groups.
 `internal/review/group.go` already combines directories, stem companions,
@@ -174,30 +174,14 @@ Key design choices:
 - Publish only the parent. Rendering individual groups can incorrectly mark
   the whole head reviewed after a subset finishes and skip subsequent work.
 
-This design is now implemented as automatic bounded aggregate execution for
-diffs above 200,000 bytes and as `--decompose` for smaller ranges. Local tasks
-own the entire selected unified diff exactly once by byte span. Oversized hunks
-are split only at whole-line boundaries with rewritten original old/new hunk
-coordinates and repeated file metadata as context. Every local gets a boundary
-pass with the full changed-scope manifest; known cross-scope Go import edges add
-explicit pairs. Other language dependencies remain conservative discovery, not
-a claimed complete semantic graph or SCC analysis.
-
-Task prompts are bounded at 120,000 serialized bytes, with construction reserving
-space for executor instructions. An indivisible source line, PR/source context,
-or full scope manifest that cannot fit is rejected explicitly. Private task
-findings are verified in bounded batches, followed by a bounded multi-round
-consolidation. Both task completion and verification coverage must exactly match
-the plan digest before the single root report completes. The source diff is
-re-read against the originally resolved range before publication. Adapter state,
-cost receipts and artifacts survive interruption; unknown in-flight provider
-usage remains unrecoverable.
-
-The public findings schema is unchanged, so planning/coverage stays inside the
-Agent adapter. The product law was deliberately changed: unplanned oversized
-input remains refused, while a valid bounded full-ownership plan may execute.
-`LAWS.bend`, `spec/plan.bend`, `spec/checkpoint.bend` and `PROOF.bend` model the
-new conditions without claiming Go equivalence or semantic bug truth.
+`oversized_diff_refused` remains unchanged in this implementation. Automatic
+big-PR execution is a separate source/planner/checkpoint change that needs
+coverage modeling plus corresponding laws and proofs. The user's request
+establishes big-PR support as a desired outcome. The implementation should
+change the product rule deliberately, not evade it by silently excluding
+paths. Raising the cap or switching to `-U0` is not the researched solution:
+`-U0` saves bytes but removes initially supplied context, and a larger cap
+has no established quality guarantee.
 
 ## 3. Implemented recall experiment
 
@@ -252,11 +236,8 @@ unreal-review eval --corpus martian --strategy focused --parallel 2 \
 `single` remains the default. Focused reviews spend more model requests and
 can have longer latency. `--parallel` controls cases, so two focused cases
 can run up to eight discovery agents concurrently. The focused verifier's
-candidate budget is explicitly bounded rather than truncated. When focused is
-selected for a decomposed review, each bounded task runs the four focused
-discovery lenses, while the enclosing aggregate pipeline performs the only
-candidate verification. This avoids an unbounded nested verifier but multiplies
-cost, so `single` remains the practical default for automatic large-PR plans.
+candidate budget is explicitly bounded rather than truncated. It does not
+remove the 200KB root diff limit.
 
 ### Live planted pilot, 2026-09-30
 
@@ -333,9 +314,7 @@ and race tests passed, including compiled loopback-provider workflows.
 
 No improvement in full-benchmark scores is established by implementation or
 mock-provider tests alone. `eval --attempts N`, a reusable repeated-run
-analysis/plot tool, broader repeated Martian remeasurement, richer dependency
-resolution beyond Go imports, and measured scheduler tuning remain follow-up
-work. Aggregate bounded large-PR execution itself is implemented.
+analysis/plot tool, and aggregate large-PR execution remain follow-up work.
 Official leaderboard inclusion is not a blocker for publishing self-measured
 results with these qualifications.
 

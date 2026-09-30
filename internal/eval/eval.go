@@ -106,9 +106,8 @@ func match(gold []Gold, produced []findings.Finding) (matched, severityHits, ext
 }
 
 type Options struct {
-	Model     string
-	Agent     review.Agent
-	Decompose bool
+	Model string
+	Agent review.Agent
 }
 
 func Run(ctx context.Context, c Case, root string, opts Options) (Score, error) {
@@ -122,7 +121,6 @@ func Run(ctx context.Context, c Case, root string, opts Options) (Score, error) 
 		Workspace: dir,
 		Out:       findingsPath,
 		Fresh:     true,
-		Decompose: opts.Decompose,
 		Model:     opts.Model,
 		Agent:     opts.Agent,
 	})
