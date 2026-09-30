@@ -1,0 +1,14 @@
+internal/render/github_test.go
+  h_29be57c0addd47 50,59-60,115,121-122,143-144,148,155-156,167-168,182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2e538957b010570dd8d0b7adb0d21042c90438e0",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
