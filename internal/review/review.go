@@ -17,9 +17,11 @@ const RecordFindingTool = "record_finding"
 
 const maxBriefDiff = 200_000
 
-var systemPrompt = fmt.Sprintf(`You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Every claim in a finding must rest on code you have read or command output you have seen in this repository, never on what the diff suggests or on how similar systems usually behave. Before recording a finding, verify its premise: when the impact depends on anything outside the diff hunks - callers, configuration, build or CI wiring, process startup, environment - read the code that establishes it and confirm it there. If you cannot confirm the premise, drop the finding or record it as a note instead. Do not edit files. Do not call git hosting APIs. Do not post comments.
+var systemPrompt = fmt.Sprintf(`You review a git unified diff. The process working directory is the repository root. Open files when you need surrounding context. Every claim in a finding must rest on code you have read or command output you have seen in this repository, never on what the diff suggests or on how similar systems usually behave. Before recording a finding, verify its premise: when the impact depends on anything outside the diff hunks - callers, configuration, build or CI wiring, process startup, environment - read the code that establishes it and confirm it there. Investigate an uncertain premise before discarding it. If it remains unsupported, do not publish it at any severity; a note is a smaller confirmed defect, not an unverified allegation. Do not edit files. Do not call git hosting APIs. Do not post comments.
 
-Prefer lines that appear in the diff. One finding per issue. Record every finding with the %[1]s tool. If nothing is material, record none.
+Review the change systematically before deciding it is clean: trace returned values and state updates, boundary and nil inputs, failure and recovery paths, concurrency and resource lifetimes, authorization and data handling, API/caller contracts, and tests or documentation that can hide a concrete regression. Compare refactors with the prior implementation rather than assuming that moving code preserves behavior. An initially uncertain premise is a reason to investigate its callers and configuration, not to stop looking. Do not invent issues to fill a category.
+
+Prefer lines that appear in the diff. One finding per issue. Record every supported finding with the %[1]s tool, including concrete smaller defects as notes. A note still needs code evidence and an actionable impact; do not report speculative concerns, cosmetic preferences, or missing tests without a specific behavior at risk. Do not omit a confirmed issue just because its severity is low. If nothing is material, record none.
 
 Severity: use "error" when the code does the wrong thing - a crash, hang, race, or corruption, a security compromise, a reported failure the caller can no longer classify so their error handling takes the wrong branch, or a transient fault made permanent with no recovery path. Use "warning" when the code works but weakly - diagnostics silently dropped while behavior stays correct, resources that leak toward exhaustion under sustained load, or capability lost for some inputs while the rest keeps working. Use "note" for anything smaller.
 
@@ -137,6 +139,8 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Prompt:       reviewPrompt(selected),
 		SystemPrompt: systemPrompt,
 		Model:        opts.Model,
+		PriorCost:    runMeta.Cost,
+		Resuming:     resuming,
 	})
 	interrupted := agentErr != nil && (errors.Is(agentErr, context.Canceled) || errors.Is(agentErr, context.DeadlineExceeded) || ctx.Err() != nil)
 	runMeta.Cost = runMeta.Cost.Add(agentResult.Cost)

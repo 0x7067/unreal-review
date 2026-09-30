@@ -5,6 +5,7 @@ import ./spec/range.bend as R
 import ./spec/checkpoint.bend as C
 import ./spec/github.bend as G
 import ./spec/group.bend as Gr
+import ./spec/focused.bend as Fo
 import ./LAWS.bend as Laws
 
 def Laws.omitted_status_complete():
@@ -237,4 +238,69 @@ def Laws.oversized_diff_refused(empty, fresh, status, same):
   {==}
 
 def Laws.diff_within_limit_decides_as_before(empty, fresh, status, same):
+  {==}
+
+# INTERNAL adapter lemmas. These certify the hand-written mechanics abstraction,
+# not new product laws, semantic bug evidence, or equivalence with Go execution.
+def internal_focused_stage_error(u: Bool, s: Bool, c: Bool, r: Bool) -> {Fo.stageComplete(False{}, u, s, c, r) == False{} : Bool}:
+  {==}
+
+def internal_focused_stage_interrupted(s: Bool, c: Bool, r: Bool) -> {Fo.stageComplete(True{}, False{}, s, c, r) == False{} : Bool}:
+  {==}
+
+def internal_focused_stage_bad_summary(c: Bool, r: Bool) -> {Fo.stageComplete(True{}, True{}, False{}, c, r) == False{} : Bool}:
+  {==}
+
+def internal_focused_stage_missing_cost(r: Bool) -> {Fo.stageComplete(True{}, True{}, True{}, False{}, r) == False{} : Bool}:
+  {==}
+
+def internal_focused_stage_complete() -> {Fo.stageComplete(True{}, True{}, True{}, True{}, True{}) == True{} : Bool}:
+  {==}
+
+def internal_focused_unknown_id(u: Bool, a: Fo.Location, b: Fo.Location) -> {Fo.acceptCandidate(False{}, u, a, b) == False{} : Bool}:
+  {==}
+
+def internal_focused_duplicate_id(a: Fo.Location, b: Fo.Location) -> {Fo.acceptCandidate(True{}, False{}, a, b) == False{} : Bool}:
+  {==}
+
+def internal_focused_same_location(+p: Nat, +s: Nat, +e: Nat, +a: Nat) -> {Fo.acceptCandidate(True{}, True{}, Fo.At{p, s, e, a}, Fo.At{p, s, e, a}) == True{} : Bool}:
+  %Equal.sym(Bool, Nat.is_eq(p, p), True{}, N.eqRefl(p)) : {Bool.and(_, Bool.and(Nat.is_eq(s, s), Bool.and(Nat.is_eq(e, e), Nat.is_eq(a, a)))) == True{} : Bool}
+  %Equal.sym(Bool, Nat.is_eq(s, s), True{}, N.eqRefl(s)) : {Bool.and(_, Bool.and(Nat.is_eq(e, e), Nat.is_eq(a, a))) == True{} : Bool}
+  %Equal.sym(Bool, Nat.is_eq(e, e), True{}, N.eqRefl(e)) : {Bool.and(_, Nat.is_eq(a, a)) == True{} : Bool}
+  N.eqRefl(a)
+
+# Overlapping [1,3] and [2,3] do not satisfy exact location acceptance.
+def internal_focused_overlap_not_identity() -> {Fo.acceptCandidate(True{}, True{}, Fo.At{0n, 1n, 3n, 0n}, Fo.At{0n, 2n, 3n, 0n}) == False{} : Bool}:
+  {==}
+
+def internal_focused_dependency_barrier(+stages: List<&2, Bool>, v: Bool, d: Bool, u: Bool, missing: {Fo.discoveriesComplete(stages) == False{} : Bool}) -> {Fo.publish(stages, v, d, u) == False{} : Bool}:
+  %Equal.sym(Bool, Fo.discoveriesComplete(stages), False{}, missing) : {Fo.publishReady(_, v, d, u) == False{} : Bool}
+  {==}
+
+def internal_focused_four_discoveries_ready() -> {Fo.publish([True{}, True{}, True{}, True{}], True{}, True{}, True{}) == True{} : Bool}:
+  {==}
+
+def internal_focused_unverified_not_published() -> {Fo.publish([True{}, True{}, True{}, True{}], False{}, True{}, True{}) == False{} : Bool}:
+  {==}
+
+def internal_focused_changed_dependency_not_published() -> {Fo.publish([True{}, True{}, True{}, True{}], True{}, False{}, True{}) == False{} : Bool}:
+  {==}
+
+# Exact Nat reconciliation: returning only outstanding then adding it to prior
+# recovers the durable total, including attempt costs not acknowledged earlier.
+def internal_focused_outstanding(prior: Nat, outstanding: Nat) -> {Fo.costDelta(Nat.add(prior, outstanding), prior) == Fo.Outstanding{outstanding} : Fo.Delta}:
+  match prior:
+    case 0n:
+      {==}
+    case 1n+p:
+      internal_focused_outstanding(p, outstanding)
+
+def internal_focused_no_double_charge(prior: Nat) -> {Fo.costDelta(Nat.add(prior, 0n), prior) == Fo.Outstanding{0n} : Fo.Delta}:
+  internal_focused_outstanding(prior, 0n)
+
+def internal_focused_prior_exceeds_empty(p: Nat) -> {Fo.costDelta(0n, 1n+p) == Fo.Invalid{} : Fo.Delta}:
+  {==}
+
+# record appends every attempt regardless of whether the stage completes.
+def internal_focused_attempt_additive(amount: Nat, attempts: List<&2, Nat>) -> {Fo.ledger(amount <> attempts) == Nat.add(amount, Fo.ledger(attempts)) : Nat}:
   {==}

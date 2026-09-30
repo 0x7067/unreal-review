@@ -29,7 +29,8 @@ func cmdRun(args []string) error {
 	fresh := fs.Bool("fresh", false, "start a new review even if --out already exists")
 	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
-	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout")
+	strategy := fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
+	timeout := fs.Duration("timeout", 20*time.Minute, "timeout for the whole review")
 	agentLog := fs.String("agent-log", "", "optional path for the harness session JSONL log")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -65,6 +66,12 @@ func cmdRun(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	reviewer, err := agent.Reviewer(*strategy, agent.Harness{
+		APIKey: key, ThinkingLevel: level, Log: logWriter, Timeout: *timeout,
+	})
+	if err != nil {
+		return err
+	}
 	result, err := review.Run(ctx, review.Options{
 		Workspace: *workspace,
 		Spec:      selected,
@@ -74,12 +81,7 @@ func cmdRun(args []string) error {
 		Fresh:     *fresh,
 		Model:     *model,
 		Pull:      resolver,
-		Agent: agent.Harness{
-			APIKey:        key,
-			ThinkingLevel: level,
-			Log:           logWriter,
-			Timeout:       *timeout,
-		},
+		Agent:     reviewer,
 	})
 	if (*outPath == "" || *outPath == "-") && result.Report.Run != nil {
 		out, writeErr := openOut(*outPath)

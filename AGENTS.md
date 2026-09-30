@@ -16,6 +16,11 @@ unreal-review is a pipeline of replaceable pieces around one product: [schema/fi
 | Renderer | Display a report | functions on `findings.Report` (markdown, GitHub) |
 
 Wire a replacement at `cmd/unreal-review`. `AgentRequest.ReviewID` is the review id; any continuation mapping stays inside the adapter (`internal/agent` for the unreal-agent harness).
+`AgentRequest.PriorCost` is already included in the root checkpoint, and
+`Resuming` distinguishes a resumed checkpoint from a fresh run. Stateful
+adapters reconcile their staged work against it and return only outstanding
+cost. The focused strategy's child sessions and stage manifest stay in the
+adapter, not the findings schema.
 
 A new backend, source, or renderer should plug in without changing the findings schema.
 

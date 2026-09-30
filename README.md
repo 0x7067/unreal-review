@@ -47,6 +47,31 @@ unreal-review run --from abc1234 --to def5678 --exclude '*.lock' -- cmd/
 
 `--out` names the checkpoint file; see [schema/findings-v1.md](schema/findings-v1.md) for the `run` record, resume rules, and `--fresh`.
 
+`--strategy single` is the default. For a higher-cost recall experiment,
+`--strategy focused` runs four independent discovery passes (correctness,
+failure paths, security/data, and contracts/tests), then a fresh verification
+and same-issue consolidation pass. Only verified findings reach the public
+checkpoint, including evidence-backed minor notes. Line overlap alone does not
+merge findings. The findings-v1 schema, severity rubric, and renderers are unchanged.
+
+```sh
+unreal-review run --strategy focused --out findings.jsonl
+unreal-review eval --strategy focused --model openai/gpt-6-luna-pro
+```
+
+Focused stage state stays inside the agent adapter under
+`~/.local/state/unreal-agent/sessions/focused/`. Resume with the same strategy,
+model, thinking level, source, and output file. Completed stages are reused and
+their durably recorded cost is reconciled against the root checkpoint.
+For working-tree reviews, keep `--out` outside the reviewed workspace or ignore
+both the output and its `.work` file in Git. Otherwise generated untracked
+artifacts change the source fingerprint and correctly prevent continuation.
+Planted eval fixtures ignore their generated checkpoint files automatically.
+Changed settings or missing stage state require `--fresh`. `--timeout` covers
+the whole review invocation, not each pass. More discovery may find more real
+defects or more noise, so focused is not the default until repeated benchmark
+measurements establish its tradeoff. Notes can be posted inline on GitHub.
+
 `run` refuses a diff over 200,000 bytes rather than reviewing only part of it. To review a large change in pieces, run `group` on the same git range. It prints related file groups and a `run` command for each (`unreal-review group -h` for range flags):
 
 ```sh
@@ -54,6 +79,11 @@ unreal-review group --from origin/main --to HEAD
 ```
 
 Each `run` writes its own findings file and `diff_sha`.
+`group` plans these scopes but does not execute or aggregate them. Its line
+limit allows an oversized singleton file, so a group is not guaranteed to fit
+the byte limit. Focused reviews retain the same 200,000-byte root diff limit.
+The [DAG research note](docs/research/martian-improvements.md) separates the
+implemented recall strategy from future dependency-aware large-PR execution.
 
 ```sh
 unreal-review render markdown findings.jsonl

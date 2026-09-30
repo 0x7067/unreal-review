@@ -68,6 +68,19 @@ type Harness struct {
 var _ review.Agent = Harness{}
 
 func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.AgentResult, error) {
+	if req.Resuming {
+		dir, err := sessionDirectory()
+		if err != nil {
+			return review.AgentResult{}, err
+		}
+		_, err = os.Stat(filepath.Join(dir, "focused", focusedHash(req.ReviewID), "manifest.json"))
+		if err == nil {
+			return review.AgentResult{}, fmt.Errorf("focused checkpoint: resume with --strategy focused or start with --fresh")
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return review.AgentResult{}, fmt.Errorf("read adapter state: %w", err)
+		}
+	}
 	if h.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, h.Timeout)

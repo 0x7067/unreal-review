@@ -2,6 +2,7 @@ package eval
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -137,6 +138,9 @@ func setup(ctx context.Context, c Case, dir string) error {
 		return err
 	}
 	git := func(args ...string) error {
+		// Planted repositories are synthetic fixtures, not user workspaces. Do
+		// not invoke global hooks, signing, maintenance, or filesystem monitors.
+		args = append([]string{"-c", "core.hooksPath=" + os.DevNull, "-c", "commit.gpgSign=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0", "-c", "core.fsmonitor=false"}, args...)
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = dir
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -147,7 +151,21 @@ func setup(ctx context.Context, c Case, dir string) error {
 	if err := writeFiles(dir, c.Base); err != nil {
 		return err
 	}
-	if err := git("init", "-q"); err != nil {
+	if err := git("init", "--template=", "-q"); err != nil {
+		return err
+	}
+	// These generated files live beside the source, but must not enter its
+	// untracked diff on continuation or get staged if the fixture is reused.
+	exclude := filepath.Join(dir, ".git", "info", "exclude")
+	if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(exclude, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	_, writeErr := file.WriteString("\n/findings.jsonl\n/findings.jsonl.work\n")
+	if err := errors.Join(writeErr, file.Close()); err != nil {
 		return err
 	}
 	commit := func() error {

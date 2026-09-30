@@ -580,6 +580,35 @@ func mustRead(t *testing.T, path string) []byte {
 	return raw
 }
 
+func TestCanaryFixtureDisablesInheritedHooks(t *testing.T) {
+	global := t.TempDir()
+	hooks := filepath.Join(global, "hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(global, "hook-ran")
+	if err := os.WriteFile(filepath.Join(hooks, "post-commit"), []byte("#!/bin/sh\ntouch '"+marker+"'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(global, "gitconfig")
+	raw := fmt.Sprintf("[core]\n\thooksPath = %q\n[maintenance]\n\tauto = true\n[gc]\n\tauto = 1\n\tautoDetach = true\n[commit]\n\tgpgsign = true\n", hooks)
+	if err := os.WriteFile(config, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", config)
+	dir, _, _, _ := pullHistory(t)
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("fixture invoked an inherited hook: %v", err)
+	}
+	for key, want := range map[string]string{"maintenance.auto": "false", "gc.auto": "0", "gc.autoDetach": "false", "core.fsmonitor": "false", "commit.gpgsign": "false", "core.hooksPath": filepath.Join(dir, ".git", "hooks")} {
+		cmd := exec.CommandContext(t.Context(), "git", "-C", dir, "config", "--get", key)
+		out, err := cmd.Output()
+		if err != nil || strings.TrimSpace(string(out)) != want {
+			t.Fatalf("fixture %s=%q, want %q: %v", key, out, want, err)
+		}
+	}
+}
+
 func pullHistory(t *testing.T) (dir, base, reviewed, head string) {
 	t.Helper()
 	dir = t.TempDir()
@@ -591,7 +620,20 @@ func pullHistory(t *testing.T) (dir, base, reviewed, head string) {
 			t.Fatalf("git %v: %s", args, out)
 		}
 	}
-	git("init", "-q", "-b", "main")
+	git("init", "-q", "-b", "main", "--template=")
+	// Disposable fixture commits must not invoke the user's global hooks or
+	// launch maintenance/fsmonitor writers that race TempDir removal. In
+	// particular, checkpoint hooks can write objects after commit returns.
+	hooks := filepath.Join(dir, ".git", "hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git("config", "core.hooksPath", hooks)
+	git("config", "core.fsmonitor", "false")
+	git("config", "maintenance.auto", "false")
+	git("config", "gc.auto", "0")
+	git("config", "gc.autoDetach", "false")
+	git("config", "commit.gpgsign", "false")
 	git("config", "user.email", "canary@example.com")
 	git("config", "user.name", "Canary")
 	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("base\n"), 0o644); err != nil {
@@ -635,38 +677,40 @@ func canaryBinary(t *testing.T) string {
 		t.Fatalf("%s is not an executable", bin)
 	}
 	root := repoRoot(t)
-	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "bin", "vendor":
-				return filepath.SkipDir
+	// Only these source trees were checked for freshness. Start there rather
+	// than walking unrelated benchmark worktrees and dependency checkouts,
+	// which can consume the entire canary timeout without checking more code.
+	for _, tree := range []string{filepath.Join("cmd", "unreal-review"), "internal"} {
+		err = filepath.WalkDir(filepath.Join(root, tree), func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				switch d.Name() {
+				case ".git", "bin", "vendor":
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			st, err := d.Info()
+			if err != nil {
+				return err
+			}
+			if st.ModTime().After(info.ModTime()) {
+				return fmt.Errorf("%s is newer than %s; rebuild bin/unreal-review from this checkout", rel, bin)
 			}
 			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
+		})
 		if err != nil {
-			return err
+			t.Fatal(err)
 		}
-		if !strings.HasPrefix(rel, "cmd"+string(os.PathSeparator)+"unreal-review"+string(os.PathSeparator)) && !strings.HasPrefix(rel, "internal"+string(os.PathSeparator)) {
-			return nil
-		}
-		st, err := d.Info()
-		if err != nil {
-			return err
-		}
-		if st.ModTime().After(info.ModTime()) {
-			return fmt.Errorf("%s is newer than %s; rebuild bin/unreal-review from this checkout", rel, bin)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	return bin
 }
