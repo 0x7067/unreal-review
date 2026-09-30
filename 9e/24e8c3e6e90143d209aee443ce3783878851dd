@@ -1,0 +1,25 @@
+internal/agent/agent.go
+  s_c38e3f895d997f::t_9c6e63de01ca97 219
+internal/agent/planned.go
+  s_c38e3f895d997f::t_c721684446db5d 311
+internal/agent/planned_test.go
+  s_c38e3f895d997f::t_27c045fd131cc0 322
+internal/agent/strategy_test.go
+  s_c38e3f895d997f::t_ebc8ff951843f3 116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9e24e8c3e6e90143d209aee443ce3783878851dd",
+  "prompts": {},
+  "sessions": {
+    "s_c38e3f895d997f": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "button-comma",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
