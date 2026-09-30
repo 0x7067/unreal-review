@@ -1,0 +1,23 @@
+internal/review/git_test.go
+  h_29be57c0addd47 454,458,462,466,527
+cmd/unreal-review/canary_large_test.go
+  h_29be57c0addd47 81,83-87,89,95-96,98-99,101-102,104-105,107
+  h_29be57c0addd47 79-80,82,88,90-94,97,100,103,106
+internal/review/planned_root_test.go
+  h_29be57c0addd47 106
+internal/review/group_import_test.go
+  h_29be57c0addd47 218
+internal/review/plan_test.go
+  h_29be57c0addd47 383,389,404,446,536
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b5f4485f0966e3a0bb98be2282c2e723c046e52",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
