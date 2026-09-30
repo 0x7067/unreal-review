@@ -67,8 +67,9 @@ show_stderr() {
 	fi
 }
 
-# Print the findings file before the EXIT trap deletes it. Cap the dump so a
-# long model reply stays readable; the run record is the first line.
+# Print the findings file before the EXIT trap deletes it. A non-zero review
+# still persists a run record (often status failed or running). Cap the dump
+# so a long model reply stays readable; the run record is the first line.
 show_findings() {
 	if [ ! -s "$out" ]; then
 		echo "canary-live: findings: empty" >&2
@@ -156,6 +157,7 @@ set -e
 if [ "$code" -ne 0 ]; then
 	echo "canary-live: review exited $code" >&2
 	show_stderr
+	show_findings
 	exit "$code"
 fi
 
