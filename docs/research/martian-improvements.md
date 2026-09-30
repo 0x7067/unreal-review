@@ -223,6 +223,38 @@ now use fixed author/committer dates and eval reuses an existing output. Local G
 regressions prove stable synthetic SHAs and that evaluation options do not force
 a fresh review.
 
+### OpenRouter batching and decomposition diagnosis, 2026-09-30
+
+The packed Sentry plan is 252,701 bytes across 106 files at exact source SHA
+`b458...`. It has three local prompts of 28,551, 117,771, and 118,692 bytes and
+three boundary prompts of approximately 49,421-49,441 bytes. In the measured
+live run, `Parallel=2` let active children reach 17-22 model turns and 62/81
+unique Bash commands before the first completion at about 7.5 minutes. The
+observed bottleneck is therefore unconstrained agent exploration more than
+request submission. This is diagnosis only; it is not a live-success claim.
+
+OpenRouter's [Batch API][or-batch] is asynchronous, has a 24-hour completion
+window, and uses one provider. Its roughly 50% cost reduction is attractive for
+non-interactive CI, but it does not group requests by `session_id` and does not
+fit the current interactive, multi-turn tool harness. For synchronous agents,
+OpenRouter recommends a stable session ID and static prefix for [KV prompt
+caching][or-caching]. The unreal-agent OpenRouter client already supplies
+`x-session-id` and `cache_control`, and earlier measurements showed high cached
+token counts.
+
+Routing can still tune latency explicitly. OpenRouter's [`:nitro` routing][or-nitro]
+sorts providers by throughput, while provider sorting and thresholds can admit
+faster or priority-tier routes. These choices may cost more and must remain an
+explicit model/routing selection, not a hidden semantic change. The
+[limits documentation][or-limits] also warns that parallel paid requests can
+exhaust the in-flight spending budget; clients must honor `402 Retry-After` and
+`429` responses.
+
+The resulting architecture decision is bounded synchronous fanout: allow four
+parallel workers only for `single`, retain two for focused nested fanout, cap
+child Bash exploration, and preserve durable receipts and resume. A batch
+backend remains a future replaceable implementation of the `Agent` seam.
+
 ### Bounded strategy comparison, 2026-09-30
 
 A paired attempt on `calcom-10600` used the same reviewer model and Anthropic
@@ -382,6 +414,10 @@ results with these qualifications.
 
 [or-endpoints]: https://openrouter.ai/api/v1/models/anthropic/claude-sonnet-4.5/endpoints
 [or-routing]: https://openrouter.ai/docs/features/provider-routing
+[or-batch]: https://openrouter.ai/docs/batch-quickstart
+[or-caching]: https://openrouter.ai/docs/features/prompt-caching
+[or-nitro]: https://openrouter.ai/docs/features/provider-routing#nitro
+[or-limits]: https://openrouter.ai/docs/api-reference/limits
 [cc-plugin]: https://github.com/anthropics/claude-code/blob/main/plugins/code-review/commands/code-review.md
 [claude-review]: https://claude.com/blog/code-review
 [clusterchanges]: https://www.microsoft.com/en-us/research/publication/helping-developers-help-themselves-automatic-decomposition-of-code-review-changes/
