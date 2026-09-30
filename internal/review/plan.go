@@ -104,35 +104,50 @@ func buildReviewPlan(ctx context.Context, workspace string, sel selection) (*Rev
 	}
 	groups := clusterFilesEdges(files, edges)
 	locals := []planLocal{}
-	for _, group := range groups {
-		var pending []planFragment
-		flush := func() {
-			if len(pending) == 0 {
-				return
-			}
-			paths, spans, patch := planFragmentFields(pending)
-			task := PlanTask{Kind: "local", Paths: paths, Spans: spans, Prompt: planLocalPrompt(base, paths, spans, patch)}
-			task.ID = planTaskID(task)
-			locals = append(locals, planLocal{task: task, patch: patch})
-			pending = nil
+	var pending []planFragment
+	flush := func() {
+		if len(pending) == 0 {
+			return
 		}
+		paths, spans, patch := planFragmentFields(pending)
+		task := PlanTask{Kind: "local", Paths: paths, Spans: spans, Prompt: planLocalPrompt(base, paths, spans, patch)}
+		task.ID = planTaskID(task)
+		locals = append(locals, planLocal{task: task, patch: patch})
+		pending = nil
+	}
+	fits := func(fragments []planFragment) bool {
+		paths, spans, patch := planFragmentFields(fragments)
+		return len(planLocalPrompt(base, paths, spans, patch)) <= planPromptBudget
+	}
+	for _, group := range groups {
+		groupFragments := []planFragment{}
 		for _, file := range group.Files {
-			for _, fragment := range byPath[file.Path] {
-				candidate := append(slices.Clone(pending), fragment)
-				paths, spans, patch := planFragmentFields(candidate)
-				if len(planLocalPrompt(base, paths, spans, patch)) > planPromptBudget {
-					flush()
-					candidate = []planFragment{fragment}
-					paths, spans, patch = planFragmentFields(candidate)
-					if len(planLocalPrompt(base, paths, spans, patch)) > planPromptBudget {
-						return nil, fmt.Errorf("review plan unsupported: indivisible fragment for %q exceeds prompt budget", file.Path)
-					}
-				}
-				pending = candidate
+			groupFragments = append(groupFragments, byPath[file.Path]...)
+		}
+		if fits(groupFragments) {
+			candidate := append(slices.Clone(pending), groupFragments...)
+			if !fits(candidate) {
+				flush()
+				candidate = groupFragments
 			}
+			pending = candidate
+			continue
+		}
+		flush()
+		for _, fragment := range groupFragments {
+			candidate := append(slices.Clone(pending), fragment)
+			if !fits(candidate) {
+				flush()
+				candidate = []planFragment{fragment}
+				if !fits(candidate) {
+					return nil, fmt.Errorf("review plan unsupported: indivisible fragment for %q exceeds prompt budget", fragment.path)
+				}
+			}
+			pending = candidate
 		}
 		flush()
 	}
+	flush()
 	plan := &ReviewPlan{Version: reviewPlanVersion, DiffSHA: sel.source.DiffSHA, DiffBytes: len(sel.diff)}
 	for _, local := range locals {
 		plan.Tasks = append(plan.Tasks, local.task)

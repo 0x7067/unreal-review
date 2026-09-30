@@ -107,12 +107,13 @@ func newLargeFixture(t *testing.T, singleton bool) largeFixture {
 			path := fmt.Sprintf("pkg%02d/code.go", i)
 			prefix := fmt.Sprintf("package pkg%02d\n\n", i)
 			before, after := prefix, prefix
-			if i == 0 {
+			switch i {
+			case 0:
 				before += "func Contract() string { return \"old\" } // LARGE_OLD_PRODUCER\n"
 				after += "func Contract() int { return 0 } // LARGE_NEW_PRODUCER\n"
 				f.anchors["LARGE_OLD_PRODUCER"] = largeAnchor{path, 3, true}
 				f.anchors["LARGE_NEW_PRODUCER"] = largeAnchor{path, 3, false}
-			} else if i == 9 {
+			case 9:
 				before += "import \"fixture/pkg00\"\n\nfunc Consumer() int { return len(pkg00.Contract()) } // LARGE_OLD_CONSUMER\n"
 				after += "import \"fixture/pkg00\"\n\nfunc Consumer() int { return len(pkg00.Contract()) + 1 } // LARGE_NEW_CONSUMER\n"
 				f.anchors["LARGE_OLD_CONSUMER"] = largeAnchor{path, 5, true}
@@ -370,7 +371,7 @@ func (p *largeProvider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var output []map[string]any
 	toolResults := strings.Contains(string(raw), "function_call_output")
 	var items []findings.Finding
-	if kind == "local" && !p.candidateStages[root] && p.extraCandidates > 0 && !toolResults {
+	if kind == "local" && strings.Contains(prompt, "LARGE_NEW_PRODUCER") && !p.candidateStages[root] && p.extraCandidates > 0 && !toolResults {
 		p.candidateStages[root] = true
 		for i := 0; i < p.extraCandidates; i++ {
 			items = append(items, findings.Finding{Path: "pkg00/code.go", StartLine: 3, EndLine: 3, Anchor: findings.AnchorNew, Severity: findings.SeverityNote, Body: fmt.Sprintf("Unverified private candidate %d. %s", i, strings.Repeat("x", 3000))})
@@ -447,8 +448,15 @@ func (p *largeProvider) check(t *testing.T, root string, complete bool) {
 		t.Fatal("root identity/source changed")
 	}
 	responses, locals, boundaries, verification := 0, 0, 0, 0
-	for _, s := range p.sessions {
+	discoverySessions := make(map[string]string)
+	for id, s := range p.sessions {
 		if s.root == root {
+			if s.kind == "local" || s.kind == "boundary" {
+				if prior, exists := discoverySessions[s.stage]; exists && prior != id {
+					t.Fatalf("discovery continuation changed session identity: %s", s.stage)
+				}
+				discoverySessions[s.stage] = id
+			}
 			responses += s.responses
 			switch s.kind {
 			case "local":
@@ -795,6 +803,7 @@ func TestCanaryLargeOfflineSentryCoverage(t *testing.T) {
 	// Baseline workspaces may contain only two shallow snapshots. Preserve the
 	// checkout and never fetch to manufacture ancestry for an offline test.
 	mergeBase := exec.CommandContext(t.Context(), "git", "-C", dir, "merge-base", f.base, f.head)
+	mergeBase.Env = largeNoTracingEnv(os.Environ())
 	if _, err := mergeBase.Output(); err != nil {
 		t.Skipf("offline snapshots have no merge-base: full CLI range blocked; raw diff verified bytes=%d sha=%s", len(f.diff), f.sha)
 	}

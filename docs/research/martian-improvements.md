@@ -199,6 +199,47 @@ input remains refused, while a valid bounded full-ownership plan may execute.
 `LAWS.bend`, `spec/plan.bend`, `spec/checkpoint.bend` and `PROOF.bend` model the
 new conditions without claiming Go equivalence or semantic bug truth.
 
+### Large Martian execution pilot, 2026-09-30
+
+The first live run used the committed `0f43d2a` build on
+`sentry-greptile-5`, the 252,701-byte / 106-file case that the historical
+baseline refused. Automatic planning started successfully, kept the public root
+running and private, and durably recorded $0.21386122 across 86 requests. The
+15-minute invocation completed 13 tasks, then paused without publishing a clean
+receipt or findings.
+
+That is reachability evidence, not a practical large-PR quality result. The plan
+had 152 local and boundary task stages because the first implementation flushed
+at every locality group. The follow-up planner now packs whole small locality
+groups together up to the prompt budget, never splits a group that fits alone,
+and retains fragment splitting for a group that is itself oversized. A 40-group
+320KB regression now produces only a few near-cap local tasks while preserving
+exact byte ownership and linked-file locality.
+
+The pilot also exposed an eval-only continuation defect. Martian fixture
+`commit-tree` calls inherited current timestamps and `RunMartian` always set
+`Fresh`, so another invocation could not reuse its checkpoint. Synthetic commits
+now use fixed author/committer dates and eval reuses an existing output. Local Git
+regressions prove stable synthetic SHAs and that evaluation options do not force
+a fresh review.
+
+### Bounded strategy comparison, 2026-09-30
+
+A paired attempt on `calcom-10600` used the same reviewer model and Anthropic
+Sonnet 4.5 judge route. `single` completed in 313.45 seconds with three findings,
+two of four core goldens matched, $0.05332178 review cost and 15 requests.
+`focused` completed all four durable discovery stages but did not finish its
+verifier inside the 10-minute cap. Those stages cost $0.163539925 across 37
+requests and correctly left the public root running with no hypotheses.
+
+Therefore this attempt cannot compare precision/recall. It does establish a
+lower bound: focused spent 3.07x the single review cost and 2.47x the requests,
+with more than 1.9x the latency and no publishable result. This reinforces
+keeping `single` as the default. The second selected case was not reached by the
+focused arm. Its single-arm judge response was malformed, another reason not to
+turn this tiny exploratory run into a leaderboard claim. Comparable Martian
+scores still require the pinned extraction, deduplication and step-3 runner.
+
 ## 3. Implemented recall experiment
 
 The single-review prompt now encourages systematic coverage, investigating
