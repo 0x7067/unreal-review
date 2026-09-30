@@ -1,0 +1,14 @@
+internal/agent/planned_test.go
+  h_29be57c0addd47 5,7,10-11,143-249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3d4924282f89c2f789cbcbb63d72654254991b19",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
