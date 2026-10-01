@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -68,7 +67,7 @@ func cmdEval(args []string) error {
 	}
 	planted := eval.Corpus
 	if *corpus == "planted" {
-		planted, err = selectPlanted(planted, *only)
+		planted, err = selectNamed(planted, *only, "planted", func(c eval.Case) string { return c.Name })
 		if err != nil {
 			return err
 		}
@@ -118,32 +117,6 @@ func cmdEval(args []string) error {
 	fmt.Fprintf(os.Stderr, "artifacts: %s\n", root)
 	return nil
 }
-
-func selectPlanted(cases []eval.Case, names string) ([]eval.Case, error) {
-	if names == "" {
-		return cases, nil
-	}
-	byName := make(map[string]eval.Case, len(cases))
-	for _, c := range cases {
-		byName[c.Name] = c
-	}
-	var picked []eval.Case
-	seen := make(map[string]bool)
-	for _, raw := range strings.Split(names, ",") {
-		name := strings.TrimSpace(raw)
-		c, ok := byName[name]
-		if !ok {
-			return nil, fmt.Errorf("unknown planted case %q", name)
-		}
-		if seen[name] {
-			return nil, fmt.Errorf("duplicate planted case %q", name)
-		}
-		seen[name] = true
-		picked = append(picked, c)
-	}
-	return picked, nil
-}
-
 func totals(scores []eval.Score) evalTotals {
 	total := evalTotals{Cases: len(scores)}
 	for _, score := range scores {

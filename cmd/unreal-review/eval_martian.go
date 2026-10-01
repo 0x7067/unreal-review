@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"text/tabwriter"
 
@@ -45,7 +44,7 @@ func evalMartian(ctx context.Context, root, model string, reviewer review.Agent,
 	if _, err := eval.MartianProfile(flags.profile); err != nil {
 		return err
 	}
-	cases, err := selectMartian(all, flags.cases)
+	cases, err := selectNamed(all, flags.cases, "martian", func(c eval.MartianCase) string { return c.Name })
 	if err != nil {
 		return err
 	}
@@ -91,32 +90,6 @@ func evalMartian(ctx context.Context, root, model string, reviewer review.Agent,
 	fmt.Fprintf(os.Stderr, "artifacts: %s\n", root)
 	return nil
 }
-
-func selectMartian(cases []eval.MartianCase, names string) ([]eval.MartianCase, error) {
-	if names == "" {
-		return cases, nil
-	}
-	byName := map[string]eval.MartianCase{}
-	for _, c := range cases {
-		byName[c.Name] = c
-	}
-	var picked []eval.MartianCase
-	seen := make(map[string]bool)
-	for _, name := range strings.Split(names, ",") {
-		name = strings.TrimSpace(name)
-		c, ok := byName[name]
-		if !ok {
-			return nil, fmt.Errorf("unknown martian case %q", name)
-		}
-		if seen[name] {
-			return nil, fmt.Errorf("duplicate martian case %q", name)
-		}
-		seen[name] = true
-		picked = append(picked, c)
-	}
-	return picked, nil
-}
-
 func printMartian(summary martianSummary) {
 	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(writer, "case\tstatus\trecall\tseverity\tfound\tgold\textra\tcost\ttime")
