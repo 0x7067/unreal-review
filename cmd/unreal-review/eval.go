@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -38,12 +39,14 @@ func cmdEval(args []string) error {
 	outDir := fs.String("out", "", "directory for eval artifacts (default: a fresh temp dir)")
 	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
+	strategy := fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
+	decompose := fs.Bool("decompose", false, "use bounded aggregate scopes for every review case")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
 	asJSON := fs.Bool("json", false, "print machine-readable JSON instead of a table")
 	corpus := fs.String("corpus", "planted", "planted or martian")
 	profile := fs.String("profile", "core", "martian golden categories: core, strict, or all")
 	parallel := fs.Int("parallel", 8, "martian cases reviewed at once")
-	only := fs.String("cases", "", "comma-separated martian case names (default: all)")
+	only := fs.String("cases", "", "comma-separated case names for the selected corpus (default: all)")
 	judgeModel := fs.String("judge-model", "anthropic/claude-sonnet-5.5", "OpenRouter model that matches martian findings to golden comments")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -59,6 +62,17 @@ func cmdEval(args []string) error {
 	if err != nil {
 		return err
 	}
+	reviewer, err := agent.ReviewPipeline(*strategy, agent.Harness{APIKey: key, ThinkingLevel: level, Timeout: *timeout})
+	if err != nil {
+		return err
+	}
+	planted := eval.Corpus
+	if *corpus == "planted" {
+		planted, err = selectPlanted(planted, *only)
+		if err != nil {
+			return err
+		}
+	}
 	root := *outDir
 	if root == "" {
 		temp, err := os.MkdirTemp("", "unreal-review-eval-")
@@ -72,26 +86,27 @@ func cmdEval(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	harness := agent.Harness{APIKey: key, ThinkingLevel: level, Timeout: *timeout}
 	switch *corpus {
 	case "planted":
 	case "martian":
-		return evalMartian(ctx, root, *model, harness, martianFlags{
-			profile: *profile, parallel: *parallel, cases: *only, judgeModel: *judgeModel, asJSON: *asJSON,
+		return evalMartian(ctx, root, *model, reviewer, key, martianFlags{
+			profile: *profile, parallel: *parallel, cases: *only, judgeModel: *judgeModel, asJSON: *asJSON, decompose: *decompose,
 		})
 	default:
 		return fmt.Errorf("unknown corpus %q: use planted or martian", *corpus)
 	}
-	scores := make([]eval.Score, 0, len(eval.Corpus))
-	for _, c := range eval.Corpus {
+	scores := make([]eval.Score, 0, len(planted))
+	for _, c := range planted {
 		score, err := eval.Run(ctx, c, root, eval.Options{
-			Model: *model,
-			Agent: harness,
+			Model:     *model,
+			Agent:     reviewer,
+			Decompose: *decompose,
 		})
 		if err != nil {
 			return err
 		}
 		scores = append(scores, score)
+		fmt.Fprintf(os.Stderr, "%s done\n", c.Name)
 	}
 	if *asJSON {
 		enc := json.NewEncoder(os.Stdout)
@@ -102,6 +117,31 @@ func cmdEval(args []string) error {
 	printScores(scores)
 	fmt.Fprintf(os.Stderr, "artifacts: %s\n", root)
 	return nil
+}
+
+func selectPlanted(cases []eval.Case, names string) ([]eval.Case, error) {
+	if names == "" {
+		return cases, nil
+	}
+	byName := make(map[string]eval.Case, len(cases))
+	for _, c := range cases {
+		byName[c.Name] = c
+	}
+	var picked []eval.Case
+	seen := make(map[string]bool)
+	for _, raw := range strings.Split(names, ",") {
+		name := strings.TrimSpace(raw)
+		c, ok := byName[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown planted case %q", name)
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("duplicate planted case %q", name)
+		}
+		seen[name] = true
+		picked = append(picked, c)
+	}
+	return picked, nil
 }
 
 func totals(scores []eval.Score) evalTotals {

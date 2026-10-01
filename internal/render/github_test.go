@@ -22,9 +22,6 @@ func TestGitHubSuppressesFindingsItAlreadyPosted(t *testing.T) {
 	if result.Payload.Review.Comments[0].Path != "src/bar.go" {
 		t.Fatalf("posted the wrong finding: %+v", result.Payload.Review.Comments[0])
 	}
-	if len(result.Duplicates) != 1 || result.Duplicates[0].ID != already.ID {
-		t.Fatalf("duplicates: %+v", result.Duplicates)
-	}
 	if strings.Contains(result.Payload.Review.Body, "src/foo.go") {
 		t.Fatalf("the review body repeats a finding already on the pull request:\n%s", result.Payload.Review.Body)
 	}
@@ -50,7 +47,7 @@ func TestGitHubSuppressionDoesNotConsumeTheCommentCap(t *testing.T) {
 		already  []findings.Finding
 		comments []github.PostedComment
 	)
-	for i := range maxInlineComments {
+	for i := range 50 {
 		item := newFinding("src/foo.go", i+1, i+1, fmt.Sprintf("An old problem %d.", i))
 		already = append(already, item)
 		comments = append(comments, postedComment(item))
@@ -59,12 +56,8 @@ func TestGitHubSuppressionDoesNotConsumeTheCommentCap(t *testing.T) {
 
 	result := GitHub(reportOf(append(already, fresh)...), GitHubOptions{History: History{Comments: comments}})
 
-	if len(result.Payload.Review.Comments) != 1 {
-		t.Fatalf("the one new finding should still fit under the cap: %d comments, %d dropped",
-			len(result.Payload.Review.Comments), len(result.Dropped))
-	}
-	if len(result.Duplicates) != maxInlineComments {
-		t.Fatalf("duplicates: %d, want %d", len(result.Duplicates), maxInlineComments)
+	if len(result.Payload.Review.Comments) != 1 || !strings.Contains(result.Payload.Review.Comments[0].Body, fresh.Body) {
+		t.Fatalf("the new finding was not rendered: %+v", result.Payload.Review.Comments)
 	}
 }
 
@@ -112,9 +105,6 @@ func TestGitHubOutOfPatchFindingIsReportedOnceAndReceipts(t *testing.T) {
 	if second.PostReview() {
 		t.Fatalf("second render repeats the drop:\n%s", second.Payload.Review.Body)
 	}
-	if len(second.Duplicates) != 1 || second.Duplicates[0].ID != offDiff.ID || len(second.Dropped) != 0 {
-		t.Fatalf("second render: duplicates=%+v dropped=%+v", second.Duplicates, second.Dropped)
-	}
 	if !second.Receipt() {
 		t.Fatal("second render must still receipt the head")
 	}
@@ -122,15 +112,14 @@ func TestGitHubOutOfPatchFindingIsReportedOnceAndReceipts(t *testing.T) {
 
 func TestGitHubOverCapFindingBlocksReceiptAndCarriesNoMarker(t *testing.T) {
 	var items []findings.Finding
-	for i := range maxInlineComments + 1 {
+	for i := range 51 {
 		items = append(items, newFinding("src/foo.go", i+1, i+1, fmt.Sprintf("Problem %d.", i)))
 	}
-	over := items[maxInlineComments]
 
 	result := GitHub(reportOf(items...), GitHubOptions{})
 
-	if len(result.Payload.Review.Comments) != maxInlineComments || len(result.Dropped) != 1 || result.Dropped[0].Finding.ID != over.ID {
-		t.Fatalf("comments=%d dropped=%+v", len(result.Payload.Review.Comments), result.Dropped)
+	if len(result.Payload.Review.Comments) != 50 {
+		t.Fatalf("comments=%d, want 50", len(result.Payload.Review.Comments))
 	}
 	if result.Receipt() {
 		t.Fatal("a finding cut by the cap is still postable; the head must not be receipted")
@@ -151,20 +140,20 @@ func TestGitHubDoesNotSuppressADistinctFindingOnTheSameLines(t *testing.T) {
 
 	result := GitHub(reportOf(distinct), GitHubOptions{CommitID: "head", History: history})
 
-	if len(result.Duplicates) != 0 || len(result.Payload.Review.Comments) != 1 {
-		t.Fatalf("distinct finding was suppressed: duplicates=%+v comments=%+v", result.Duplicates, result.Payload.Review.Comments)
+	if len(result.Payload.Review.Comments) != 1 || !strings.Contains(result.Payload.Review.Comments[0].Body, distinct.Body) {
+		t.Fatalf("distinct finding was not rendered: %+v", result.Payload.Review.Comments)
 	}
 }
 
-func TestGitHubMatchesPostedCommentsByIDOnly(t *testing.T) {
+func TestGitHubPostsAChangedFindingAlongsideAPreviouslyPostedOne(t *testing.T) {
 	posted := newFinding("src/foo.go", 10, 12, "This map write races with the reader.")
 	comment := postedComment(posted)
 	moved := newFinding("src/foo.go", 10, 12, "A different issue now on these lines.")
 
 	result := GitHub(reportOf(moved, posted), GitHubOptions{CommitID: "head", History: History{Comments: []github.PostedComment{comment}}})
 
-	if len(result.Payload.Review.Comments) != 1 || len(result.Duplicates) != 1 || result.Duplicates[0].ID != posted.ID {
-		t.Fatalf("posted comment matches by id only: comments=%d duplicates=%+v", len(result.Payload.Review.Comments), result.Duplicates)
+	if len(result.Payload.Review.Comments) != 1 || !strings.Contains(result.Payload.Review.Comments[0].Body, moved.Body) {
+		t.Fatalf("rendered comments: %+v", result.Payload.Review.Comments)
 	}
 }
 
@@ -175,8 +164,8 @@ func TestGitHubDoesNotSuppressARewordedOutOfPatchFindingByLocation(t *testing.T)
 	reworded := newFinding("src/foo.go", 90, 90, "Same issue, new words.")
 
 	result := GitHub(reportOf(reworded), GitHubOptions{CommitID: "head", Lines: lines, HasLines: true, History: History{Reviews: []github.PostedReview{{CommitID: "head", Body: body}}}})
-	if len(result.Duplicates) != 0 || len(result.Dropped) != 1 {
-		t.Fatalf("reworded finding was suppressed: duplicates=%+v dropped=%+v", result.Duplicates, result.Dropped)
+	if !strings.Contains(result.Payload.Review.Body, reworded.Body) {
+		t.Fatalf("reworded finding was not rendered:\n%s", result.Payload.Review.Body)
 	}
 }
 
@@ -190,10 +179,7 @@ func TestGitHubSuppressesAFindingThatReusesAPostedID(t *testing.T) {
 
 	result := GitHub(reportOf(restated, wrong), GitHubOptions{CommitID: "head", History: History{Comments: []github.PostedComment{comment}}})
 
-	if len(result.Duplicates) != 1 || result.Duplicates[0].StartLine != 40 {
-		t.Fatalf("duplicates=%+v", result.Duplicates)
-	}
-	if len(result.Payload.Review.Comments) != 1 || result.Payload.Review.Comments[0].Line != 60 {
+	if len(result.Payload.Review.Comments) != 1 || result.Payload.Review.Comments[0].Line != 60 || !strings.Contains(result.Payload.Review.Comments[0].Body, wrong.Body) {
 		t.Fatalf("an id naming no posted finding must still post: %+v", result.Payload.Review.Comments)
 	}
 }

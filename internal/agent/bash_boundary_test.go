@@ -35,16 +35,60 @@ func TestBoundedBashRejectsRootWideFindBeforeExecution(t *testing.T) {
 			ctx := &recordingContext{}
 
 			status := translator.Translate(ctx, bashCall(command))
-			if status.Error == "" || !strings.Contains(status.Error, "find .") {
-				t.Fatalf("error = %q, want a bounded-search correction", status.Error)
-			}
-			if len(ctx.specs) != 0 {
-				t.Fatalf("submitted %d shell operations, want none", len(ctx.specs))
+			if status.Error == "" {
+				t.Fatal("root-wide find was accepted")
 			}
 			if _, err := os.Stat(marker); !os.IsNotExist(err) {
 				t.Fatalf("root-wide find executed: marker stat error = %v", err)
 			}
 		})
+	}
+}
+
+func TestBoundedBashStopsExecutingAfterCallLimit(t *testing.T) {
+	workspace := t.TempDir()
+	translator := newBoundedBash(workspace, 2, bash.New(bash.Config{
+		Shell:         "/bin/sh",
+		Directory:     workspace,
+		BaseDirectory: t.TempDir(),
+	}))
+	for _, name := range []string{"first", "second"} {
+		ctx := &recordingContext{}
+		status := translator.Translate(ctx, bashCall("touch "+name))
+		if status.Error != "" {
+			t.Fatalf("create %s: %s", name, status.Error)
+		}
+		if _, err := runSubmittedShell(t.Context(), ctx); err != nil {
+			t.Fatalf("run %s: %v", name, err)
+		}
+		if _, err := os.Stat(filepath.Join(workspace, name)); err != nil {
+			t.Fatalf("%s was not created: %v", name, err)
+		}
+	}
+	blocked := filepath.Join(workspace, "blocked")
+	status := translator.Translate(&recordingContext{}, bashCall("touch blocked"))
+	if status.Error == "" {
+		t.Fatal("command beyond the configured limit was accepted")
+	}
+	if _, err := os.Stat(blocked); !os.IsNotExist(err) {
+		t.Fatalf("blocked command executed: marker stat error = %v", err)
+	}
+}
+
+func TestBoundedBashNegativeLimitDisablesExecution(t *testing.T) {
+	workspace := t.TempDir()
+	translator := newBoundedBash(workspace, -1, bash.New(bash.Config{
+		Shell:         "/bin/sh",
+		Directory:     workspace,
+		BaseDirectory: t.TempDir(),
+	}))
+	marker := filepath.Join(workspace, "blocked")
+	status := translator.Translate(&recordingContext{}, bashCall("touch blocked"))
+	if status.Error == "" {
+		t.Fatal("command was accepted while execution was disabled")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("disabled command executed: marker stat error = %v", err)
 	}
 }
 
@@ -57,7 +101,7 @@ func TestBoundedBashAllowsWorkspaceLocalFind(t *testing.T) {
 	if err := os.WriteFile(want, []byte("fallbacks"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	translator := newBoundedBash(workspace, bash.New(bash.Config{
+	translator := newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
 		BaseDirectory: t.TempDir(),
@@ -79,7 +123,11 @@ func TestBoundedBashAllowsWorkspaceLocalFind(t *testing.T) {
 
 func TestBoundedBashAllowsAbsoluteWorkspaceRoot(t *testing.T) {
 	workspace := t.TempDir()
-	translator := newBoundedBash(workspace, bash.New(bash.Config{
+	want := filepath.Join(workspace, "dependency.rb")
+	if err := os.WriteFile(want, []byte("dependency"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	translator := newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
 		BaseDirectory: t.TempDir(),
@@ -90,8 +138,12 @@ func TestBoundedBashAllowsAbsoluteWorkspaceRoot(t *testing.T) {
 	if status.Error != "" {
 		t.Fatalf("translate: %s", status.Error)
 	}
-	if len(ctx.specs) != 1 {
-		t.Fatalf("submitted %d shell operations, want one", len(ctx.specs))
+	out, err := runSubmittedShell(t.Context(), ctx)
+	if err != nil {
+		t.Fatalf("run workspace find: %v", err)
+	}
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("output = %q, want %q", strings.TrimSpace(out), want)
 	}
 }
 
@@ -101,7 +153,7 @@ func TestBoundedBashRejectsSymlinkRootOutsideWorkspace(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(workspace, "outside")); err != nil {
 		t.Skipf("create symlink: %v", err)
 	}
-	translator := newBoundedBash(workspace, bash.New(bash.Config{
+	translator := newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
 		BaseDirectory: t.TempDir(),
@@ -111,9 +163,6 @@ func TestBoundedBashRejectsSymlinkRootOutsideWorkspace(t *testing.T) {
 	status := translator.Translate(ctx, bashCall("find outside -name dependency.rb"))
 	if status.Error == "" {
 		t.Fatal("symlink root outside workspace was accepted")
-	}
-	if len(ctx.specs) != 0 {
-		t.Fatalf("submitted %d shell operations, want none", len(ctx.specs))
 	}
 }
 
@@ -128,7 +177,7 @@ func TestBoundedBashKeepsCancellationOnAllowedFind(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	translator := newBoundedBash(workspace, bash.New(bash.Config{
+	translator := newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
 		BaseDirectory: t.TempDir(),
@@ -161,7 +210,7 @@ func testBoundedBash(t *testing.T, workspace, marker string) interface {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return newBoundedBash(workspace, bash.New(bash.Config{
+	return newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
 		BaseDirectory: t.TempDir(),

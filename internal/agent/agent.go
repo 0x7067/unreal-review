@@ -63,11 +63,27 @@ type Harness struct {
 	ThinkingLevel string
 	Log           io.Writer
 	Timeout       time.Duration
+	// MaxBashCalls limits Bash tool calls within one Run. Zero is unlimited;
+	// negative disables Bash for stages that must operate only on supplied data.
+	MaxBashCalls int
 }
 
 var _ review.Agent = Harness{}
 
 func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.AgentResult, error) {
+	if req.Resuming {
+		dir, err := sessionDirectory()
+		if err != nil {
+			return review.AgentResult{}, err
+		}
+		_, err = os.Stat(filepath.Join(dir, "focused", focusedHash(req.ReviewID), "manifest.json"))
+		if err == nil {
+			return review.AgentResult{}, fmt.Errorf("focused checkpoint: resume with --strategy focused or start with --fresh")
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return review.AgentResult{}, fmt.Errorf("read adapter state: %w", err)
+		}
+	}
 	if h.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, h.Timeout)
@@ -148,7 +164,7 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 		return review.AgentResult{}, fmt.Errorf("create operation directory: %w", err)
 	}
 	registry := newRecordRegistry(tool.NewRegistry(tool.StaticTranslators{
-		Bash: newBoundedBash(req.Workspace, bash.New(bash.Config{
+		Bash: newBoundedBash(req.Workspace, h.MaxBashCalls, bash.New(bash.Config{
 			Shell:         "/bin/sh",
 			Directory:     req.Workspace,
 			BaseDirectory: operationDirectory,
@@ -160,13 +176,14 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	observerID := store.AddObserver(observer.Observe)
 	defer store.RemoveObserver(observerID)
 
+	systemPrompt := bashBudgetSystemPrompt(req.SystemPrompt, h.MaxBashCalls)
 	s := harnessSession{
 		id:           sessionID,
 		store:        store,
 		llm:          adapter,
 		registry:     registry,
 		model:        llm.Model{ID: req.Model, ReasoningEffort: llm.ReasoningEffort(h.ThinkingLevel)},
-		systemPrompt: req.SystemPrompt,
+		systemPrompt: systemPrompt,
 	}
 	coordinatorErr := s.turn(runCtx, inbox.ID(sessionID), req.Prompt)
 	for attempt := 0; coordinatorErr == nil; attempt++ {
@@ -191,6 +208,18 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	}
 
 	return review.AgentResult{Cost: observer.Cost()}, coordinatorErr
+}
+
+func bashBudgetSystemPrompt(systemPrompt string, maxCalls int) string {
+	if maxCalls == 0 {
+		return systemPrompt
+	}
+	if maxCalls < 0 {
+		return systemPrompt + `
+	Bash is unavailable for this run. Do not call Bash. Use the review-recording tools normally, work only from the supplied candidate data, and finalize directly.`
+	}
+	return systemPrompt + fmt.Sprintf(`
+This run has a strict budget of %d Bash tool calls. The supplied task prompt already contains the changed scope, so start from it. Do not rerun the whole diff, diff stat, or name-only listing unless a precise ambiguity requires it. First identify the few highest-risk candidate defects. Use Bash only to test a concrete premise in callers, configuration, schemas, tests, or the base revision. Batch related narrow reads and searches into one command, use exact source revisions, and issue at most four Bash calls per model turn. Treat roughly the first three quarters of the budget as triage and reserve the rest for confirming the strongest candidates and their anchors. Record a finding as soon as its evidence is sufficient. Stop exploring low-confidence branches and finalize once no high-value premise remains; a clean result is valid.`, maxCalls)
 }
 
 type harnessSession struct {

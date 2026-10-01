@@ -406,6 +406,14 @@ OPENROUTER_API_KEY=dummy cli --name run-thinking -- run --model x --thinking-lev
 require_exit run-thinking 1
 expect cli-usage.md 'thinking level "nope": want low, medium, high, xhigh, or max' "$(stderr_of run-thinking)" "run-thinking"
 
+OPENROUTER_API_KEY=dummy cli --name focused-invalid -- run --strategy nope --model x --workspace "$VERIFY_SCRATCH" --out "$VERIFY_SCRATCH/unused.jsonl"
+require_exit focused-invalid 1
+expect focused-review.md 'strategy "nope": want single or focused' "$(stderr_of focused-invalid)" "focused-invalid"
+
+OPENROUTER_API_KEY=dummy cli --name focused-eval-invalid -- eval --strategy nope --model x --out "$VERIFY_SCRATCH/unused-eval"
+require_exit focused-eval-invalid 1
+expect focused-review.md 'strategy "nope": want single or focused' "$(stderr_of focused-eval-invalid)" "focused-eval-invalid"
+
 OPENROUTER_API_KEY=dummy cli --name run-exclude-empty -- run --model x --exclude '' --workspace "$VERIFY_SCRATCH" --out "$VERIFY_SCRATCH/unused.jsonl"
 require_exit run-exclude-empty 1
 expect cli-usage.md "empty --exclude" "$(stderr_of run-exclude-empty)" "run-exclude-empty"
@@ -425,6 +433,13 @@ require_field "$VERIFY_SCRATCH/empty.jsonl" head HEAD "range-empty"
 require_field "$VERIFY_SCRATCH/empty.jsonl" diff_sha "$EMPTY" "range-empty"
 feature_has review-git-range.md "No material issues: the selected range has no changes."
 require_field "$VERIFY_SCRATCH/empty.jsonl" summary "No material issues: the selected range has no changes." "range-empty"
+
+OPENROUTER_API_KEY=dummy cli --name focused-empty -- run --strategy focused --model x --workspace "$VERIFY_FIXTURE" --from HEAD --to HEAD --out "$VERIFY_SCRATCH/focused-empty.jsonl"
+require_exit focused-empty 0
+expect focused-review.md 'cost: USD 0.000000' "$(stderr_of focused-empty)" "focused-empty"
+require_field "$VERIFY_SCRATCH/focused-empty.jsonl" status complete "focused-empty"
+require_field "$VERIFY_SCRATCH/focused-empty.jsonl" diff_sha "$EMPTY" "focused-empty"
+require_field "$VERIFY_SCRATCH/focused-empty.jsonl" summary "No material issues: the selected range has no changes." "focused-empty"
 base_sha=$(run_json "$VERIFY_SCRATCH/empty.jsonl" base_sha)
 head_sha=$(run_json "$VERIFY_SCRATCH/empty.jsonl" head_sha)
 if [ "$base_sha" != "$head_sha" ] || [ -z "$base_sha" ]; then

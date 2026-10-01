@@ -250,11 +250,19 @@ func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Fin
 	if len(c.Comments) == 0 || len(produced) == 0 {
 		return verdict{}, nil
 	}
-	body, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"model":    j.Model,
 		"messages": []map[string]string{{"role": "user", "content": judgePrompt(c, produced)}},
 		"usage":    map[string]bool{"include": true},
-	})
+	}
+	if strings.HasPrefix(j.Model, "anthropic/") {
+		payload["provider"] = map[string]any{
+			"only":               []string{"anthropic"},
+			"allow_fallbacks":    false,
+			"require_parameters": true,
+		}
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return verdict{}, err
 	}
@@ -304,14 +312,7 @@ func RunMartian(ctx context.Context, c MartianCase, root string, opts Options, j
 	}
 	findingsPath := filepath.Join(root, c.Name+".findings.jsonl")
 	start := time.Now()
-	result, runErr := review.Run(ctx, review.Options{
-		Workspace: dir,
-		Spec:      review.Spec{Commit: head},
-		Out:       findingsPath,
-		Fresh:     true,
-		Model:     opts.Model,
-		Agent:     opts.Agent,
-	})
+	result, runErr := review.Run(ctx, martianReviewOptions(dir, head, findingsPath, opts))
 	verdict, judgeErr := judge.Match(ctx, c, result.Report.Findings)
 	score := ScoreMartian(c, result.Report, verdict.Pairs, profile)
 	score.JudgeCostUSD = verdict.CostUSD
@@ -326,23 +327,60 @@ func RunMartian(ctx context.Context, c MartianCase, root string, opts Options, j
 	return score, nil
 }
 
+func martianReviewOptions(dir, head, findingsPath string, opts Options) review.Options {
+	return review.Options{
+		Workspace: dir,
+		Spec:      review.Spec{Commit: head},
+		Out:       findingsPath,
+		Decompose: opts.Decompose,
+		Model:     opts.Model,
+		Agent:     opts.Agent,
+	}
+}
+
+const martianGitDate = "2000-01-01T00:00:00Z"
+
+func martianGit(ctx context.Context, dir string, args ...string) (string, error) {
+	args = append([]string{"-c", "user.name=eval", "-c", "user.email=eval@invalid", "-c", "core.hooksPath=" + os.DevNull, "-c", "commit.gpgSign=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0", "-c", "core.fsmonitor=false"}, args...)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	cmd.Env = martianGitEnv()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func martianGitEnv() []string {
+	env := os.Environ()
+	clean := make([]string, 0, len(env)+2)
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "GIT_AUTHOR_DATE=") || strings.HasPrefix(entry, "GIT_COMMITTER_DATE=") {
+			continue
+		}
+		clean = append(clean, entry)
+	}
+	return append(clean, "GIT_AUTHOR_DATE="+martianGitDate, "GIT_COMMITTER_DATE="+martianGitDate)
+}
+
+func martianSyntheticHead(git func(...string) (string, error), c MartianCase) (string, error) {
+	base, err := git("commit-tree", c.Base+"^{tree}", "-m", "base")
+	if err != nil {
+		return "", err
+	}
+	return git("commit-tree", c.Head+"^{tree}", "-p", base, "-m", c.Title)
+}
+
 func checkoutMartian(ctx context.Context, c MartianCase, dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	git := func(args ...string) (string, error) {
-		cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "user.name=eval", "-c", "user.email=eval@invalid"}, args...)...)
-		cmd.Dir = dir
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		out, err := cmd.Output()
-		if err != nil {
-			return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
-		}
-		return strings.TrimSpace(string(out)), nil
-	}
+	git := func(args ...string) (string, error) { return martianGit(ctx, dir, args...) }
 	steps := [][]string{
-		{"init", "-q"},
+		{"init", "--template=", "-q"},
 		{"fetch", "-q", "--depth=1", "https://github.com/" + c.Repo + ".git", c.Head, c.Base},
 	}
 	for _, step := range steps {
@@ -350,11 +388,7 @@ func checkoutMartian(ctx context.Context, c MartianCase, dir string) (string, er
 			return "", err
 		}
 	}
-	base, err := git("commit-tree", c.Base+"^{tree}", "-m", "base")
-	if err != nil {
-		return "", err
-	}
-	head, err := git("commit-tree", c.Head+"^{tree}", "-p", base, "-m", c.Title)
+	head, err := martianSyntheticHead(git, c)
 	if err != nil {
 		return "", err
 	}

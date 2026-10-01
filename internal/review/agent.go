@@ -17,8 +17,15 @@ type AgentRequest struct {
 	Prompt       string
 	SystemPrompt string
 	Model        string
+	// PriorCost is already included in the root checkpoint. Stateful adapters
+	// return only cost not yet included there, including durably staged work
+	// whose caller was interrupted before publishing its checkpoint.
+	PriorCost findings.Cost
+	Resuming  bool
+	Plan      *ReviewPlan
 }
 
 type AgentResult struct {
-	Cost findings.Cost
+	Cost     findings.Cost
+	Coverage *PlanCoverage
 }

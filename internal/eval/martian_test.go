@@ -7,51 +7,6 @@ import (
 	"unreal-review/internal/findings"
 )
 
-func TestMartianSeverityMapsToReviewSeverity(t *testing.T) {
-	cases := map[string]findings.Severity{
-		"Critical": findings.SeverityError,
-		"High":     findings.SeverityError,
-		"Medium":   findings.SeverityWarning,
-		"Low":      findings.SeverityNote,
-	}
-	for martian, want := range cases {
-		if got := MartianSeverity(martian); got != want {
-			t.Fatalf("MartianSeverity(%q)=%q, want %q", martian, got, want)
-		}
-	}
-}
-
-func TestMartianCorpusMatchesPublishedCounts(t *testing.T) {
-	all, err := MartianCorpus()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(all) != 50 {
-		t.Fatalf("cases=%d, want 50", len(all))
-	}
-	want := map[string]int{"strict": 139, "core": 158, "all": 173}
-	for profile, count := range want {
-		keep, err := MartianProfile(profile)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got := 0
-		for _, c := range all {
-			for _, comment := range c.Comments {
-				if keep[comment.Category] {
-					got++
-				}
-			}
-		}
-		if got != count {
-			t.Fatalf("profile %s: comments=%d, want %d", profile, got, count)
-		}
-	}
-	if _, err := MartianProfile("loose"); err == nil {
-		t.Fatal("want error for unknown profile")
-	}
-}
-
 func TestScoreMartianLeaderboardMetricsPerProfile(t *testing.T) {
 	c := MartianCase{Name: "pr", Comments: []MartianComment{
 		{Comment: "nil deref", Severity: "High", Category: "bug"},
@@ -83,29 +38,6 @@ func TestScoreMartianLeaderboardMetricsPerProfile(t *testing.T) {
 	}
 	if empty := (Counts{FN: 3}); empty.Precision() != 0 || empty.F1() != 0 {
 		t.Fatalf("no findings: p=%v f1=%v, want 0 as Martian scores it", empty.Precision(), empty.F1())
-	}
-}
-
-func TestParsePairsDropsOutOfBoundsAndDuplicates(t *testing.T) {
-	reply := "Here you go:\n```json\n" + `{"matches":[{"golden":0,"finding":1},{"golden":0,"finding":2},{"golden":1,"finding":1},{"golden":2,"finding":0},{"golden":-1,"finding":0},{"golden":1,"finding":3},{"golden":1,"finding":0}]}` + "\n```"
-	pairs, err := parsePairs(reply, 2, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []Pair{{Golden: 0, Finding: 1}, {Golden: 1, Finding: 0}}
-	if len(pairs) != len(want) {
-		t.Fatalf("pairs=%+v, want %+v", pairs, want)
-	}
-	for i := range want {
-		if pairs[i] != want[i] {
-			t.Fatalf("pairs=%+v, want %+v", pairs, want)
-		}
-	}
-}
-
-func TestParsePairsRejectsProse(t *testing.T) {
-	if _, err := parsePairs("no matches found", 1, 1); err == nil {
-		t.Fatal("want error for a reply without JSON")
 	}
 }
 

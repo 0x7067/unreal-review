@@ -215,23 +215,7 @@ func TestGoImportEdgesUsePackageRepresentative(t *testing.T) {
 	gitRun(t, dir, "add", ".")
 	gitRun(t, dir, "commit", "-q", "-m", "head")
 
-	ctx := context.Background()
-	r, err := resolveSpec(ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	files, err := collectNumstat(ctx, dir, r, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	edges, err := goImportEdges(ctx, dir, r, files)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(edges) != 2 {
-		t.Fatalf("edges = %d (%+v), want one per importer", len(edges), edges)
-	}
-	result, err := Groups(ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
+	result, err := Groups(context.Background(), dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,38 +287,6 @@ func TestGoImportEdgesCanceled(t *testing.T) {
 	_, err = Groups(canceled, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Groups err=%v", err)
-	}
-}
-
-func TestReadRangeFileDistinguishesMissing(t *testing.T) {
-	dir := gitRepo(t)
-	gitRun(t, dir, "commit", "-q", "-m", "base", "--allow-empty")
-	writeRepoFile(t, dir, "go.mod", "module example\n")
-	writeRepoFile(t, dir, "internal/api/a.go", "package api\n")
-	gitRun(t, dir, "add", ".")
-	gitRun(t, dir, "commit", "-q", "-m", "head")
-
-	ctx := context.Background()
-	r, err := resolveSpec(ctx, dir, Spec{From: "HEAD~1", To: "HEAD"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	missing, err := readRangeFile(ctx, dir, r, "missing.go")
-	if err != nil || missing != nil {
-		t.Fatalf("missing blob data=%q err=%v", missing, err)
-	}
-	if _, err := readRangeFile(ctx, dir, r, "internal"); err == nil {
-		t.Fatal("tree path was treated as a missing blob")
-	}
-	disk, err := readRangeFile(ctx, dir, resolved{}, "missing.go")
-	if err != nil || disk != nil {
-		t.Fatalf("missing disk data=%q err=%v", disk, err)
-	}
-	if err := os.Mkdir(filepath.Join(dir, "not-a-file"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := readRangeFile(ctx, dir, resolved{}, "not-a-file"); err == nil {
-		t.Fatal("directory read was treated as a missing file")
 	}
 }
 

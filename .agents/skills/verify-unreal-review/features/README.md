@@ -47,5 +47,7 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Review a git range](./review-git-range.md) covers workspace mode, `--from`/`--to`, `--commit`, `--branch`, empty diffs, pathspecs, `--exclude`, and the skippable live agent path.
 - [Group related files](./group-files.md) covers `group` on the same git range, directory groups, stem companions, lockfiles, cross-directory tests, Go import edges, workspace grouping, and `--exclude`.
 - [Checkpoint and resume](./checkpoint.md) covers complete-file refuse, `--fresh`, SHA mismatch, failed resume, and empty-diff overwrite.
+- [Focused review](./focused-review.md) covers `--strategy focused`, its verification barrier, validation, empty diffs, durable stage state, and live cost/quality measurements.
+- [Aggregate large review](./large-review.md) covers automatic oversized decomposition, `--decompose`, full source ownership, boundary verification, interruption/resume, and unsupported indivisible input.
 - [Render markdown](./render-markdown.md) covers stdout, `--out`, stdin, empty input, missing files, and incomplete status.
 - [Render GitHub](./render-github.md) covers `--dry-run` payloads, posting gates, PR specs, and what dry-run still fetches.

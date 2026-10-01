@@ -11,6 +11,7 @@ import (
 
 	"unreal-review/internal/agent"
 	"unreal-review/internal/eval"
+	"unreal-review/internal/review"
 )
 
 type martianFlags struct {
@@ -19,6 +20,7 @@ type martianFlags struct {
 	cases      string
 	judgeModel string
 	asJSON     bool
+	decompose  bool
 }
 
 type martianSummary struct {
@@ -32,7 +34,7 @@ type martianSummary struct {
 	JudgeCost  float64                `json:"judge_cost_usd"`
 }
 
-func evalMartian(ctx context.Context, root, model string, harness agent.Harness, flags martianFlags) error {
+func evalMartian(ctx context.Context, root, model string, reviewer review.Agent, apiKey string, flags martianFlags) error {
 	if flags.parallel < 1 {
 		return fmt.Errorf("--parallel must be at least 1")
 	}
@@ -51,7 +53,7 @@ func evalMartian(ctx context.Context, root, model string, harness agent.Harness,
 	if err != nil {
 		return err
 	}
-	judge := eval.Judge{APIKey: harness.APIKey, Model: flags.judgeModel, Base: base}
+	judge := eval.Judge{APIKey: apiKey, Model: flags.judgeModel, Base: base}
 	scores := make([]eval.MartianScore, len(cases))
 	errs := make([]error, len(cases))
 	slots := make(chan struct{}, flags.parallel)
@@ -62,7 +64,7 @@ func evalMartian(ctx context.Context, root, model string, harness agent.Harness,
 			defer wg.Done()
 			slots <- struct{}{}
 			defer func() { <-slots }()
-			scores[i], errs[i] = eval.RunMartian(ctx, c, root, eval.Options{Model: model, Agent: harness}, judge, flags.profile)
+			scores[i], errs[i] = eval.RunMartian(ctx, c, root, eval.Options{Model: model, Agent: reviewer, Decompose: flags.decompose}, judge, flags.profile)
 			fmt.Fprintf(os.Stderr, "%s done\n", c.Name)
 		}()
 	}
@@ -99,11 +101,17 @@ func selectMartian(cases []eval.MartianCase, names string) ([]eval.MartianCase, 
 		byName[c.Name] = c
 	}
 	var picked []eval.MartianCase
+	seen := make(map[string]bool)
 	for _, name := range strings.Split(names, ",") {
-		c, ok := byName[strings.TrimSpace(name)]
+		name = strings.TrimSpace(name)
+		c, ok := byName[name]
 		if !ok {
 			return nil, fmt.Errorf("unknown martian case %q", name)
 		}
+		if seen[name] {
+			return nil, fmt.Errorf("duplicate martian case %q", name)
+		}
+		seen[name] = true
 		picked = append(picked, c)
 	}
 	return picked, nil

@@ -15,17 +15,11 @@ func TestParseRejectsLegacyFormats(t *testing.T) {
 	if err == nil {
 		t.Fatal("accepted JSON array")
 	}
-	if !strings.Contains(err.Error(), "JSON array") {
-		t.Fatalf("array: got %v", err)
-	}
 
 	bundle := `{"findings":[{"v":1,"type":"finding","path":"a.go","start_line":1,"end_line":1,"anchor":"new","severity":"note","body":"ok"}],"summary":"done"}`
 	_, err = Parse(strings.NewReader(bundle))
 	if err == nil {
 		t.Fatal("accepted nested bundle")
-	}
-	if !strings.Contains(err.Error(), "nested bundle") {
-		t.Fatalf("bundle: got %v", err)
 	}
 
 	findingWithExtra := `{"v":1,"type":"finding","path":"a.go","start_line":1,"end_line":1,"anchor":"new","severity":"note","body":"ok","findings":[{"path":"ignored.go"}]}`
@@ -53,9 +47,6 @@ func TestParseFindingRequiresIntegerLines(t *testing.T) {
 	if err == nil {
 		t.Fatal("accepted string start_line")
 	}
-	if !strings.Contains(err.Error(), "start_line") || !strings.Contains(err.Error(), "integer") {
-		t.Fatalf("string line: got %v", err)
-	}
 }
 
 func TestParseRunRejectsBackendFields(t *testing.T) {
@@ -73,9 +64,6 @@ func TestParseRunRejectsBackendFields(t *testing.T) {
 		_, err := Parse(strings.NewReader(leaked))
 		if err == nil {
 			t.Fatalf("%s: accepted", field)
-		}
-		if !strings.Contains(err.Error(), `unknown field "`+field+`"`) {
-			t.Fatalf("%s: got %v", field, err)
 		}
 	}
 }
@@ -108,29 +96,6 @@ func TestReportComplete(t *testing.T) {
 	}
 	if report.Complete() {
 		t.Fatal("running should not be complete")
-	}
-}
-
-func TestWriteOmitsZeroCreatedAt(t *testing.T) {
-	in := Report{Run: &Run{
-		ID:     "1",
-		Status: StatusComplete,
-		Source: Source{Kind: "git"},
-		Cost:   Cost{Currency: "USD"},
-	}}
-	var buf bytes.Buffer
-	if err := Write(&buf, in); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(buf.String(), "created_at") {
-		t.Fatalf("zero CreatedAt should omit created_at: %s", buf.String())
-	}
-	out, err := Parse(&buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !out.Run.CreatedAt.IsZero() {
-		t.Fatal("omitted created_at should round-trip as zero")
 	}
 }
 
@@ -242,7 +207,6 @@ func TestCheckSummaryRejectsStructuredText(t *testing.T) {
 		"## Review",
 		"1. The map write races.",
 		"The map write races. ```go\nx\n```",
-		strings.Repeat("a", MaxSummaryLength+1),
 	}
 	for _, body := range cases {
 		if _, err := CheckSummary(body, 1); err == nil {

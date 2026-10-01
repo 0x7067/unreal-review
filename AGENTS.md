@@ -10,18 +10,29 @@ unreal-review is a pipeline of replaceable pieces around one product: [schema/fi
 
 | Piece | Owns | Seam |
 | --- | --- | --- |
-| Source | The diff under review | git workspace (staged + unstaged + untracked vs HEAD), `--from`/`--to` (merge-base; omit `--to` for the working tree), `--commit` (parent..commit), `--branch` (merge-base of main/master), `--pr` (commits since the newest commit carrying an `unreal-review` check run; full base range when none exists), pathspecs, `--exclude`; `unreal-review group` prints pathspec groups from that range for separate reviews; inside `internal/review` |
+| Source | The diff under review | git workspace (staged + unstaged + untracked vs HEAD), `--from`/`--to` (merge-base; omit `--to` for the working tree), `--commit` (parent..commit), `--branch` (merge-base of main/master), `--pr` (commits since the newest commit carrying an `unreal-review` check run; full base range when none exists), pathspecs, `--exclude`; diffs above 200,000 bytes automatically become a bounded full-byte-ownership review plan and `--decompose` requests the same path below that threshold; `unreal-review group` only prints pathspec groups; inside `internal/review` |
 | Agent | Prompt + workspace → findings JSONL and cost | `review.Agent` |
 | Review | Checkpoint, SHA binding, prompt, status | `internal/review` |
 | Renderer | Display a report | functions on `findings.Report` (markdown, GitHub) |
 
 Wire a replacement at `cmd/unreal-review`. `AgentRequest.ReviewID` is the review id; any continuation mapping stays inside the adapter (`internal/agent` for the unreal-agent harness).
+`AgentRequest.PriorCost` is already included in the root checkpoint,
+`Resuming` distinguishes a resumed checkpoint from a fresh run, and `Plan`
+binds bounded local/boundary tasks to the complete diff. Stateful adapters
+reconcile their staged work against prior cost and return only outstanding
+cost. A planned adapter returns exact completed and independently verified task
+coverage before the root may complete. Child sessions, stage manifests and
+coverage artifacts stay in the adapter, not the findings schema.
 
 A new backend, source, or renderer should plug in without changing the findings schema.
 
 ## Skills
 
 Canonical skills live in `.agents/skills/`; `.claude/skills`, `.grok/skills`, and `.cursor/skills` are real dirs that symlink each shared skill to it. Verification skill: [verify-unreal-review](.agents/skills/verify-unreal-review/SKILL.md) — run its scripts from `scripts/`. Tool config like `.claude/settings.json` stays a real file. No `CLAUDE.md`; do not copy these instructions into a tool directory.
+
+## Testing
+
+Apply [principle-test-behavior-not-implementation](.agents/skills/principle-test-behavior-not-implementation/SKILL.md) whenever writing, changing, reviewing, or keeping a test. Exercise the subject through its real contract and assert a literal user-observable result or artifact. Delete tests that only pin constants, prompts, error text, call counts, helper routing, configuration shape, mocks, empty values, or fixtures. If the test would still pass when the subject does no useful work, it is not a test.
 
 ## Checks
 

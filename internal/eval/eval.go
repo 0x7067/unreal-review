@@ -2,6 +2,7 @@ package eval
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -105,8 +106,9 @@ func match(gold []Gold, produced []findings.Finding) (matched, severityHits, ext
 }
 
 type Options struct {
-	Model string
-	Agent review.Agent
+	Model     string
+	Agent     review.Agent
+	Decompose bool
 }
 
 func Run(ctx context.Context, c Case, root string, opts Options) (Score, error) {
@@ -119,7 +121,7 @@ func Run(ctx context.Context, c Case, root string, opts Options) (Score, error) 
 	result, runErr := review.Run(ctx, review.Options{
 		Workspace: dir,
 		Out:       findingsPath,
-		Fresh:     true,
+		Decompose: opts.Decompose,
 		Model:     opts.Model,
 		Agent:     opts.Agent,
 	})
@@ -133,10 +135,10 @@ func Run(ctx context.Context, c Case, root string, opts Options) (Score, error) 
 }
 
 func setup(ctx context.Context, c Case, dir string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	git := func(args ...string) error {
+		// Planted repositories are synthetic fixtures, not user workspaces. Do
+		// not invoke global hooks, signing, maintenance, or filesystem monitors.
+		args = append([]string{"-c", "core.hooksPath=" + os.DevNull, "-c", "commit.gpgSign=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0", "-c", "core.fsmonitor=false"}, args...)
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = dir
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -144,10 +146,46 @@ func setup(ctx context.Context, c Case, dir string) error {
 		}
 		return nil
 	}
+	exclude := filepath.Join(dir, ".git", "info", "exclude")
+	initialized := func() bool {
+		_, err := os.Stat(filepath.Join(dir, ".git", "HEAD"))
+		return err == nil
+	}
 	if err := writeFiles(dir, c.Base); err != nil {
 		return err
 	}
-	if err := git("init", "-q"); err != nil {
+	if initialized() {
+		if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
+			return err
+		}
+		file, err := os.OpenFile(exclude, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return err
+		}
+		_, writeErr := file.WriteString("\n/findings.jsonl\n/findings.jsonl.work\n")
+		if err := errors.Join(writeErr, file.Close()); err != nil {
+			return err
+		}
+		if err := git("reset", "-q", "--hard", "HEAD"); err != nil {
+			return err
+		}
+		return writeFiles(dir, c.Change)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := git("init", "--template=", "-q"); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(exclude, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	_, writeErr := file.WriteString("\n/findings.jsonl\n/findings.jsonl.work\n")
+	if err := errors.Join(writeErr, file.Close()); err != nil {
 		return err
 	}
 	commit := func() error {
