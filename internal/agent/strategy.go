@@ -21,9 +21,6 @@ func Reviewer(strategy string, harness Harness) (review.Agent, error) {
 	case "single":
 		return harness, nil
 	case "focused":
-		if _, serialized := harness.Log.(*serializedWriter); harness.Log != nil && !serialized {
-			harness.Log = &serializedWriter{writer: harness.Log}
-		}
 		timeout := harness.Timeout
 		harness.Timeout = 0 // The deadline covers the entire DAG, not each child.
 		return Focused{Agent: harness, Timeout: timeout, Config: harness.ThinkingLevel}, nil
