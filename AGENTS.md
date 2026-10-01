@@ -15,6 +15,8 @@ unreal-review is a pipeline of replaceable pieces around one product: [schema/fi
 | Review | Checkpoint, SHA binding, prompt, status | `internal/review` |
 | Renderer | Display a report | functions on `findings.Report` (markdown, GitHub) |
 
+Review the complete selected diff: every byte must reach the agent directly or through bounded plan tasks. Never truncate it; fail explicitly if full coverage cannot be represented.
+
 Wire a replacement at `cmd/unreal-review`. `AgentRequest.ReviewID` is the review id; any continuation mapping stays inside the adapter (`internal/agent` for the unreal-agent harness).
 `AgentRequest.PriorCost` is already included in the root checkpoint,
 `Resuming` distinguishes a resumed checkpoint from a fresh run, and `Plan`
@@ -36,13 +38,13 @@ Apply [principle-test-behavior-not-implementation](.agents/skills/principle-test
 
 ## Checks
 
-- `make check` (fmt, lint, vet, test, prove).
-- `make prove` runs `tools/prove.sh`: Bend checks `PROOF.bend` and the script enforces `spec/unsafe-allow.txt` for laws that lean on `@unsafe` code (running `bend PROOF.bend --check-only` alone is not enough).
+- Before finishing a code change, run `make check` (fmt, lint, vet, test, prove).
+- `make prove` runs `tools/prove.sh`: Bend checks `PROOF.bend` and the script enforces `spec/unsafe-allow.txt` for laws that lean on `@unsafe` code. It is the required proof gate; `bend PROOF.bend --check-only`, Go tests, vet, and lint do not replace it.
 - `hooks/prove-stop.sh` runs the same gate when a turn ends and refuses the stop while the proof is red, for up to three consecutive failures before it stands down.
 - It is registered project-level in `.claude/`, `.cursor/`, `.codex/` and `.grok/`; OpenCode (`.opencode/plugin/`) and Pi (`.pi/`) can only nudge, not block.
 - For a one-shot verdict run `hooks/prove-stop.sh --check`.
 
-- `make canary` is the CLI regression run.
+- For changes to run, group, render, checkpoint, or resume behavior, run `make canary`; it is the offline CLI regression gate.
 - It builds `bin/unreal-review` from the checkout under test and asserts the offline recipes in [.agents/skills/verify-unreal-review](.agents/skills/verify-unreal-review/SKILL.md), then execs that binary against a local GitHub stand-in for `run --pr` and `render github`.
 - The canary needs no API secret and does not call openrouter.ai.
 - A dummy `OPENROUTER_API_KEY` stays on the `run` steps whose recipe expects `401`, and `UNREAL_REVIEW_OPENROUTER_API` points those calls at a local stand-in that returns that status.
