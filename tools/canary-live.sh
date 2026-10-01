@@ -1,7 +1,8 @@
 #!/bin/bash
 # Live OpenRouter smoke. Unlike tools/canary.sh, this calls https://openrouter.ai/api/v1.
 # It does not start tools/openrouter-stub.py and does not set UNREAL_REVIEW_OPENROUTER_API.
-# A set UNREAL_REVIEW_OPENROUTER_API is refused so a loopback stand-in cannot satisfy the smoke.
+# UNREAL_REVIEW_OPENROUTER_API must be unset. A set value, including an empty
+# string, is refused so a loopback stand-in cannot satisfy the smoke.
 #
 # Required:
 #   OPENROUTER_API_KEY
@@ -31,8 +32,9 @@ Requires:
   UNREAL_HARNESS_LLM_MODEL   documented model: ${DOCUMENTED_MODEL}
 
 The documented model is not filled in when UNREAL_HARNESS_LLM_MODEL is unset.
-UNREAL_REVIEW_OPENROUTER_API must be unset. This smoke calls
-https://openrouter.ai/api/v1 and will not use tools/openrouter-stub.py.
+UNREAL_REVIEW_OPENROUTER_API must be unset, including not set to an empty
+string. This smoke calls https://openrouter.ai/api/v1 and will not use
+tools/openrouter-stub.py.
 
 Not part of CI. The offline regression is: make canary
 EOF
@@ -114,8 +116,10 @@ fi
 if [ -z "$(trim "${UNREAL_HARNESS_LLM_MODEL:-}")" ]; then
 	fail "set UNREAL_HARNESS_LLM_MODEL. Documented model: ${DOCUMENTED_MODEL}."
 fi
-if [ -n "${UNREAL_REVIEW_OPENROUTER_API:-}" ]; then
-	fail "unset UNREAL_REVIEW_OPENROUTER_API. This smoke calls https://openrouter.ai/api/v1 and will not use a loopback stand-in (tools/openrouter-stub.py)."
+# ${var+x} is set when the variable is present, even if the value is empty.
+# An empty string must not fall through to the public API.
+if [ -n "${UNREAL_REVIEW_OPENROUTER_API+x}" ]; then
+	fail "unset UNREAL_REVIEW_OPENROUTER_API (a blank value counts as set). This smoke calls https://openrouter.ai/api/v1 and will not use a loopback stand-in (tools/openrouter-stub.py)."
 fi
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -151,9 +155,13 @@ git -C "$repo" commit -q -m head
 out="$work/findings.jsonl"
 stdout="$work/stdout.txt"
 stderr="$work/stderr.txt"
+# Session files follow $HOME. Keep them in the temp dir so the EXIT trap
+# removes them instead of leaving ~/.local/state/unreal-agent/sessions behind.
+home="$work/home"
+mkdir -p "$home"
 
 set +e
-"$BIN" run \
+env HOME="$home" "$BIN" run \
 	--workspace "$repo" \
 	--commit HEAD \
 	--model "$UNREAL_HARNESS_LLM_MODEL" \
@@ -193,17 +201,21 @@ if run is None:
 if run.get("status") != "complete":
     sys.exit(f"canary-live: status={run.get('status')}")
 if run.get("model") != model:
-    sys.exit(f"canary-live: model={run.get('model')!r} want {model!r}")
+    sys.exit("canary-live: run model does not match UNREAL_HARNESS_LLM_MODEL")
 requests = (run.get("cost") or {}).get("requests") or 0
 if requests < 1:
     sys.exit(f"canary-live: cost.requests={requests}")
-diff_sha = (run.get("source") or {}).get("diff_sha") or ""
+source = run.get("source") if isinstance(run.get("source"), dict) else {}
+diff_sha = source.get("diff_sha")
+if not isinstance(diff_sha, str) or not diff_sha.strip():
+    sys.exit("canary-live: missing diff_sha")
 if diff_sha == empty:
     sys.exit("canary-live: diff_sha is the empty diff; the review never called the model")
 if not summary.strip():
     sys.exit("canary-live: missing summary")
 cost = next((line for line in stderr.splitlines() if line.startswith("cost:")), "cost:")
-print(f"canary-live: ok model={model} requests={requests}")
+# Do not print the model id. UNREAL_HARNESS_LLM_MODEL can embed a credential.
+print(f"canary-live: ok requests={requests}")
 print(f"canary-live: {cost}")
 PY
 gate=$?
