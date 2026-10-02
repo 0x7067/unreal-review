@@ -9,15 +9,15 @@
 - `eval-strategy` rejects a strategy other than `single` or `focused`.
 - `eval-corpus` rejects a corpus other than `planted` or `martian`.
 - `eval-cases` rejects unknown or duplicate names in the selected corpus.
-- `eval-planted` (skippable) reviews the planted fixtures and prints a score table or `--json` totals.
+- `eval-planted` (skippable) reviews the planted fixtures and prints a score table or a `--json` summary with per-case `cases` and `total` fields.
 - `eval-martian` (skippable) reviews martian pull requests under `--profile`, `--parallel`, and `--judge-model`.
 
 ## How to get to it (user POV)
 
 - `unreal-review eval --model <id> --out <dir>`
-- `unreal-review eval --cases race,clean --json --out <dir>`
-- `unreal-review eval --strategy focused --decompose --cases wrap-break --out <dir>`
-- `unreal-review eval --corpus martian --profile strict --parallel 4 --judge-model <id>`
+- `unreal-review eval --model <id> --cases race,clean --json --out <dir>`
+- `unreal-review eval --model <id> --strategy focused --decompose --cases wrap-break --out <dir>`
+- `unreal-review eval --corpus martian --model <id> --profile strict --parallel 4 --judge-model <id>`
 
 ## Driving it with verify-unreal-review
 
@@ -40,6 +40,6 @@ Preconditions:
 
 - `--cases` filters by name within the selected corpus; unknown and duplicate names fail before any case starts. Compare both strategies on the same selected cases.
 - Exit 0 does not mean every case completed. Read `status`, `err`, and `total.completed` in the output.
-- `--timeout` bounds each case, not the whole invocation.
+- `--timeout` bounds the agent review inside each case, not checkout, Martian judging, or the whole invocation — `judge.Match` and `checkoutMartian` run on the outer context with no deadline.
 - `--out` is created if missing. Use a fresh directory per comparison or stale case artifacts contaminate it.
 - Planted scores and martian scores measure different things; a planted pilot is not a martian rank. Martian's built-in accounting is a direct matcher — the printed note explains how to get comparable benchmark scores.
