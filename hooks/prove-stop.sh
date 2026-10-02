@@ -89,12 +89,10 @@ fi
 
 now="$(date +%s)"
 count=0; stamp=0
-if [ -n "$state_dir" ]; then
-  [ -f "$key" ] && read -r count stamp < "$key"
-  [ "${stamp:-0}" -gt 0 ] && [ "$((now - stamp))" -gt 1800 ] && count=0
-  count=$((count + 1))
-  printf '%s %s\n' "$count" "$now" > "$key" 2>/dev/null || true
-fi
+[ -f "$key" ] && read -r count stamp < "$key"
+[ "${stamp:-0}" -gt 0 ] && [ "$((now - stamp))" -gt 1800 ] && count=0
+count=$((count + 1))
+printf '%s %s\n' "$count" "$now" > "$key" 2>/dev/null || true
 if [ "$count" -gt 3 ]; then
   echo "prove-stop: $count consecutive failed proofs in $root; standing down (CI still enforces)" >&2
   exit 0
