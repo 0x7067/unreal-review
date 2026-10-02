@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"unreal-review/internal/diffmap"
@@ -149,7 +148,7 @@ func (h History) posted() []findings.Finding {
 	}
 	for _, review := range h.Reviews {
 		for _, line := range strings.Split(review.Body, "\n") {
-			if item, ok := parseDroppedLine(line); ok {
+			if item, ok := parseDroppedMarker(line); ok {
 				out = append(out, item)
 			}
 		}
@@ -176,49 +175,6 @@ func droppedLine(finding findings.Finding) string {
 		formatLines(finding.StartLine, finding.EndLine),
 		strings.Join(strings.Fields(finding.Body), " "),
 		github.FindingMarker(finding.ID), droppedMarker(finding))
-}
-
-func parseDroppedLine(line string) (findings.Finding, bool) {
-	if finding, ok := parseDroppedMarker(line); ok {
-		return finding, true
-	}
-	id, ok := github.ParseFinding(line)
-	if !ok {
-		return findings.Finding{}, false
-	}
-	rest, ok := strings.CutPrefix(strings.TrimSpace(github.WithoutMarker(line)), "- **")
-	if !ok {
-		return findings.Finding{}, false
-	}
-	severity, rest, ok := strings.Cut(rest, "** `")
-	if !ok {
-		return findings.Finding{}, false
-	}
-	path, rest, ok := strings.Cut(rest, "` ")
-	if !ok {
-		return findings.Finding{}, false
-	}
-	anchor := findings.AnchorNew
-	if after, found := strings.CutPrefix(rest, "old "); found {
-		anchor, rest = findings.AnchorOld, after
-	}
-	lines, body, ok := strings.Cut(rest, ": ")
-	if !ok {
-		return findings.Finding{}, false
-	}
-	start, end, ok := parseLines(lines)
-	if !ok {
-		return findings.Finding{}, false
-	}
-	return findings.Finding{
-		ID:        id,
-		Path:      path,
-		StartLine: start,
-		EndLine:   end,
-		Anchor:    anchor,
-		Severity:  findings.Severity(severity),
-		Body:      strings.TrimSpace(body),
-	}, true
 }
 
 func droppedMarker(finding findings.Finding) string {
@@ -249,22 +205,6 @@ func parseDroppedMarker(line string) (findings.Finding, bool) {
 		return findings.Finding{}, false
 	}
 	return finding, true
-}
-
-func parseLines(text string) (int, int, bool) {
-	first, last, ranged := strings.Cut(text, "–")
-	start, err := strconv.Atoi(strings.TrimPrefix(first, "L"))
-	if err != nil {
-		return 0, 0, false
-	}
-	if !ranged {
-		return start, start, true
-	}
-	end, err := strconv.Atoi(strings.TrimPrefix(last, "L"))
-	if err != nil {
-		return 0, 0, false
-	}
-	return start, end, true
 }
 
 func anchorOf(side string) findings.Anchor {
