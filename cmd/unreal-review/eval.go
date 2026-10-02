@@ -50,6 +50,11 @@ func cmdEval(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	switch *corpus {
+	case "planted", "martian":
+	default:
+		return fmt.Errorf("unknown corpus %q: use planted or martian", *corpus)
+	}
 	if *model == "" {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")
 	}
@@ -91,8 +96,6 @@ func cmdEval(args []string) error {
 		return evalMartian(ctx, root, *model, reviewer, key, martianFlags{
 			profile: *profile, parallel: *parallel, cases: *only, judgeModel: *judgeModel, asJSON: *asJSON, decompose: *decompose,
 		})
-	default:
-		return fmt.Errorf("unknown corpus %q: use planted or martian", *corpus)
 	}
 	scores := make([]eval.Score, 0, len(planted))
 	for _, c := range planted {
