@@ -6,8 +6,7 @@ Martian runner at `e616e849755441da38f18bf3adba2c9583b03803` through OpenRouter
 using `anthropic/claude-sonnet-4.5` for extraction, deduplication, and judging.
 The published comparison data is that commit's
 `offline/analysis/benchmark_dashboard.json`, not a claim about today's live
-leaderboard. Baseline artifacts currently live in the ignored
-`.worktrees/martian-baseline/.eval/martian/` directory, not in this document.
+leaderboard.
 
 ## Baseline placement
 
@@ -396,8 +395,6 @@ now excludes those fixture outputs before the base commit and includes a
 pause/resume regression test. Working-tree users should keep output outside
 the selected source or ignore it before starting.
 
-Captured commands, stdout, stderr, exit status and final JSONL live locally
-under `$JCODE_SCRATCH_DIR/unreal-review-focused-pilot/{evidence,scratch}/pilot/`.
 The compiled review logic corresponds to `b2d08c1`; pilot runs used its
 pre-commit worktree based on `4df8087`, before the fixture-hardening follow-up.
 Different deadlines, continuations, one attempt, and tiny hand-planted Go
