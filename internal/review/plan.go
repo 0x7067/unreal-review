@@ -52,11 +52,6 @@ func buildReviewPlan(ctx context.Context, workspace string, sel selection) (*Rev
 	}
 	base := fmt.Sprintf("source_sha256: %s\nfull_diff_bytes: %d\nsource_base_sha: %s\nsource_head_sha: %s\n", sel.source.DiffSHA, len(sel.diff), sel.source.BaseSHA, sel.source.HeadSHA)
 	r := sel.rangeSpec
-	if r.base == "" && r.head == "" && r.baseSHA == "" && r.headSHA == "" {
-		// Synthetic selections may lack the captured resolver state. Real review
-		// selections carry it, including whether the old side is a merge-base.
-		r = resolved{base: sel.source.Base, head: sel.source.Head, baseSHA: sel.source.BaseSHA, headSHA: sel.source.HeadSHA, mergeBase: true}
-	}
 	oldRevision := r.baseSHA
 	if r.mergeBase && oldRevision != "" && r.headSHA != "" {
 		oldRevision, err = git(ctx, workspace, "merge-base", oldRevision, r.headSHA)
