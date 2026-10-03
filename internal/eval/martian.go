@@ -358,7 +358,10 @@ func martianGitEnv() []string {
 	env := os.Environ()
 	clean := make([]string, 0, len(env)+2)
 	for _, entry := range env {
-		if strings.HasPrefix(entry, "GIT_AUTHOR_DATE=") || strings.HasPrefix(entry, "GIT_COMMITTER_DATE=") {
+		// Dates are pinned below. Location variables would make checkout
+		// use another repository instead of this fixture.
+		if strings.HasPrefix(entry, "GIT_AUTHOR_DATE=") || strings.HasPrefix(entry, "GIT_COMMITTER_DATE=") ||
+			strings.HasPrefix(entry, "GIT_DIR=") || strings.HasPrefix(entry, "GIT_WORK_TREE=") || strings.HasPrefix(entry, "GIT_INDEX_FILE=") {
 			continue
 		}
 		clean = append(clean, entry)

@@ -3,7 +3,9 @@ package eval
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"unreal-review/internal/findings"
@@ -59,6 +61,77 @@ func TestRunResumesInterruptedPlantedCase(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, c.Name, "findings.jsonl")); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestFixturesIgnoreInheritedGitDir(t *testing.T) {
+	sentinel := t.TempDir()
+	gitCmd(t, sentinel, "init", "--template=", "-q")
+	if err := os.WriteFile(filepath.Join(sentinel, "keep.txt"), []byte("keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, sentinel, "add", "keep.txt")
+	gitCmd(t, sentinel, "-c", "user.name=eval", "-c", "user.email=eval@invalid", "commit", "-q", "-m", "sentinel")
+	t.Setenv("GIT_DIR", filepath.Join(sentinel, ".git"))
+
+	c := Case{
+		Name:   "git-dir",
+		Base:   map[string]string{"cache.go": "package main\n\nfunc main() {}\n"},
+		Change: map[string]string{"cache.go": "package main\n\nfunc main() { panic(\"bug\") }\n"},
+	}
+	root := t.TempDir()
+	if _, err := Run(t.Context(), c, root, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	fixture := filepath.Join(root, c.Name)
+	if _, err := os.Stat(filepath.Join(fixture, ".git", "HEAD")); err != nil {
+		t.Errorf("planted fixture .git/HEAD: %v", err)
+	} else if !gitIndexHas(t, fixture, "cache.go") {
+		t.Errorf("planted fixture index does not list cache.go")
+	}
+	if gitIndexHas(t, sentinel, "cache.go") {
+		t.Errorf("sentinel index gained cache.go")
+	}
+
+	dir := t.TempDir()
+	if _, err := martianGit(t.Context(), dir, "init", "--template=", "-q"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := martianGit(t.Context(), dir, "rev-parse", "--git-dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, ".git")
+	gotPath := got
+	if !filepath.IsAbs(gotPath) {
+		gotPath = filepath.Join(dir, gotPath)
+	}
+	if filepath.Clean(gotPath) != want {
+		t.Fatalf("rev-parse --git-dir = %q, want %s", got, want)
+	}
+}
+
+func gitCmd(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %s", strings.Join(args, " "), out)
+	}
+}
+
+func gitIndexHas(t *testing.T, dir, name string) bool {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", "--git-dir", filepath.Join(dir, ".git"), "ls-files", "-z")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git ls-files: %v", err)
+	}
+	for _, path := range strings.Split(string(out), "\x00") {
+		if path == name {
+			return true
+		}
+	}
+	return false
 }
 
 func TestMatchOverlappingLines(t *testing.T) {

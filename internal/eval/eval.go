@@ -138,9 +138,20 @@ func setup(ctx context.Context, c Case, dir string) error {
 	git := func(args ...string) error {
 		// Planted repositories are synthetic fixtures, not user workspaces. Do
 		// not invoke global hooks, signing, maintenance, or filesystem monitors.
+		// An inherited GIT_DIR, GIT_WORK_TREE, or GIT_INDEX_FILE would stage
+		// and commit this fixture in another repository.
 		args = append([]string{"-c", "core.hooksPath=" + os.DevNull, "-c", "commit.gpgSign=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0", "-c", "core.fsmonitor=false"}, args...)
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = dir
+		env := os.Environ()
+		filtered := make([]string, 0, len(env))
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "GIT_DIR=") || strings.HasPrefix(entry, "GIT_WORK_TREE=") || strings.HasPrefix(entry, "GIT_INDEX_FILE=") {
+				continue
+			}
+			filtered = append(filtered, entry)
+		}
+		cmd.Env = filtered
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
 		}
