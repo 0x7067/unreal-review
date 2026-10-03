@@ -67,3 +67,18 @@ func TestRunPassesRootCostAndResumeStateToAdapter(t *testing.T) {
 		t.Fatalf("fresh run: %+v err=%v", fresh, err)
 	}
 }
+
+func TestStdoutCancelKeepsRunningAndReturnsCanceled(t *testing.T) {
+	dir := gitRepo(t)
+	gitRun(t, dir, "commit", "-q", "--allow-empty", "-m", "base")
+	if err := os.WriteFile(filepath.Join(dir, "change.txt"), []byte("change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	backend := accountingAgentFunc(func(context.Context, AgentRequest) (AgentResult, error) {
+		return AgentResult{}, context.Canceled
+	})
+	result, err := Run(t.Context(), Options{Workspace: dir, Out: "-", Model: "test", Agent: backend})
+	if result.Report.Run == nil || result.Report.Run.Status != findings.StatusRunning || !errors.Is(err, context.Canceled) {
+		t.Fatalf("stdout cancel: %+v err=%v", result, err)
+	}
+}

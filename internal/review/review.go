@@ -200,10 +200,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		if fileOut(opts.Out) {
 			return result, fmt.Errorf("review paused; resume with the same --out %s", opts.Out)
 		}
-		if agentErr != nil {
-			return result, agentErr
-		}
-		return result, fmt.Errorf("review paused")
+		return result, agentErr
 	default:
 		runMeta.Status = findings.StatusFailed
 		report.Run = runMeta
