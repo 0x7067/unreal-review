@@ -67,7 +67,7 @@ func ParseGitDiff(r io.Reader) (Map, error) {
 		case strings.HasPrefix(line, "diff --git "):
 			inHunk = false
 			path = gitDiffPath(line)
-		case strings.HasPrefix(line, "+++ "):
+		case strings.HasPrefix(line, "+++ ") && !inHunk:
 			if p := plusPlusPath(line); p != "" {
 				path = p
 			}
