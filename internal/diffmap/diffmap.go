@@ -118,9 +118,6 @@ func MergePatch(m Map, path, patch string) error {
 }
 
 func formatPatch(path, patch string) string {
-	if strings.Contains(patch, "diff --git ") {
-		return patch
-	}
 	return "diff --git a/" + path + " b/" + path + "\n+++ b/" + path + "\n" + patch
 }
 
