@@ -43,12 +43,11 @@ func (p pullResolver) ResolvePull(ctx context.Context, spec string) (review.Pull
 	}, nil
 }
 
-const maxReceiptWalk = 50
-
+// reviewedHead walks the pull request's commits, newest first, until it finds
+// a successful check. The list is already complete, so stopping early would
+// report a pull request that was reviewed as one that never was.
 func (p pullResolver) reviewedHead(ctx context.Context, owner, repo string, number int, commits []string) (string, error) {
-	walked := 0
-	for i := len(commits) - 1; i >= 0 && walked < maxReceiptWalk; i-- {
-		walked++
+	for i := len(commits) - 1; i >= 0; i-- {
 		ok, err := p.client.HasSuccessfulCheck(ctx, owner, repo, commits[i], checkName)
 		if err != nil {
 			return "", err

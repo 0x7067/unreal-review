@@ -86,6 +86,62 @@ func TestCanaryRunPRNarrowsToLatestSuccessfulCheck(t *testing.T) {
 	}
 }
 
+func TestCanaryRunPRNarrowsToReceiptOlderThan50Commits(t *testing.T) {
+	bin := canaryBinary(t)
+	const commitsInPull = 51
+	dir, base, commits := pullCommits(t, commitsInPull)
+	if len(commits) != commitsInPull {
+		t.Fatalf("history has %d commits", len(commits))
+	}
+	oldest, head := commits[0], commits[len(commits)-1]
+	fake := &fakeGH{
+		base:    base,
+		head:    head,
+		commits: commits,
+		checks:  map[string]string{oldest: "success"},
+		comments: []map[string]any{
+			{
+				"path": "hello.txt",
+				"body": "**error**\n\nAlready posted.\n\n<!-- unreal-review finding aaaaaaaaaaaaaaaa -->",
+				"line": 1, "side": "RIGHT",
+			},
+		},
+	}
+	server := httptest.NewServer(fake)
+	defer server.Close()
+
+	out := filepath.Join(t.TempDir(), "findings.jsonl")
+	_, stderr, code := runCLI(t, bin, cliEnv(server.URL, "canary-token"),
+		"run", "--model", "x", "--timeout", "5s",
+		"--workspace", dir,
+		"--pr", canaryOwner+"/"+canaryRepo+"#1",
+		"--out", out,
+	)
+	fake.check(t)
+	if code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr)
+	}
+	src := readRun(t, out).source
+	if src["base"] != oldest || src["head"] != head || src["base_sha"] != oldest || src["head_sha"] != head {
+		t.Fatalf("source=%v want base %s head %s", src, oldest, head)
+	}
+	if !strings.Contains(string(mustRead(t, out)), "No material issues: the selected range has no changes.") {
+		t.Fatalf("summary missing from %s", out)
+	}
+	if posts := fake.count(http.MethodPost, "/check-runs"); posts != 0 {
+		t.Fatalf("run --pr posted %d check runs", posts)
+	}
+	uris := fake.uris()
+	headURI := "/commits/" + head + "/check-runs"
+	oldestURI := "/commits/" + oldest + "/check-runs"
+	if !strings.Contains(uris, headURI) || !strings.Contains(uris, oldestURI) {
+		t.Fatalf("check-run walk missing head or oldest commit:\n%s", uris)
+	}
+	if strings.Index(uris, headURI) > strings.Index(uris, oldestURI) {
+		t.Fatalf("walk should see the head before the successful oldest commit:\n%s", uris)
+	}
+}
+
 func TestCanaryRenderPostsStatusAndReceipt(t *testing.T) {
 	bin := canaryBinary(t)
 	const head = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -570,6 +626,17 @@ func TestCanaryFixtureDisablesInheritedHooks(t *testing.T) {
 
 func pullHistory(t *testing.T) (dir, base, reviewed, head string) {
 	t.Helper()
+	dir, base, commits := pullCommits(t, 2)
+	return dir, base, commits[0], commits[1]
+}
+
+// pullCommits builds a base commit plus n pull-request commits, oldest first.
+// The first of those changes a file; every commit after it is empty.
+func pullCommits(t *testing.T, n int) (dir, base string, commits []string) {
+	t.Helper()
+	if n < 1 {
+		t.Fatalf("pull history needs at least one commit, got %d", n)
+	}
 	dir = t.TempDir()
 	git := func(args ...string) {
 		t.Helper()
@@ -606,10 +673,12 @@ func pullHistory(t *testing.T) (dir, base, reviewed, head string) {
 	}
 	git("add", "hello.txt")
 	git("commit", "-q", "-m", "reviewed")
-	reviewed = revParse(t, dir, "HEAD")
-	git("commit", "-q", "--allow-empty", "-m", "tip")
-	head = revParse(t, dir, "HEAD")
-	return dir, base, reviewed, head
+	commits = append(commits, revParse(t, dir, "HEAD"))
+	for len(commits) < n {
+		git("commit", "-q", "--allow-empty", "-m", "tip")
+		commits = append(commits, revParse(t, dir, "HEAD"))
+	}
+	return dir, base, commits
 }
 
 func revParse(t *testing.T, dir, rev string) string {
