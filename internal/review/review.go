@@ -77,9 +77,6 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		if err != nil {
 			return Result{}, fmt.Errorf("cannot safely decompose selected diff: %w", err)
 		}
-		if err := ValidatePlan(plan); err != nil {
-			return Result{}, fmt.Errorf("invalid review plan: %w", err)
-		}
 	}
 
 	checkpoint, err := loadCheckpoint(opts.Out)
