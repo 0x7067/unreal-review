@@ -166,15 +166,7 @@ func setup(ctx context.Context, c Case, dir string) error {
 		return err
 	}
 	if initialized() {
-		if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
-			return err
-		}
-		file, err := os.OpenFile(exclude, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-		if err != nil {
-			return err
-		}
-		_, writeErr := file.WriteString("\n/findings.jsonl\n/findings.jsonl.work\n")
-		if err := errors.Join(writeErr, file.Close()); err != nil {
+		if err := appendFindingsExclude(exclude); err != nil {
 			return err
 		}
 		if err := git("reset", "-q", "--hard", "HEAD"); err != nil {
@@ -188,15 +180,7 @@ func setup(ctx context.Context, c Case, dir string) error {
 	if err := git("init", "--template=", "-q"); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(exclude, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	_, writeErr := file.WriteString("\n/findings.jsonl\n/findings.jsonl.work\n")
-	if err := errors.Join(writeErr, file.Close()); err != nil {
+	if err := appendFindingsExclude(exclude); err != nil {
 		return err
 	}
 	commit := func() error {
@@ -209,6 +193,35 @@ func setup(ctx context.Context, c Case, dir string) error {
 		return err
 	}
 	return writeFiles(dir, c.Change)
+}
+
+func appendFindingsExclude(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	body, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	present := map[string]bool{}
+	for _, line := range strings.Split(string(body), "\n") {
+		present[line] = true
+	}
+	var missing []string
+	for _, pattern := range []string{"/findings.jsonl", "/findings.jsonl.work"} {
+		if !present[pattern] {
+			missing = append(missing, pattern)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	_, writeErr := file.WriteString("\n" + strings.Join(missing, "\n") + "\n")
+	return errors.Join(writeErr, file.Close())
 }
 
 func writeFiles(dir string, files map[string]string) error {
