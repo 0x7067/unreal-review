@@ -637,6 +637,12 @@ func plannedValidateOutput(r findings.Report, candidates map[string]findings.Fin
 
 func plannedRestoreCandidateIDs(items []findings.Finding, candidates map[string]findings.Finding) ([]findings.Finding, error) {
 	restored := append([]findings.Finding{}, items...)
+	claimed := map[string]bool{}
+	for _, item := range restored {
+		if _, ok := candidates[item.ID]; ok {
+			claimed[item.ID] = true
+		}
+	}
 	for i := range restored {
 		item := &restored[i]
 		if _, ok := candidates[item.ID]; ok {
@@ -644,7 +650,20 @@ func plannedRestoreCandidateIDs(items []findings.Finding, candidates map[string]
 		}
 		body := strings.TrimSpace(item.Body)
 		if !strings.HasPrefix(body, "[") {
-			return nil, fmt.Errorf("planned: unknown verifier ID %q", item.ID)
+			// A verifier that restates a candidate without echoing its ID gets a
+			// derived ID. Rebind it only to a candidate at the identical canonical
+			// location, so nothing outside the candidate set is published.
+			id, ok := plannedLocationMatch(*item, candidates, claimed)
+			if !ok {
+				return nil, fmt.Errorf("planned: unknown verifier ID %q", item.ID)
+			}
+			if id == "" {
+				item.ID = "" // Restates an already echoed candidate; dropped below.
+				continue
+			}
+			claimed[id] = true
+			item.ID = id
+			continue
 		}
 		close := strings.IndexByte(body, ']')
 		if close <= 1 {
@@ -665,7 +684,37 @@ func plannedRestoreCandidateIDs(items []findings.Finding, candidates map[string]
 		item.ID = candidateID
 		item.Body = body
 	}
-	return restored, nil
+	kept := restored[:0]
+	for _, item := range restored {
+		if item.ID != "" {
+			kept = append(kept, item)
+		}
+	}
+	return kept, nil
+}
+
+// plannedLocationMatch binds a verifier record that lost its candidate ID to
+// the candidate at the same canonical location. A location an echoed record
+// already claims makes the record a restatement, reported as an empty ID.
+// Several unclaimed candidates at that location bind to the smallest ID.
+func plannedLocationMatch(item findings.Finding, candidates map[string]findings.Finding, claimed map[string]bool) (string, bool) {
+	best, restated := "", false
+	for id, c := range candidates {
+		if c.Path != item.Path || c.StartLine != item.StartLine || c.EndLine != item.EndLine || c.Anchor != item.Anchor {
+			continue
+		}
+		if claimed[id] {
+			restated = true
+			continue
+		}
+		if best == "" || id < best {
+			best = id
+		}
+	}
+	if restated {
+		return "", true
+	}
+	return best, best != ""
 }
 
 func plannedCandidates(items []findings.Finding, preserve map[string]bool) ([]findings.Finding, error) {
