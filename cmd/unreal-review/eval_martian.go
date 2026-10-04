@@ -33,31 +33,42 @@ type martianSummary struct {
 	JudgeCost  float64                `json:"judge_cost_usd"`
 }
 
-func evalMartian(ctx context.Context, root, model string, reviewer review.Agent, apiKey string, flags martianFlags) error {
+type martianReady struct {
+	flags martianFlags
+	cases []eval.MartianCase
+	base  string
+}
+
+func prepareMartian(flags martianFlags) (martianReady, error) {
 	if flags.parallel < 1 {
-		return fmt.Errorf("--parallel must be at least 1")
+		return martianReady{}, fmt.Errorf("--parallel must be at least 1")
 	}
 	all, err := eval.MartianCorpus()
 	if err != nil {
-		return err
+		return martianReady{}, err
 	}
 	if _, err := eval.MartianProfile(flags.profile); err != nil {
-		return err
+		return martianReady{}, err
 	}
 	cases, err := selectNamed(all, flags.cases, "martian", func(c eval.MartianCase) string { return c.Name })
 	if err != nil {
-		return err
+		return martianReady{}, err
 	}
 	base, err := agent.OpenRouterBase()
 	if err != nil {
-		return err
+		return martianReady{}, err
 	}
-	judge := eval.Judge{APIKey: apiKey, Model: flags.judgeModel, Base: base}
-	scores := make([]eval.MartianScore, len(cases))
-	errs := make([]error, len(cases))
+	return martianReady{flags: flags, cases: cases, base: base}, nil
+}
+
+func evalMartian(ctx context.Context, root, model string, reviewer review.Agent, apiKey string, ready martianReady) error {
+	flags := ready.flags
+	judge := eval.Judge{APIKey: apiKey, Model: flags.judgeModel, Base: ready.base}
+	scores := make([]eval.MartianScore, len(ready.cases))
+	errs := make([]error, len(ready.cases))
 	slots := make(chan struct{}, flags.parallel)
 	var wg sync.WaitGroup
-	for i, c := range cases {
+	for i, c := range ready.cases {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

@@ -77,6 +77,15 @@ func cmdEval(args []string) error {
 			return err
 		}
 	}
+	var ready martianReady
+	if *corpus == "martian" {
+		ready, err = prepareMartian(martianFlags{
+			profile: *profile, parallel: *parallel, cases: *only, judgeModel: *judgeModel, asJSON: *asJSON, decompose: *decompose,
+		})
+		if err != nil {
+			return err
+		}
+	}
 	root := *outDir
 	if root == "" {
 		temp, err := os.MkdirTemp("", "unreal-review-eval-")
@@ -93,9 +102,7 @@ func cmdEval(args []string) error {
 	switch *corpus {
 	case "planted":
 	case "martian":
-		return evalMartian(ctx, root, *model, reviewer, key, martianFlags{
-			profile: *profile, parallel: *parallel, cases: *only, judgeModel: *judgeModel, asJSON: *asJSON, decompose: *decompose,
-		})
+		return evalMartian(ctx, root, *model, reviewer, key, ready)
 	}
 	scores := make([]eval.Score, 0, len(planted))
 	for _, c := range planted {
