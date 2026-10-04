@@ -63,6 +63,36 @@ func TestRunResumesInterruptedPlantedCase(t *testing.T) {
 	}
 }
 
+func TestPlantedCaseExcludesFindingsOnce(t *testing.T) {
+	c := Case{
+		Name:   "exclude-once",
+		Base:   map[string]string{"cache.go": "package main\n\nfunc main() {}\n"},
+		Change: map[string]string{"cache.go": "package main\n\nfunc main() { panic(\"bug\") }\n"},
+	}
+	root := t.TempDir()
+	for i := 0; i < 2; i++ {
+		if _, err := Run(t.Context(), c, root, Options{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fixture := filepath.Join(root, c.Name)
+	body, err := os.ReadFile(filepath.Join(fixture, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, line := range strings.Split(string(body), "\n") {
+		if line == "/findings.jsonl" || line == "/findings.jsonl.work" {
+			counts[line]++
+		}
+	}
+	if counts["/findings.jsonl"] != 1 || counts["/findings.jsonl.work"] != 1 {
+		t.Fatalf("exclude contains /findings.jsonl %d times and /findings.jsonl.work %d times:\n%s",
+			counts["/findings.jsonl"], counts["/findings.jsonl.work"], body)
+	}
+	gitCmd(t, fixture, "check-ignore", "-q", "findings.jsonl")
+}
+
 func TestFixturesIgnoreInheritedGitDir(t *testing.T) {
 	sentinel := t.TempDir()
 	gitCmd(t, sentinel, "init", "--template=", "-q")
