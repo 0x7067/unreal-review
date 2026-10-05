@@ -226,6 +226,10 @@ type Judge struct {
 	Base   string
 }
 
+// judgeClient is the judge's own deadline. The eval command context ends only
+// on a signal, and --timeout covers the agent harness, not this call.
+var judgeClient = &http.Client{Timeout: 30 * time.Second}
+
 type verdict struct {
 	Pairs   []Pair
 	CostUSD float64
@@ -272,7 +276,7 @@ func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Fin
 	}
 	req.Header.Set("Authorization", "Bearer "+j.APIKey)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := judgeClient.Do(req)
 	if err != nil {
 		return verdict{}, fmt.Errorf("judge: %w", err)
 	}
