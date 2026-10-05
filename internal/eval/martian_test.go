@@ -1,8 +1,13 @@
 package eval
 
 import (
+	"context"
+	"errors"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"unreal-review/internal/findings"
 )
@@ -73,5 +78,56 @@ func TestScoreMartianTalliesPerSeverity(t *testing.T) {
 	sum := SumBySeverity([]MartianScore{score, score})
 	if sum["Critical"] != (Tally{Gold: 2, Matched: 2, SeverityHits: 2}) || sum["High"] != (Tally{Gold: 2}) {
 		t.Fatalf("sum=%+v", sum)
+	}
+}
+
+func TestJudgeMatchScoresOpenRouterReply(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"matches\":[{\"golden\":0,\"finding\":0}]}"}}],"usage":{"cost":0.125}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := MartianCase{Name: "pr", Comments: []MartianComment{{Comment: "nil deref", Severity: "High", Category: "bug"}}}
+	report := findings.Report{Findings: []findings.Finding{{
+		Path: "a.go", StartLine: 10, EndLine: 12, Severity: findings.SeverityError, Body: "nil pointer dereference",
+	}}}
+	verdict, err := (Judge{APIKey: "secret", Model: "anthropic/claude-sonnet-5.5", Base: srv.URL + "/"}).Match(context.Background(), c, report.Findings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.CostUSD != 0.125 || len(verdict.Pairs) != 1 || verdict.Pairs[0] != (Pair{Golden: 0, Finding: 0}) {
+		t.Fatalf("verdict=%+v", verdict)
+	}
+	score := ScoreMartian(c, report, verdict.Pairs, "core")
+	if score.Gold != 1 || score.Matched != 1 || score.SeverityHits != 1 {
+		t.Fatalf("score=%+v", score.Score)
+	}
+}
+
+func TestJudgeMatchSlowHandlerDeadline(t *testing.T) {
+	timeout := judgeClient.Timeout
+	if timeout <= 0 || timeout > time.Minute {
+		t.Fatalf("judge client timeout = %s, want a deadline within a minute", timeout)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(timeout + 30*time.Second):
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c := MartianCase{Comments: []MartianComment{{Comment: "nil deref"}}}
+	produced := []findings.Finding{{Body: "possible nil deref"}}
+	start := time.Now()
+	_, err := (Judge{APIKey: "secret", Model: "m", Base: srv.URL}).Match(context.Background(), c, produced)
+	elapsed := time.Since(start)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("after %s: err=%v, want a deadline", elapsed, err)
+	}
+	if elapsed < timeout-time.Second || elapsed > timeout+5*time.Second {
+		t.Fatalf("judge returned in %s, want about the %s client timeout", elapsed, timeout)
 	}
 }
