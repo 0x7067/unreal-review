@@ -28,15 +28,16 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-          cache: false
-      - name: Install unreal-review
+      - name: Add base worktree
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: ${{ runner.temp }}/base/go.mod
+          cache: false
+      - name: Install unreal-review
         run: |
-          git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
           cd "$RUNNER_TEMP/base"
           go install ./cmd/unreal-review
       - name: Review pull request
