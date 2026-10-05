@@ -110,19 +110,27 @@ func TestJudgeMatchSlowHandlerDeadline(t *testing.T) {
 	if timeout <= 0 || timeout > time.Minute {
 		t.Fatalf("judge client timeout = %s, want a deadline within a minute", timeout)
 	}
+	// The client aborts its request on timeout. This cancel only lets the
+	// test server return; it does not deadline Match.
+	hang, stopHang := context.WithCancel(context.Background())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
+		case <-hang.Done():
 		case <-time.After(timeout + 30*time.Second):
 			w.WriteHeader(http.StatusOK)
 		}
 	}))
-	t.Cleanup(srv.Close)
+	t.Cleanup(func() {
+		stopHang()
+		srv.Close()
+	})
 
 	c := MartianCase{Comments: []MartianComment{{Comment: "nil deref"}}}
 	produced := []findings.Finding{{Body: "possible nil deref"}}
 	start := time.Now()
 	_, err := (Judge{APIKey: "secret", Model: "m", Base: srv.URL}).Match(context.Background(), c, produced)
+	stopHang()
 	elapsed := time.Since(start)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("after %s: err=%v, want a deadline", elapsed, err)
