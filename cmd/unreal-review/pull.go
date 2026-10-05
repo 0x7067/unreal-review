@@ -29,7 +29,7 @@ func (p pullResolver) ResolvePull(ctx context.Context, spec string) (review.Pull
 	if err != nil {
 		return review.Pull{}, err
 	}
-	reviewed, err := p.reviewedHead(ctx, owner, repo, number, state.Commits)
+	reviewed, err := p.reviewedHead(ctx, owner, repo, number)
 	if err != nil {
 		return review.Pull{}, err
 	}
@@ -44,9 +44,13 @@ func (p pullResolver) ResolvePull(ctx context.Context, spec string) (review.Pull
 }
 
 // reviewedHead walks the pull request's commits, newest first, until it finds
-// a successful check. The list is already complete, so stopping early would
-// report a pull request that was reviewed as one that never was.
-func (p pullResolver) reviewedHead(ctx context.Context, owner, repo string, number int, commits []string) (string, error) {
+// a successful check. It loads the full list before walking, so stopping early
+// would report a pull request that was reviewed as one that never was.
+func (p pullResolver) reviewedHead(ctx context.Context, owner, repo string, number int) (string, error) {
+	commits, err := p.client.ListPullCommits(ctx, owner, repo, number)
+	if err != nil {
+		return "", err
+	}
 	for i := len(commits) - 1; i >= 0; i-- {
 		ok, err := p.client.HasSuccessfulCheck(ctx, owner, repo, commits[i], checkName)
 		if err != nil {

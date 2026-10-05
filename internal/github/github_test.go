@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -51,7 +52,7 @@ func TestFindingMarkerRoundTrip(t *testing.T) {
 	}
 }
 
-func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
+func TestPullStateReadsPostedComments(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repos/o/r/pulls/3", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(t, w, map[string]any{
@@ -59,20 +60,6 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 			"title":  "Review the repository's own pull requests",
 			"base":   map[string]string{"ref": "main", "sha": "8ad9a39"},
 			"head":   map[string]string{"sha": "42227a3"},
-		})
-	})
-	mux.HandleFunc("/repos/o/r/pulls/3/commits", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(t, w, []map[string]any{
-			{"sha": "42227a3"},
-			{"sha": "dab3e1c"},
-			{"sha": "7c81b2c"},
-		})
-	})
-	mux.HandleFunc("/repos/o/r/issues/3/comments", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(t, w, []map[string]any{
-			{"id": 11, "body": "a human comment"},
-			{"id": 12, "body": StatusMarker(Status{Head: "7c81b2c", Runs: 1, CostUSD: 0.5})},
-			{"id": 13, "body": StatusMarker(Status{Head: "dab3e1c", Runs: 2, CostUSD: 1.25})},
 		})
 	})
 	mux.HandleFunc("/repos/o/r/pulls/3/reviews", func(w http.ResponseWriter, _ *http.Request) {
@@ -120,12 +107,6 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	if state.BaseSHA != "8ad9a39" || state.HeadSHA != "42227a3" {
 		t.Fatalf("pull request: %+v", state)
 	}
-	if state.StatusCommentID != 13 {
-		t.Fatalf("status comment id = %d, want the newest marker (13)", state.StatusCommentID)
-	}
-	if state.Status.Head != "dab3e1c" || state.Status.Runs != 2 || state.Status.CostUSD != 1.25 {
-		t.Fatalf("status: %+v", state.Status)
-	}
 	if len(state.Comments) != 3 {
 		t.Fatalf("comments: %+v", state.Comments)
 	}
@@ -141,6 +122,60 @@ func TestPullStateReadsStatusAndPostedComments(t *testing.T) {
 	}
 	if _, ok := ParseFinding(human.Body); ok {
 		t.Fatal("a human comment must not parse as one of ours")
+	}
+}
+
+func TestLatestStatusCommentUsesNewestMarker(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/o/r/issues/3/comments", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, w, []map[string]any{
+			{"id": 11, "body": "a human comment"},
+			{"id": 12, "body": StatusMarker(Status{Head: "7c81b2c", Runs: 1, CostUSD: 0.5})},
+			{"id": 13, "body": StatusMarker(Status{Head: "dab3e1c", Runs: 2, CostUSD: 1.25})},
+		})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := &Client{Token: "t", BaseURL: server.URL, HTTP: server.Client()}
+	status, id, err := client.LatestStatusComment(context.Background(), "o", "r", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != 13 {
+		t.Fatalf("status comment id = %d, want the newest marker (13)", id)
+	}
+	if status.Head != "dab3e1c" || status.Runs != 2 || status.CostUSD != 1.25 {
+		t.Fatalf("status: %+v", status)
+	}
+}
+
+func TestListPullCommitsReturnsTheCommitPastTheFirstPage(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/o/r/pulls/3/commits", func(w http.ResponseWriter, r *http.Request) {
+		var raw []map[string]string
+		switch r.URL.Query().Get("page") {
+		case "1":
+			for i := range 100 {
+				raw = append(raw, map[string]string{"sha": fmt.Sprintf("c%03d", i)})
+			}
+		case "2":
+			raw = append(raw, map[string]string{"sha": "c100"})
+		default:
+			t.Errorf("page = %q", r.URL.Query().Get("page"))
+		}
+		writeJSON(t, w, raw)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := &Client{Token: "t", BaseURL: server.URL, HTTP: server.Client()}
+	got, err := client.ListPullCommits(context.Background(), "o", "r", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 101 || got[0] != "c000" || got[100] != "c100" {
+		t.Fatalf("commits: %v", got)
 	}
 }
 

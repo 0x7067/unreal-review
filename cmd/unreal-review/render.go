@@ -89,7 +89,11 @@ func renderGitHub(args []string) error {
 		PullNumber: number,
 		CommitID:   *commit,
 	}
-	var state github.PullState
+	var (
+		state           github.PullState
+		priorStatus     github.Status
+		statusCommentID int64
+	)
 	if token != "" {
 		ctx := context.Background()
 		pullState, err := client.PullState(ctx, owner, name, number)
@@ -97,6 +101,10 @@ func renderGitHub(args []string) error {
 			return err
 		}
 		state = pullState
+		priorStatus, statusCommentID, err = client.LatestStatusComment(ctx, owner, name, number)
+		if err != nil {
+			return err
+		}
 		if opts.CommitID == "" {
 			opts.CommitID = state.HeadSHA
 		}
@@ -139,13 +147,13 @@ func renderGitHub(args []string) error {
 	cost := runCost(report)
 	status := render.StatusBody(render.RunSummary{
 		HeadSHA: opts.CommitID,
-		Runs:    state.Status.Runs + 1,
+		Runs:    priorStatus.Runs + 1,
 		Cost:    cost,
-		Total:   state.Status.CostUSD + cost.AmountUSD,
+		Total:   priorStatus.CostUSD + cost.AmountUSD,
 		Result:  result,
 		Summary: report.Summary,
 	})
-	if err := client.UpsertStatusComment(ctx, owner, name, number, state.StatusCommentID, status); err != nil {
+	if err := client.UpsertStatusComment(ctx, owner, name, number, statusCommentID, status); err != nil {
 		return err
 	}
 	receipted, err := client.HasSuccessfulCheck(ctx, owner, name, opts.CommitID, checkName)
