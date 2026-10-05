@@ -56,14 +56,14 @@ func cmdRun(args []string) error {
 			return err
 		}
 	}
+	// The harness writes session JSONL only after it starts. Opening the file
+	// here would truncate an existing log when --strategy, the git range, or
+	// an empty diff fails first.
 	var logWriter io.Writer
 	if *agentLog != "" {
-		file, err := os.Create(*agentLog)
-		if err != nil {
-			return fmt.Errorf("agent log: %w", err)
-		}
-		defer func() { _ = file.Close() }()
-		logWriter = file
+		logFile := &agentLogFile{path: *agentLog}
+		defer func() { _ = logFile.Close() }()
+		logWriter = logFile
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -116,6 +116,31 @@ func (s *stringList) Set(value string) error {
 	}
 	*s = append(*s, value)
 	return nil
+}
+
+// agentLogFile creates path on the first Write so a run that returns
+// before the harness leaves an existing log untouched.
+type agentLogFile struct {
+	path string
+	file *os.File
+}
+
+func (f *agentLogFile) Write(p []byte) (int, error) {
+	if f.file == nil {
+		file, err := os.Create(f.path)
+		if err != nil {
+			return 0, fmt.Errorf("agent log: %w", err)
+		}
+		f.file = file
+	}
+	return f.file.Write(p)
+}
+
+func (f *agentLogFile) Close() error {
+	if f.file == nil {
+		return nil
+	}
+	return f.file.Close()
 }
 
 func openOut(path string) (io.WriteCloser, error) {
