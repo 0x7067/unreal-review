@@ -40,15 +40,12 @@ type PostedReview struct {
 }
 
 type PullState struct {
-	BaseSHA         string
-	HeadSHA         string
-	Title           string
-	Body            string
-	Status          Status
-	StatusCommentID int64
-	Comments        []PostedComment
-	Reviews         []PostedReview
-	Commits         []string
+	BaseSHA  string
+	HeadSHA  string
+	Title    string
+	Body     string
+	Comments []PostedComment
+	Reviews  []PostedReview
 }
 
 type ReviewComment struct {
@@ -104,16 +101,6 @@ func (c *Client) PullState(ctx context.Context, owner, repo string, number int) 
 		return PullState{}, err
 	}
 	state := PullState{BaseSHA: pull.Base.SHA, HeadSHA: pull.Head.SHA, Title: pull.Title, Body: pull.Body}
-	issue, err := c.listIssueComments(ctx, owner, repo, number)
-	if err != nil {
-		return PullState{}, err
-	}
-	for _, comment := range issue {
-		if status, ok := ParseStatus(comment.Body); ok {
-			state.Status = status
-			state.StatusCommentID = comment.ID
-		}
-	}
 	comments, err := c.listReviewComments(ctx, owner, repo, number)
 	if err != nil {
 		return PullState{}, err
@@ -124,12 +111,29 @@ func (c *Client) PullState(ctx context.Context, owner, repo string, number int) 
 		return PullState{}, err
 	}
 	state.Reviews = reviews
-	commits, err := c.listPullCommits(ctx, owner, repo, number)
-	if err != nil {
-		return PullState{}, err
-	}
-	state.Commits = commits
 	return state, nil
+}
+
+// LatestStatusComment pages issue comments and returns the newest unreal-review
+// status marker. A pull request with no marker returns a zero status and id 0.
+func (c *Client) LatestStatusComment(ctx context.Context, owner, repo string, number int) (Status, int64, error) {
+	comments, err := c.listIssueComments(ctx, owner, repo, number)
+	if err != nil {
+		return Status{}, 0, err
+	}
+	var (
+		status Status
+		id     int64
+	)
+	for _, comment := range comments {
+		parsed, ok := ParseStatus(comment.Body)
+		if !ok {
+			continue
+		}
+		status = parsed
+		id = comment.ID
+	}
+	return status, id, nil
 }
 
 func (c *Client) UpsertStatusComment(ctx context.Context, owner, repo string, number int, id int64, body string) error {
@@ -372,7 +376,7 @@ func NewHTTPClient() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
 }
 
-func (c *Client) listPullCommits(ctx context.Context, owner, repo string, number int) ([]string, error) {
+func (c *Client) ListPullCommits(ctx context.Context, owner, repo string, number int) ([]string, error) {
 	var out []string
 	page := 1
 	for {
