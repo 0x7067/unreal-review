@@ -232,6 +232,9 @@ func TestLoopbackHTTPClientRejectsOffHostRedirect(t *testing.T) {
 		_ = resp.Body.Close()
 		t.Fatal("off-host redirect was followed")
 	}
+	if !strings.Contains(err.Error(), "refusing redirect to example.com: not loopback") {
+		t.Fatalf("error = %v, want refusing redirect", err)
+	}
 }
 
 func TestLoopbackHTTPClientAllowsLoopbackRedirect(t *testing.T) {
@@ -283,8 +286,8 @@ func TestLoopbackModelAdapterRefusesOffHostRedirect(t *testing.T) {
 			Data: llm.Message{Role: llm.RoleUser, Text: "hi"},
 		}},
 	}, llm.RequestOptions{})
-	if err == nil {
-		t.Fatalf("err=%v", err)
+	if err == nil || !strings.Contains(err.Error(), "refusing redirect to example.com: not loopback") {
+		t.Fatalf("error = %v, want refusing redirect", err)
 	}
 }
 
@@ -292,13 +295,14 @@ func TestHarnessRunRejectsNonLoopbackOpenRouter(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(openRouterBaseEnv, "https://openrouter.ai/api/v1")
 	_, err := (Harness{APIKey: "dummy", ThinkingLevel: "high"}).Run(t.Context(), reviewRequest(t))
-	if err == nil {
+	if err == nil || !strings.Contains(err.Error(), `host "openrouter.ai" is not loopback`) {
 		t.Fatalf("error = %v, want a loopback refusal", err)
 	}
 }
 
 func TestHarnessRunUsesLocalOpenRouterAndReports401(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	arrived := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.Host, "openrouter.ai") {
 			t.Errorf("request host %q", r.Host)
@@ -311,6 +315,10 @@ func TestHarnessRunUsesLocalOpenRouterAndReports401(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":{"message":"Unauthorized","code":401}}`))
+		select {
+		case arrived <- struct{}{}:
+		default:
+		}
 	}))
 	t.Cleanup(server.Close)
 	t.Setenv(openRouterBaseEnv, server.URL+"/api/v1")
@@ -319,7 +327,12 @@ func TestHarnessRunUsesLocalOpenRouterAndReports401(t *testing.T) {
 	defer cancel()
 	req := reviewRequest(t)
 	_, err := (Harness{APIKey: "dummy", ThinkingLevel: "high"}).Run(ctx, req)
-	if err == nil {
-		t.Fatal("local OpenRouter request unexpectedly succeeded")
+	select {
+	case <-arrived:
+	default:
+		t.Fatal("local OpenRouter request did not arrive")
+	}
+	if err == nil || !strings.Contains(err.Error(), "status 401") {
+		t.Fatalf("run: %v, want status 401", err)
 	}
 }
