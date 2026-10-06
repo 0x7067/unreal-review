@@ -84,11 +84,6 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 			return review.AgentResult{}, fmt.Errorf("read adapter state: %w", err)
 		}
 	}
-	if h.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, h.Timeout)
-		defer cancel()
-	}
 
 	base, err := OpenRouterBase()
 	if err != nil {
