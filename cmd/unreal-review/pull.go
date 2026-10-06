@@ -86,11 +86,6 @@ func newPullResolver(token, repo string) (review.PullResolver, error) {
 	}, nil
 }
 
-// githubClient talks to api.github.com unless UNREAL_REVIEW_GITHUB_API names
-// a loopback origin (127.0.0.1, ::1, or localhost). The offline canary points
-// that variable at a local server. An empty value keeps the public API. A
-// non-loopback value is an error. The variable is not a credential, so secret
-// reexec leaves it in the environment.
 func githubClient(token string) (*github.Client, error) {
 	base, err := agent.LoopbackBaseURL("UNREAL_REVIEW_GITHUB_API", os.Getenv("UNREAL_REVIEW_GITHUB_API"))
 	if err != nil {
