@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -26,8 +25,7 @@ import (
 // durable when a child Run returns. An abrupt process death during a child call
 // cannot recover usage that the wrapped Agent has not returned yet.
 type Focused struct {
-	Agent   review.Agent
-	Timeout time.Duration
+	Agent review.Agent
 	// Config binds adapter settings not otherwise present in AgentRequest.
 	Config string
 	// DiscoveryOnly emits private candidates for an enclosing Planned adapter.
@@ -88,11 +86,6 @@ func focusedChild(root, stage string) string {
 func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result review.AgentResult, runErr error) {
 	if f.Agent == nil || strings.TrimSpace(req.ReviewID) == "" {
 		return result, fmt.Errorf("focused: agent and review ID required")
-	}
-	if f.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, f.Timeout)
-		defer cancel()
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
