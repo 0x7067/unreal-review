@@ -160,7 +160,7 @@ func TestGitHubPostsAChangedFindingAlongsideAPreviouslyPostedOne(t *testing.T) {
 func TestGitHubDoesNotSuppressARewordedOutOfPatchFindingByLocation(t *testing.T) {
 	lines := diffLines(t, "src/foo.go", "@@ -1,2 +1,3 @@\n keep\n+added\n keep\n")
 	dropped := newFinding("src/foo.go", 90, 90, "A finding the patch does not show.")
-	body := reviewBody("", nil, []DroppedFinding{{Finding: dropped}}, nil)
+	body := reviewBody("", 0, []DroppedFinding{{Finding: dropped}}, nil)
 	reworded := newFinding("src/foo.go", 90, 90, "Same issue, new words.")
 
 	result := GitHub(reportOf(reworded), GitHubOptions{CommitID: "head", Lines: lines, HasLines: true, History: History{Reviews: []github.PostedReview{{CommitID: "head", Body: body}}}})
@@ -209,7 +209,7 @@ func TestHistoryReportedReadsBackWhatWasPosted(t *testing.T) {
 	outsideOld := newFinding("src/far.go", 5, 5, "A deleted guard.")
 	outsideOld.Anchor = findings.AnchorOld
 	outsideOdd := newFinding("src/`odd\nname.go", 9, 9, "A problem in an unusual path.")
-	body := reviewBody("Summary.", nil, []DroppedFinding{{Finding: outside}, {Finding: outsideOld}, {Finding: outsideOdd}}, nil)
+	body := reviewBody("Summary.", 0, []DroppedFinding{{Finding: outside}, {Finding: outsideOld}, {Finding: outsideOdd}}, nil)
 
 	got := History{
 		Comments: []github.PostedComment{
