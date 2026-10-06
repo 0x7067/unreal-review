@@ -1,6 +1,6 @@
 # Group related files
 
-`unreal-review group` reads the same git range as `run` and prints related file groups with a copy-paste `run` command for each. It does not start the agent and does not need a model or API key.
+`unreal-review group` prints related file groups with a copy-paste `run` command for each. It does not start the agent and does not need a model or API key.
 
 ## Sub-features
 
