@@ -74,8 +74,16 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 			},
 		},
 	}
-	prior := opts.History.posted()
-	var placed []findings.Finding
+	if len(report.Findings) == 0 {
+		result.LGTM = true
+		result.LGTMPosted = opts.History.HasLGTM(opts.CommitID)
+		result.Payload.Review.Body = "LGTM"
+		if report.Run != nil && report.Run.Source.BaseSHA != "" && report.Run.Source.HeadSHA != "" {
+			result.Payload.Review.Body = fmt.Sprintf("LGTM - no findings in %s..%s.", shortSHA(report.Run.Source.BaseSHA), shortSHA(report.Run.Source.HeadSHA))
+		}
+		return result
+	}
+	prior := opts.History.Reported()
 	for _, finding := range report.Findings {
 		switch {
 		case alreadyReported(prior, finding):
@@ -86,7 +94,6 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 			result.Dropped = append(result.Dropped, DroppedFinding{Finding: finding, Kind: DropOverCap})
 		default:
 			result.Payload.Review.Comments = append(result.Payload.Review.Comments, githubComment(finding))
-			placed = append(placed, finding)
 		}
 	}
 	var cost *findings.Cost
@@ -94,15 +101,7 @@ func GitHub(report findings.Report, opts GitHubOptions) GitHubResult {
 		c := report.Run.Cost
 		cost = &c
 	}
-	result.Payload.Review.Body = reviewBody(report.Summary, placed, result.Dropped, cost)
-	if len(report.Findings) == 0 {
-		result.LGTM = true
-		result.LGTMPosted = opts.History.HasLGTM(opts.CommitID)
-		result.Payload.Review.Body = "LGTM"
-		if report.Run != nil && report.Run.Source.BaseSHA != "" && report.Run.Source.HeadSHA != "" {
-			result.Payload.Review.Body = fmt.Sprintf("LGTM - no findings in %s..%s.", shortSHA(report.Run.Source.BaseSHA), shortSHA(report.Run.Source.HeadSHA))
-		}
-	}
+	result.Payload.Review.Body = reviewBody(report.Summary, len(result.Payload.Review.Comments), result.Dropped, cost)
 	return result
 }
 
@@ -125,10 +124,6 @@ func (h History) HasLGTM(commit string) bool {
 }
 
 func (h History) Reported() []findings.Finding {
-	return h.posted()
-}
-
-func (h History) posted() []findings.Finding {
 	var out []findings.Finding
 	for _, comment := range h.Comments {
 		id, ok := github.ParseFinding(comment.Body)
@@ -288,12 +283,12 @@ func githubComment(finding findings.Finding) github.ReviewComment {
 	return comment
 }
 
-func reviewBody(summary string, placed []findings.Finding, dropped []DroppedFinding, cost *findings.Cost) string {
+func reviewBody(summary string, inline int, dropped []DroppedFinding, cost *findings.Cost) string {
 	var b strings.Builder
 	if strings.TrimSpace(summary) != "" {
 		b.WriteString(strings.TrimSpace(summary))
 		b.WriteByte('\n')
-	} else if len(placed) == 0 && len(dropped) == 0 {
+	} else if inline == 0 && len(dropped) == 0 {
 		b.WriteString("No findings.\n")
 	}
 	if cost != nil {
