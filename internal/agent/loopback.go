@@ -11,8 +11,7 @@ import (
 // UNREAL_REVIEW_GITHUB_API. An empty value means the caller keeps the public
 // API. A set value is used only when it is an http(s) URL on 127.0.0.1, ::1,
 // or localhost. Anything else is an error, so a bearer token is not sent to
-// an arbitrary host. Secret reexec leaves both variables in the environment;
-// this check is what keeps that from being an open redirect.
+// an arbitrary host. Secret reexec leaves both variables in the environment.
 func LoopbackBaseURL(envName, raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

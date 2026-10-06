@@ -42,11 +42,6 @@ const (
 	sessionDirectoryName  = ".local/state/unreal-agent/sessions"
 )
 
-// OpenRouterBase talks to openrouter.ai unless UNREAL_REVIEW_OPENROUTER_API
-// names a loopback origin (see LoopbackBaseURL). The offline canary points
-// that variable at a local server that returns 401. An empty value keeps the
-// public API. A non-loopback value is an error. The variable is not a
-// credential, so secret reexec leaves it in the environment.
 func OpenRouterBase() (string, error) {
 	base, err := LoopbackBaseURL(openRouterBaseEnv, os.Getenv(openRouterBaseEnv))
 	if err != nil {
@@ -97,9 +92,6 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 	return h.run(ctx, adapter, req)
 }
 
-// newModelAdapter uses the stock OpenRouter client for the public API. A
-// loopback base gets a client that refuses redirects off 127.0.0.1, ::1, and
-// localhost, so the bearer stays on the stand-in.
 func newModelAdapter(apiKey, base string) (llm.Adapter, func() error, error) {
 	u, err := url.Parse(base)
 	if err != nil {

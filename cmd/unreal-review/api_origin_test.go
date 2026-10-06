@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -46,18 +47,19 @@ func TestGitHubAPIOrigin(t *testing.T) {
 		_ = resp.Body.Close()
 		t.Fatal("github client followed an off-host redirect")
 	}
-	if err == nil {
-		t.Fatal("github client followed an off-host redirect")
-	}
 
-	for _, raw := range []string{
-		"https://api.github.com",
-		"http://127.0.0.2:9",
-		"not a url",
+	for _, check := range []struct {
+		raw  string
+		want string
+	}{
+		{"https://api.github.com", `host "api.github.com" is not loopback`},
+		{"http://127.0.0.2:9", `host "127.0.0.2" is not loopback`},
+		{"not a url", "must be an http or https URL on 127.0.0.1, ::1, or localhost"},
 	} {
-		t.Setenv("UNREAL_REVIEW_GITHUB_API", raw)
-		if _, err = githubClient("token"); err == nil {
-			t.Fatalf("%q: got %v", raw, err)
+		t.Setenv("UNREAL_REVIEW_GITHUB_API", check.raw)
+		_, err = githubClient("token")
+		if err == nil || !strings.Contains(err.Error(), check.want) {
+			t.Fatalf("%q: error = %v, want a loopback refusal", check.raw, err)
 		}
 	}
 }
