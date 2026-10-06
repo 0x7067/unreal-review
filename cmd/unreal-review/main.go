@@ -58,8 +58,7 @@ against HEAD. --from/--to is merge-base of those refs; omit --to to
 include the working tree. --commit reviews one commit against its
 parent. --branch reviews a branch since it diverged from main or
 master. Interrupt to pause; run again with the same --out to continue.
-Group prints related files from the same git range so a large change
-can be reviewed in pieces; it does not start the agent. --pr narrows the
+Group prints related files; it does not start the agent. --pr narrows the
 range to the commits pushed since the newest commit carrying an
 unreal-review check run and names findings already posted so the agent
 does not restate them; render github then suppresses duplicates, tags comments with
