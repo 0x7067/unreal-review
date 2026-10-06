@@ -162,9 +162,6 @@ func setup(ctx context.Context, c Case, dir string) error {
 		_, err := os.Stat(filepath.Join(dir, ".git", "HEAD"))
 		return err == nil
 	}
-	if err := writeFiles(dir, c.Base); err != nil {
-		return err
-	}
 	if initialized() {
 		if err := appendFindingsExclude(exclude); err != nil {
 			return err
@@ -181,6 +178,9 @@ func setup(ctx context.Context, c Case, dir string) error {
 		return err
 	}
 	if err := appendFindingsExclude(exclude); err != nil {
+		return err
+	}
+	if err := writeFiles(dir, c.Base); err != nil {
 		return err
 	}
 	commit := func() error {
