@@ -132,8 +132,7 @@ singleton, so claiming every group is hard-bounded would misstate the proof.
 ```mermaid
 flowchart TD
     Source[Freeze base/head/full diff and changed-hunk manifest] --> Graph[Existing grouping plus dependency/contract edges]
-    Graph --> SCC[Collapse dependency cycles into SCCs]
-    SCC --> Units[Pack bounded review units]
+    Graph --> Units[Pack bounded review units]
     Units --> Local[Independent local review tasks]
     Units --> Boundary[Caller/callee, schema/config and API boundary tasks]
     Local --> Verify[Verify and consolidate candidates]
@@ -148,9 +147,6 @@ Key design choices:
   scheduler dependencies. Read-only reviews over a frozen workspace can run
   concurrently. The execution DAG requires an edge when one task consumes
   another's artifact, such as verification after discovery.
-- Collapse strongly connected components for planning, but do not merge every
-  connected file into an unbounded prompt. A giant SCC still needs bounded
-  units and explicit cross-unit contract tasks.
 - Start with existing deterministic groups. Extend relationships
   incrementally beyond Go imports (caller/API boundaries, shared DTO/schema,
   migrations and configuration) instead of deploying an unvalidated graph
@@ -173,8 +169,8 @@ Key design choices:
 - Publish only the parent. Rendering individual groups can incorrectly mark
   the whole head reviewed after a subset finishes and skip subsequent work.
 
-This design is now implemented as automatic bounded aggregate execution for
-diffs above 200,000 bytes and as `--decompose` for smaller ranges. Local tasks
+Automatic bounded aggregate execution for diffs above 200,000 bytes, and
+`--decompose` for smaller ranges, are now implemented. Local tasks
 own the entire selected unified diff exactly once by byte span. Oversized hunks
 are split only at whole-line boundaries with rewritten original old/new hunk
 coordinates and repeated file metadata as context. Every local gets a boundary
