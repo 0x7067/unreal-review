@@ -32,7 +32,7 @@ Every finding has `severity`. Allowed values: `error`, `warning`, `note`.
 | `start_line`, `end_line` | Inclusive 1-based lines |
 | `anchor` | `new` (post-change file) or `old` (deleted lines) |
 | `severity` | `error`, `warning`, or `note` |
-| `body` | Markdown |
+| `body` | Markdown. The prompt asks for one checkable claim: the defect and its most important concrete consequence, then stop; code cannot check that reliably, so it is a request, not part of the contract |
 | `id` | Optional on input. A new finding omits it and gets one derived from path, line range, anchor, and body. A finding that restates one already reported on the pull request carries that finding's `id` |
 
 Severity is `error` when the code does the wrong thing: crash, hang, race, or corruption; a security compromise; a reported failure the caller can no longer classify, so error handling takes the wrong branch; or a transient fault made permanent with no recovery path. It is `warning` when the code works but weakly: diagnostics silently dropped while behavior stays correct, resources leaking toward exhaustion under sustained load, or capability lost for some inputs while the rest keeps working. Everything smaller is `note`.

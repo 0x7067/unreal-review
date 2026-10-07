@@ -69,7 +69,7 @@ func recordFindingDefinition() tool.Definition {
 				},
 				"body": map[string]any{
 					"type":        "string",
-					"description": "Markdown finding body.",
+					"description": "Markdown. One checkable claim: the defect and its most important concrete consequence, then stop.",
 				},
 				"id": map[string]any{
 					"type":        "string",
