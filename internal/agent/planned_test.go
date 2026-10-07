@@ -267,8 +267,6 @@ func TestPlannedPublishesVerifierRestatementsWithoutCandidateIDs(t *testing.T) {
 		}
 		out := append([]findings.Finding{}, items...)
 		if strings.Contains(r.Prompt, "verify:") {
-			// The model echoes every candidate, then records each again under a
-			// derived ID, as observed on a live 250KB planned review.
 			for _, item := range items {
 				restated := item
 				restated.ID = "derived-" + item.ID
@@ -294,34 +292,38 @@ func TestPlannedPublishesVerifierRestatementsWithoutCandidateIDs(t *testing.T) {
 }
 
 func TestPlannedRebindsVerifierRecordThatDroppedItsCandidateID(t *testing.T) {
-	req := plannedTestRequest(t)
 	candidate := plannedTestIssue("only-candidate")
-	stray := plannedTestIssue("stray")
-	stray.Path = "elsewhere.go"
-	fake := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
-		switch {
-		case strings.Contains(r.Prompt, "verify:"):
-			kept := candidate
-			kept.ID = "model-derived"
-			kept.Body = "Sharper confirmed body"
-			return plannedTestEmit(r, []findings.Finding{kept})
-		case strings.Contains(r.Prompt, "local a"):
-			return plannedTestEmit(r, []findings.Finding{candidate})
-		}
-		return plannedTestEmit(r, nil)
-	})
-	if _, err := (Planned{Agent: fake, Verifier: fake, Consolidator: fake}).Run(t.Context(), req); err != nil {
-		t.Fatal(err)
-	}
-	report, err := findings.ReadFile(req.FindingsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(report.Findings) != 1 || report.Findings[0].Body != "Sharper confirmed body" || report.Findings[0].Path != "a.go" {
-		t.Fatalf("published %+v", report.Findings)
+	for _, body := range []string{"Sharper confirmed body", "[derived] Sharper confirmed body"} {
+		t.Run(body, func(t *testing.T) {
+			req := plannedTestRequest(t)
+			fake := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+				switch {
+				case strings.Contains(r.Prompt, "verify:"):
+					kept := candidate
+					kept.ID = "model-derived"
+					kept.Body = body
+					return plannedTestEmit(r, []findings.Finding{kept})
+				case strings.Contains(r.Prompt, "local a"):
+					return plannedTestEmit(r, []findings.Finding{candidate})
+				}
+				return plannedTestEmit(r, nil)
+			})
+			if _, err := (Planned{Agent: fake, Verifier: fake, Consolidator: fake}).Run(t.Context(), req); err != nil {
+				t.Fatal(err)
+			}
+			report, err := findings.ReadFile(req.FindingsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(report.Findings) != 1 || report.Findings[0].ID != "only-candidate" || report.Findings[0].Body != body || report.Findings[0].Path != "a.go" {
+				t.Fatalf("published %+v", report.Findings)
+			}
+		})
 	}
 
-	req = plannedTestRequest(t)
+	req := plannedTestRequest(t)
+	stray := plannedTestIssue("stray")
+	stray.Path = "elsewhere.go"
 	invent := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
 		switch {
 		case strings.Contains(r.Prompt, "verify:"):
@@ -333,5 +335,52 @@ func TestPlannedRebindsVerifierRecordThatDroppedItsCandidateID(t *testing.T) {
 	})
 	if _, err := (Planned{Agent: invent, Verifier: invent, Consolidator: invent}).Run(t.Context(), req); err == nil {
 		t.Fatal("published a verifier issue outside the candidate set")
+	}
+}
+
+func TestPlannedRebindsTwoCandidatesAtTheSameLocation(t *testing.T) {
+	req := plannedTestRequest(t)
+	alpha := plannedTestIssue("alpha")
+	beta := plannedTestIssue("beta")
+	fake := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		switch {
+		case strings.Contains(r.Prompt, "verify:"):
+			items, err := plannedTestCandidates(r.Prompt)
+			if err != nil {
+				return review.AgentResult{}, err
+			}
+			out := make([]findings.Finding, 0, len(items))
+			for _, item := range items {
+				item.ID = "derived-" + item.ID
+				out = append(out, item)
+			}
+			return plannedTestEmit(r, out)
+		case strings.Contains(r.Prompt, "consolidate:"):
+			items, err := plannedTestCandidates(r.Prompt)
+			if err != nil {
+				return review.AgentResult{}, err
+			}
+			return plannedTestEmit(r, items)
+		case strings.Contains(r.Prompt, "local a"):
+			return plannedTestEmit(r, []findings.Finding{alpha, beta})
+		}
+		return plannedTestEmit(r, nil)
+	})
+	if _, err := (Planned{Agent: fake, Verifier: fake, Consolidator: fake}).Run(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	report, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, item := range report.Findings {
+		if item.Path != "a.go" || item.StartLine != 4 || item.EndLine != 4 {
+			t.Fatalf("published %+v", report.Findings)
+		}
+		got[item.ID] = item.Body
+	}
+	if len(report.Findings) != 2 || got["alpha"] != "Confirmed defect alpha" || got["beta"] != "Confirmed defect beta" {
+		t.Fatalf("published %+v", report.Findings)
 	}
 }
