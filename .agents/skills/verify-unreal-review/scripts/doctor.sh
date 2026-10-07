@@ -30,7 +30,7 @@ check "binary is repo bin/unreal-review" \
 	[ "$(cd "$(dirname "$VERIFY_BIN")" && pwd)/$(basename "$VERIFY_BIN")" = "$VERIFY_REPO/bin/unreal-review" ]
 check "binary is executable" [ -x "$VERIFY_BIN" ]
 check "help exits 0" sh -c '"$VERIFY_BIN" help >/dev/null'
-check "help names run and render" sh -c '"$VERIFY_BIN" help | grep -q "unreal-review run"'
+check "help names run" sh -c '"$VERIFY_BIN" help | grep -q "unreal-review run"'
 check "help names group" sh -c '"$VERIFY_BIN" help | grep -q "unreal-review group"'
 check "go is on PATH" sh -c 'command -v go >/dev/null'
 check "git is on PATH" sh -c 'command -v git >/dev/null'

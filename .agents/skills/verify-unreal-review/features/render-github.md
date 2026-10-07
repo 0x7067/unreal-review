@@ -47,7 +47,6 @@ Preconditions:
 ## Gotchas
 
 - `render github` reads `GH_TOKEN` only; `GITHUB_TOKEN` and `gh auth token` are ignored. There is no `--token` flag, so a token never appears in the process arguments.
-- `--no-github-auth` defensively unsets both GitHub token names and shadows `gh` with a failing shim, even though the product reads only `GH_TOKEN` and never shells out to `gh`.
 - `--dry-run` skips the completeness check and skips `CreateReview`. It does not skip `GetPullRequest` / `ListPullFiles` when a token exists.
 - Findings whose lines are not in the PR patch are dropped only when those files were fetched (`HasLines`). A no-token dry-run places every finding.
 - Completeness for posting: `status=complete`, or missing `status`. `running` and `failed` refuse to post.

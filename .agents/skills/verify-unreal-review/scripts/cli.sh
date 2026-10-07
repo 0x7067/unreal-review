@@ -50,14 +50,6 @@ step="$VERIFY_EVIDENCE/$name"
 mkdir -p "$step"
 
 bin=$VERIFY_BIN
-path=$PATH
-if [ "$no_github" -eq 1 ]; then
-	shim="$VERIFY_SCRATCH/no-github-bin"
-	mkdir -p "$shim"
-	printf '%s\n' '#!/bin/sh' 'exit 1' >"$shim/gh"
-	chmod +x "$shim/gh"
-	path="$shim:$PATH"
-fi
 
 {
 	echo "bin=$bin"
@@ -74,9 +66,9 @@ fi
 set +e
 if [ "$no_github" -eq 1 ]; then
 	if [ -n "$stdin_file" ]; then
-		env -u GH_TOKEN -u GITHUB_TOKEN PATH="$path" "$bin" "$@" <"$stdin_file" >"$step/stdout.txt" 2>"$step/stderr.txt"
+		env -u GH_TOKEN -u GITHUB_TOKEN "$bin" "$@" <"$stdin_file" >"$step/stdout.txt" 2>"$step/stderr.txt"
 	else
-		env -u GH_TOKEN -u GITHUB_TOKEN PATH="$path" "$bin" "$@" >"$step/stdout.txt" 2>"$step/stderr.txt"
+		env -u GH_TOKEN -u GITHUB_TOKEN "$bin" "$@" >"$step/stdout.txt" 2>"$step/stderr.txt"
 	fi
 else
 	if [ -n "$stdin_file" ]; then
