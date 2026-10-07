@@ -38,6 +38,8 @@ unreal-review run --out findings.jsonl
 
 With no range flags, `run` reviews staged, unstaged, and untracked changes against `HEAD`. `run` takes a git checkout (`--workspace`, default `.`). `--from` and `--to` select `git diff --merge-base` of those refs (branch, tag, or SHA); omit `--to` to include the working tree. `--commit` reviews one commit against its first parent. `--branch` reviews a branch since it diverged from `main` or `master`. Pathspecs limit the range; `--exclude` omits globs. It writes [findings.jsonl](schema/findings-v1.md).
 
+`--thinking-level` is `low`, `medium`, `high` (default), `xhigh`, or `max`.
+
 ```sh
 unreal-review run --from origin/main --to HEAD --out findings.jsonl
 unreal-review run --branch feature --out findings.jsonl

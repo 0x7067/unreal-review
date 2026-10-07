@@ -44,7 +44,10 @@ func printUsage(w *os.File) {
 Render that file for GitHub inline comments, markdown, or another host.
 
 Usage:
-  unreal-review run [--from <rev> [--to <rev>] | --commit <rev> | --branch <name> | --pr owner/repo#n] [--exclude <glob>] [paths...]
+  unreal-review run [--workspace <dir>] [--from <rev> [--to <rev>] | --commit <rev> | --branch <name> | --pr owner/repo#n]
+                    [--exclude <glob>] [--out <path>] [--fresh] [--model <id>] [--strategy single|focused]
+                    [--decompose] [--timeout <duration>] [--thinking-level low|medium|high|xhigh|max]
+                    [--agent-log <path>] [paths...]
   unreal-review group [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>] [--exclude <glob>] [paths...]
   unreal-review eval [--model <id>] [--out <dir>] [--json] [--corpus planted|martian]
                      [--profile core|strict|all] [--parallel N] [--cases a,b] [--judge-model <id>]
@@ -57,7 +60,12 @@ range flags, run reviews staged, unstaged, and untracked changes
 against HEAD. --from/--to is merge-base of those refs; omit --to to
 include the working tree. --commit reviews one commit against its
 parent. --branch reviews a branch since it diverged from main or
-master. Interrupt to pause; run again with the same --out to continue.
+master. --workspace selects the checkout. --model names the OpenRouter
+model. --fresh starts over an existing --out. --strategy is single or
+focused. --decompose requests bounded tasks below the automatic size
+threshold. --timeout limits the review. --thinking-level defaults to
+high (low|medium|high|xhigh|max). --agent-log writes the harness
+session JSONL. Interrupt to pause; run again with the same --out to continue.
 Group prints related files; it does not start the agent. --pr narrows the
 range to the commits pushed since the newest commit carrying an
 unreal-review check run and names findings already posted so the agent
