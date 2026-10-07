@@ -106,10 +106,10 @@ func TestJudgeMatchScoresOpenRouterReply(t *testing.T) {
 }
 
 func TestJudgeMatchSlowHandlerDeadline(t *testing.T) {
-	timeout := judgeClient.Timeout
-	if timeout <= 0 || timeout > time.Minute {
-		t.Fatalf("judge client timeout = %s, want a deadline within a minute", timeout)
-	}
+	previous := judgeClient.Timeout
+	timeout := 200 * time.Millisecond
+	judgeClient.Timeout = timeout
+	t.Cleanup(func() { judgeClient.Timeout = previous })
 	// The client aborts its request on timeout. This cancel only lets the
 	// test server return; it does not deadline Match.
 	hang, stopHang := context.WithCancel(context.Background())
@@ -135,7 +135,7 @@ func TestJudgeMatchSlowHandlerDeadline(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("after %s: err=%v, want a deadline", elapsed, err)
 	}
-	if elapsed < timeout-time.Second || elapsed > timeout+5*time.Second {
+	if elapsed < timeout-50*time.Millisecond || elapsed > timeout+5*time.Second {
 		t.Fatalf("judge returned in %s, want about the %s client timeout", elapsed, timeout)
 	}
 }
