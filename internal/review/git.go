@@ -91,8 +91,6 @@ func (s Spec) FlagArgs() string {
 		return " --commit " + s.Commit
 	case specBranch:
 		return " --branch " + s.Branch
-	case specPull:
-		return " --pr " + s.Pull
 	case specRange:
 		var b strings.Builder
 		if s.From != "" {

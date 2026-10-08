@@ -282,11 +282,7 @@ func splitOversized(groups []FileGroup, all []ChangedFile) []FileGroup {
 		}
 		parts := splitByNextDir(group.Files)
 		if len(parts) > 1 {
-			childBuckets := make(map[string][]ChangedFile, len(parts))
-			for k, files := range parts {
-				childBuckets[k] = files
-			}
-			out = append(out, splitOversized(groupsFromBuckets(childBuckets, all), all)...)
+			out = append(out, splitOversized(groupsFromBuckets(parts, all), all)...)
 			continue
 		}
 		out = append(out, packFiles(group.Files, all)...)
