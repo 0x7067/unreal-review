@@ -40,6 +40,6 @@ Preconditions:
 
 - `--cases` filters by name within the selected corpus; unknown and duplicate names fail before any case starts. Compare both strategies on the same selected cases.
 - Exit 0 does not mean every case completed. Read `status`, `err`, and `total.completed` in the output.
-- `--timeout` bounds the agent review inside each case, not checkout, Martian judging, or the whole invocation — `judge.Match` and `checkoutMartian` run on the outer context with no deadline.
+- `--timeout` bounds the agent review inside each case, not checkout, Martian judging, or the whole invocation — `checkoutMartian` runs on the outer context with no deadline.
 - `--out` is created if missing. Use a fresh directory per comparison or stale case artifacts contaminate it.
 - Planted scores and martian scores measure different things; a planted pilot is not a martian rank. Martian's built-in accounting is a direct matcher — the printed note explains how to get comparable benchmark scores.
