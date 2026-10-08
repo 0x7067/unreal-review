@@ -230,8 +230,7 @@ $0.48495583 across 96 requests. Recomputing the Git range reproduced both the
 The run exposed two implementation defects that were fixed in-place and resumed
 without repeating completed discovery: verifier output sometimes preserved the
 canonical candidate ID only as an exact body prefix, and consolidation of already
-confirmed records redundantly explored the workspace. Candidate-ID recovery now
-requires an exact known ID and canonical location. Consolidation now has Bash
+confirmed records redundantly explored the workspace. Consolidation now has Bash
 disabled, uses only supplied confirmed records, and completed its final retry in
 16 seconds and two requests. The execution host's 600-second process cap still
 required durable resumes during slower stages. This is end-to-end execution and
