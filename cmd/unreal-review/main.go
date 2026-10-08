@@ -45,14 +45,17 @@ Render that file for GitHub inline comments, markdown, or another host.
 
 Usage:
   unreal-review run [--workspace <dir>] [--from <rev> [--to <rev>] | --commit <rev> | --branch <name> | --pr owner/repo#n]
-                    [--exclude <glob>] [--out <path>] [--fresh] [--model <id>] [--strategy single|focused]
+                    [--repo owner/repo] [--exclude <glob>] [--out <path>] [--fresh] [--model <id>] [--strategy single|focused]
                     [--decompose] [--timeout <duration>] [--thinking-level low|medium|high|xhigh|max]
                     [--agent-log <path>] [paths...]
-  unreal-review group [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>] [--exclude <glob>] [paths...]
+  unreal-review group [--workspace <dir>] [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>]
+                      [--exclude <glob>] [paths...]
   unreal-review eval [--model <id>] [--out <dir>] [--json] [--corpus planted|martian]
                      [--profile core|strict|all] [--parallel N] [--cases a,b] [--judge-model <id>]
-  unreal-review render github [--pr owner/repo#n] [--dry-run] [findings.jsonl]
-  unreal-review render markdown [flags] [findings.jsonl]
+                     [--thinking-level low|medium|high|xhigh|max] [--strategy single|focused]
+                     [--decompose] [--timeout <duration>]
+  unreal-review render github [--pr owner/repo#n] [--repo owner/repo] [--commit <sha>] [--dry-run] [findings.jsonl]
+  unreal-review render markdown [--out <path>] [findings.jsonl]
 
 Run writes a findings JSONL document. That file is the review and the
 checkpoint: it records status and the reviewed commit SHAs. With no
