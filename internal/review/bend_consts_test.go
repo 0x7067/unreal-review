@@ -7,10 +7,6 @@ import (
 	"testing"
 )
 
-// spec/group.bend is a hand-written Bend model of the grouping logic in this
-// package, and it keeps its own copies of the caps. Nothing else ties the two
-// together: the laws would stay green while proving things about numbers the
-// program no longer uses. Pin each shared constant to the one it models.
 func TestBendPlanCapsMatchGo(t *testing.T) {
 	src, err := os.ReadFile("../../spec/plan.bend")
 	if err != nil {
