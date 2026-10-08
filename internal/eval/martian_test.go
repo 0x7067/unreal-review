@@ -20,7 +20,10 @@ func TestScoreMartianLeaderboardMetricsPerProfile(t *testing.T) {
 		{Comment: "sql injection", Severity: "Critical", Category: "security"},
 	}}
 	report := findings.Report{Findings: make([]findings.Finding, 5)}
-	score := ScoreMartian(c, report, []Pair{{Golden: 0, Finding: 4}, {Golden: 1, Finding: 0}}, "strict")
+	score, err := ScoreMartian(c, report, []Pair{{Golden: 0, Finding: 4}, {Golden: 1, Finding: 0}}, "strict")
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := map[string]Counts{
 		"strict": {TP: 1, FP: 3, FN: 1},
 		"core":   {TP: 1, FP: 3, FN: 2},
@@ -61,7 +64,10 @@ func TestScoreMartianTalliesPerSeverity(t *testing.T) {
 			{Severity: findings.SeverityNote},
 		},
 	}
-	score := ScoreMartian(c, report, []Pair{{Golden: 0, Finding: 0}, {Golden: 2, Finding: 1}}, "all")
+	score, err := ScoreMartian(c, report, []Pair{{Golden: 0, Finding: 0}, {Golden: 2, Finding: 1}}, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if score.Gold != 4 || score.Matched != 2 || score.SeverityHits != 1 || score.Extra != 1 || !score.Completed() {
 		t.Fatalf("score=%+v", score.Score)
 	}
@@ -99,7 +105,10 @@ func TestJudgeMatchScoresOpenRouterReply(t *testing.T) {
 	if verdict.CostUSD != 0.125 || len(verdict.Pairs) != 1 || verdict.Pairs[0] != (Pair{Golden: 0, Finding: 0}) {
 		t.Fatalf("verdict=%+v", verdict)
 	}
-	score := ScoreMartian(c, report, verdict.Pairs, "core")
+	score, err := ScoreMartian(c, report, verdict.Pairs, "core")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if score.Gold != 1 || score.Matched != 1 || score.SeverityHits != 1 {
 		t.Fatalf("score=%+v", score.Score)
 	}

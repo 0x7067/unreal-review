@@ -162,7 +162,7 @@ type MartianScore struct {
 	JudgeErr        string            `json:"judge_err,omitempty"`
 }
 
-func ScoreMartian(c MartianCase, report findings.Report, pairs []Pair, profile string) MartianScore {
+func ScoreMartian(c MartianCase, report findings.Report, pairs []Pair, profile string) (MartianScore, error) {
 	score := MartianScore{
 		Score:      Score{Name: c.Name, Class: c.Repo, Produced: len(report.Findings), Extra: len(report.Findings) - len(pairs)},
 		Repo:       c.Repo,
@@ -181,7 +181,10 @@ func ScoreMartian(c MartianCase, report findings.Report, pairs []Pair, profile s
 		matched[p.Golden] = p.Finding
 	}
 	for _, name := range MartianProfiles {
-		keep, _ := MartianProfile(name)
+		keep, err := MartianProfile(name)
+		if err != nil {
+			return MartianScore{}, err
+		}
 		counts := Counts{FP: score.Extra}
 		for i, comment := range c.Comments {
 			_, hit := matched[i]
@@ -195,7 +198,10 @@ func ScoreMartian(c MartianCase, report findings.Report, pairs []Pair, profile s
 		}
 		score.ByProfile[name] = counts
 	}
-	keep, _ := MartianProfile(profile)
+	keep, err := MartianProfile(profile)
+	if err != nil {
+		return MartianScore{}, err
+	}
 	for i, comment := range c.Comments {
 		finding, hit := matched[i]
 		if !keep[comment.Category] {
@@ -217,7 +223,7 @@ func ScoreMartian(c MartianCase, report findings.Report, pairs []Pair, profile s
 		}
 		score.BySeverity[comment.Severity] = tally
 	}
-	return score
+	return score, nil
 }
 
 type Judge struct {
@@ -318,7 +324,10 @@ func RunMartian(ctx context.Context, c MartianCase, root string, opts Options, j
 	start := time.Now()
 	result, runErr := review.Run(ctx, martianReviewOptions(dir, head, findingsPath, opts))
 	verdict, judgeErr := judge.Match(ctx, c, result.Report.Findings)
-	score := ScoreMartian(c, result.Report, verdict.Pairs, profile)
+	score, err := ScoreMartian(c, result.Report, verdict.Pairs, profile)
+	if err != nil {
+		return MartianScore{Score: Score{Name: c.Name}}, err
+	}
 	score.JudgeCostUSD = verdict.CostUSD
 	score.DurationMS = time.Since(start).Milliseconds()
 	score.FindingsPath = findingsPath
@@ -362,8 +371,6 @@ func martianGitEnv() []string {
 	env := os.Environ()
 	clean := make([]string, 0, len(env)+2)
 	for _, entry := range env {
-		// Dates are pinned below. Location variables would make checkout
-		// use another repository instead of this fixture.
 		if strings.HasPrefix(entry, "GIT_AUTHOR_DATE=") || strings.HasPrefix(entry, "GIT_COMMITTER_DATE=") ||
 			strings.HasPrefix(entry, "GIT_DIR=") || strings.HasPrefix(entry, "GIT_WORK_TREE=") || strings.HasPrefix(entry, "GIT_INDEX_FILE=") {
 			continue

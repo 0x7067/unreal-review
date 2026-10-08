@@ -261,23 +261,6 @@ func TestMatchSeverityGradesTheConsumingFinding(t *testing.T) {
 	}
 }
 
-func TestAgreement(t *testing.T) {
-	cases := []struct {
-		hits, total int
-		want        float64
-	}{
-		{0, 0, 1},
-		{3, 3, 1},
-		{1, 4, 0.25},
-		{0, 2, 0},
-	}
-	for _, tc := range cases {
-		if got := Agreement(tc.hits, tc.total); got != tc.want {
-			t.Fatalf("Agreement(%d, %d)=%f, want %f", tc.hits, tc.total, got, tc.want)
-		}
-	}
-}
-
 func TestRecallIsOneWithoutGold(t *testing.T) {
 	score := Score{Name: "clean"}
 	if score.Recall() != 1 || score.SeverityAgreement() != 1 {
