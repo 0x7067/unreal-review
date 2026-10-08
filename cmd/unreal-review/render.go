@@ -25,8 +25,8 @@ func cmdRender(args []string) error {
 		return renderMarkdown(args[1:])
 	case "-h", "--help", "help":
 		_, _ = fmt.Fprint(os.Stdout, `Usage:
-  unreal-review render github [--pr owner/repo#n] [--dry-run] [findings.jsonl]
-  unreal-review render markdown [findings.jsonl]
+  unreal-review render github [--pr owner/repo#n] [--repo owner/repo] [--commit <sha>] [--dry-run] [findings.jsonl]
+  unreal-review render markdown [--out <path>] [findings.jsonl]
 `)
 		return nil
 	default:
