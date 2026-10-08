@@ -82,7 +82,7 @@ func (c *Client) http() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
 	}
-	return http.DefaultClient
+	return NewHTTPClient()
 }
 
 func (c *Client) PullState(ctx context.Context, owner, repo string, number int) (PullState, error) {
