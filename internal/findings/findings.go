@@ -138,17 +138,12 @@ type record struct {
 	V         int             `json:"v"`
 	Type      Type            `json:"type"`
 	ID        string          `json:"id,omitempty"`
-	CreatedAt string          `json:"created_at,omitempty"`
-	Model     string          `json:"model,omitempty"`
-	Source    *Source         `json:"source,omitempty"`
 	Path      string          `json:"path,omitempty"`
 	StartLine json.RawMessage `json:"start_line,omitempty"`
 	EndLine   json.RawMessage `json:"end_line,omitempty"`
 	Anchor    string          `json:"anchor,omitempty"`
 	Severity  string          `json:"severity,omitempty"`
 	Body      string          `json:"body,omitempty"`
-	Cost      *Cost           `json:"cost,omitempty"`
-	Status    string          `json:"status,omitempty"`
 }
 
 type runRecord struct {
@@ -381,21 +376,13 @@ func AppendFinding(path string, finding Finding) (Finding, error) {
 	if err != nil {
 		return Finding{}, err
 	}
-	start, err := json.Marshal(finding.StartLine)
-	if err != nil {
-		return Finding{}, fmt.Errorf("encode start_line: %w", err)
-	}
-	end, err := json.Marshal(finding.EndLine)
-	if err != nil {
-		return Finding{}, fmt.Errorf("encode end_line: %w", err)
-	}
 	err = appendLine(path, record{
 		V:         SchemaVersion,
 		Type:      TypeFinding,
 		ID:        finding.ID,
 		Path:      finding.Path,
-		StartLine: start,
-		EndLine:   end,
+		StartLine: json.RawMessage(strconv.Itoa(finding.StartLine)),
+		EndLine:   json.RawMessage(strconv.Itoa(finding.EndLine)),
 		Anchor:    string(finding.Anchor),
 		Severity:  string(finding.Severity),
 		Body:      finding.Body,
@@ -505,21 +492,13 @@ func Write(w io.Writer, report Report) error {
 		}
 	}
 	for _, finding := range report.Findings {
-		start, err := json.Marshal(finding.StartLine)
-		if err != nil {
-			return fmt.Errorf("encode start_line: %w", err)
-		}
-		end, err := json.Marshal(finding.EndLine)
-		if err != nil {
-			return fmt.Errorf("encode end_line: %w", err)
-		}
 		rec := record{
 			V:         SchemaVersion,
 			Type:      TypeFinding,
 			ID:        finding.ID,
 			Path:      finding.Path,
-			StartLine: start,
-			EndLine:   end,
+			StartLine: json.RawMessage(strconv.Itoa(finding.StartLine)),
+			EndLine:   json.RawMessage(strconv.Itoa(finding.EndLine)),
 			Anchor:    string(finding.Anchor),
 			Severity:  string(finding.Severity),
 			Body:      finding.Body,
