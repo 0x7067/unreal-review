@@ -58,21 +58,6 @@ def decidePlanned(valid: Bool, empty: Bool, fresh: Bool, status: F.Status, same:
     case True{}:
       decideEmpty(empty, fresh, status, same)
 
-def outcomeStatus(d: Decision) -> F.Status:
-  match d:
-    case Start{}:
-      F.StatusRunning{}
-    case Resume{}:
-      F.StatusRunning{}
-    case EmptyComplete{}:
-      F.StatusComplete{}
-    case RefuseComplete{}:
-      F.StatusComplete{}
-    case RefuseMismatch{}:
-      F.StatusRunning{}
-    case RefuseOversized{}:
-      F.StatusFailed{}
-
 def canComplete(summary: Bool, rec: Bool) -> Bool:
   Bool.and(summary, rec)
 
