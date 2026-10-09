@@ -14,6 +14,42 @@ import (
 	"github.com/0x7067/unreal-review/findings"
 )
 
+func TestRunBlankOpenRouterKeyIsRejected(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_OPTIONAL_LOCKS", "0")
+	t.Setenv("GIT_TERMINAL_PROMPT", "0")
+	dir := gitRepo(t)
+	writeRepoFile(t, dir, "note.txt", "same\n")
+	gitRun(t, dir, "add", "note.txt")
+	gitRun(t, dir, "commit", "-q", "-m", "base")
+
+	secrets["OPENROUTER_API_KEY"] = "   "
+	t.Cleanup(func() { delete(secrets, "OPENROUTER_API_KEY") })
+	out := filepath.Join(t.TempDir(), "findings.jsonl")
+	err := cmdRun([]string{"--model", "test-model", "--workspace", dir, "--out", out})
+	if err == nil || err.Error() != "set OPENROUTER_API_KEY" {
+		t.Fatalf("blank key: %v", err)
+	}
+	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
+		t.Fatalf("blank key wrote %s: %v", out, statErr)
+	}
+
+	secrets["OPENROUTER_API_KEY"] = "test-key"
+	if err := cmdRun([]string{"--model", "test-model", "--workspace", dir, "--out", out}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := findings.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary != "No material issues: the selected range has no changes." {
+		t.Fatalf("summary=%q", report.Summary)
+	}
+}
+
 func TestRunAgentLog(t *testing.T) {
 	secrets["OPENROUTER_API_KEY"] = "test-key"
 	t.Cleanup(func() { delete(secrets, "OPENROUTER_API_KEY") })

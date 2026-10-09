@@ -6,6 +6,30 @@ import (
 	"testing"
 )
 
+func TestEvalBlankOpenRouterKeyIsRejected(t *testing.T) {
+	t.Setenv("UNREAL_HARNESS_LLM_MODEL", "openai/test")
+	secrets["OPENROUTER_API_KEY"] = " \t "
+	t.Cleanup(func() { delete(secrets, "OPENROUTER_API_KEY") })
+
+	out := filepath.Join(t.TempDir(), "artifacts")
+	err := cmdEval([]string{"--thinking-level", "nope", "--out", out})
+	if err == nil || err.Error() != "set OPENROUTER_API_KEY" {
+		t.Fatalf("blank key: %v", err)
+	}
+	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
+		t.Fatalf("blank key created %s: %v", out, statErr)
+	}
+
+	secrets["OPENROUTER_API_KEY"] = "test-key"
+	err = cmdEval([]string{"--thinking-level", "nope", "--out", out})
+	if err == nil || err.Error() != `thinking level "nope": want low, medium, high, xhigh, or max` {
+		t.Fatalf("real key: %v", err)
+	}
+	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
+		t.Fatalf("real key created %s: %v", out, statErr)
+	}
+}
+
 func TestEvalUnknownCorpusLeavesNoDirectory(t *testing.T) {
 	t.Setenv("UNREAL_HARNESS_LLM_MODEL", "")
 
