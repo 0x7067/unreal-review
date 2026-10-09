@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -40,6 +41,9 @@ const (
 	openRouterBaseEnv     = "UNREAL_REVIEW_OPENROUTER_API"
 	toolHeartbeatInterval = 10 * time.Minute
 	sessionDirectoryName  = ".local/state/unreal-agent/sessions"
+	// compactionDisabled keeps the full session in the model request.
+	// The harness treats a zero threshold as "compact after every response".
+	compactionDisabled = math.MaxInt64
 )
 
 func OpenRouterBase() (string, error) {
@@ -165,11 +169,15 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 
 	systemPrompt := bashBudgetSystemPrompt(req.SystemPrompt, h.MaxBashCalls)
 	s := harnessSession{
-		id:           sessionID,
-		store:        store,
-		llm:          adapter,
-		registry:     registry,
-		model:        llm.Model{ID: req.Model, ReasoningEffort: llm.ReasoningEffort(h.ThinkingLevel)},
+		id:       sessionID,
+		store:    store,
+		llm:      adapter,
+		registry: registry,
+		model: llm.Model{
+			ID:                  req.Model,
+			CompactionThreshold: compactionDisabled,
+			ReasoningEffort:     llm.ReasoningEffort(h.ThinkingLevel),
+		},
 		systemPrompt: systemPrompt,
 	}
 	coordinatorErr := s.turn(runCtx, inbox.ID(sessionID), req.Prompt)
@@ -225,7 +233,7 @@ func (s harnessSession) turn(ctx context.Context, messageID inbox.ID, message st
 	if err != nil {
 		return err
 	}
-	inputs, err := inbox.New(ctx, restored.ExternalInputIDs)
+	inputs, err := inbox.New(ctx, restored.InputIDs)
 	if err != nil {
 		return fmt.Errorf("open inbox: %w", err)
 	}

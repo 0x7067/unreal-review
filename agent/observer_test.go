@@ -118,11 +118,11 @@ func TestObserverIgnoresOtherSessions(t *testing.T) {
 
 func TestObserverAccumulatesCostAcrossResponses(t *testing.T) {
 	observer := newSessionObserver("review-1", filepath.Join(t.TempDir(), "findings.jsonl"), nil, func() {})
-	first := llm.Response{Usage: llm.Usage{InputTokens: 120, OutputTokens: 30, ReasoningTokens: 10, CachedInputTokens: 40}}
+	first := llm.Response{Usage: llm.Usage{TokenUsage: llm.TokenUsage{InputTokens: 120, OutputTokens: 30, ReasoningTokens: 10, CachedInputTokens: 40}}}
 	second := llm.Response{
 		Usage: llm.Usage{
-			InputTokens: 180, OutputTokens: 20,
-			Raw: jsontext.Value(`{"cost":0.013}`),
+			TokenUsage: llm.TokenUsage{InputTokens: 180, OutputTokens: 20},
+			Raw:        jsontext.Value(`{"cost":0.013}`),
 		},
 	}
 
@@ -173,7 +173,7 @@ func TestObserverCapturesFinalAssistantTextOnce(t *testing.T) {
 func TestObserverRawCostIsOptional(t *testing.T) {
 	observer := newSessionObserver("review-1", filepath.Join(t.TempDir(), "findings.jsonl"), nil, func() {})
 	observer.Observe("review-1", sessionstore.Item{Kind: sessionstore.ItemModelResponse, Data: sessionstore.ModelResponse{
-		Response: llm.Response{Usage: llm.Usage{InputTokens: 5}},
+		Response: llm.Response{Usage: llm.Usage{TokenUsage: llm.TokenUsage{InputTokens: 5}}},
 	}})
 	if err := observer.Err(); err != nil {
 		t.Fatalf("observer error: %v", err)

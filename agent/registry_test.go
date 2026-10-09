@@ -144,18 +144,20 @@ func TestTranslateResultReportsTheOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("translate result: %v", err)
 	}
-	if len(result.Output) != 1 || result.Output[0].Kind != llm.ToolResultText || result.Output[0].Value != "recorded" {
-		t.Errorf("success result: got %+v, want one text output %q", result.Output, "recorded")
+	got := result.ToLLMResult()
+	if len(got.Output) != 1 || got.Output[0].Kind != llm.ToolResultText || got.Output[0].Value != "recorded" {
+		t.Errorf("success result: got %+v, want one text output %q", got.Output, "recorded")
 	}
-	if result.CallID != "call-7" {
-		t.Errorf("call id: got %q, want %q", result.CallID, "call-7")
+	if got.CallID != "call-7" {
+		t.Errorf("call id: got %q, want %q", got.CallID, "call-7")
 	}
 
 	failed, err := translator.TranslateResult("call-8", tool.CallStatus{Error: "boom"}, nil)
 	if err != nil {
 		t.Fatalf("translate result: %v", err)
 	}
-	if len(failed.Output) != 1 || failed.Output[0].Value != "Error: boom" {
-		t.Errorf("failure result: got %+v, want one text output %q", failed.Output, "Error: boom")
+	got = failed.ToLLMResult()
+	if len(got.Output) != 1 || got.Output[0].Value != "Error: boom" {
+		t.Errorf("failure result: got %+v, want one text output %q", got.Output, "Error: boom")
 	}
 }

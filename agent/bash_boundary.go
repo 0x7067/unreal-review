@@ -65,7 +65,7 @@ func (b *boundedBash) takeCall() bool {
 	}
 }
 
-func (b *boundedBash) TranslateResult(callID string, status tool.CallStatus, operations []operation.Operation) (llm.ToolResult, error) {
+func (b *boundedBash) TranslateResult(callID string, status tool.CallStatus, operations []operation.Operation) (tool.Result, error) {
 	if status.Error == bashQuotaError {
 		return recordResult(callID, status), nil
 	}

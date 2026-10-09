@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -59,7 +60,7 @@ func cmdEval(args []string) error {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")
 	}
 	key := secret("OPENROUTER_API_KEY")
-	if key == "" {
+	if strings.TrimSpace(key) == "" {
 		return fmt.Errorf("set OPENROUTER_API_KEY")
 	}
 	level, err := agent.SanitizeLevel(*thinking)
