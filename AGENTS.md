@@ -58,6 +58,6 @@ Apply [principle-test-behavior-not-implementation](.agents/skills/principle-test
 
 Five of the six gate project-local hooks behind one-time trust, so a fresh clone is ungated until it is granted: Claude Code's workspace trust dialog, Codex `[hooks.state]` in `~/.codex/config.toml`, Cursor `--trust`, Pi `--approve`, Grok's `trusted_folders.toml`. An untrusted hook does not error, it just never runs.
 
-`spec/` is a hand-written Bend model of the Go in the library packages (`findings`, `review`, `agent`) and `internal/`, and nothing checks that the two agree. A change to logic a law describes has to be mirrored in `spec/` in the same change, or the proof stays green while describing a program that no longer exists.
+`spec/` is a hand-written Bend model of the Go in the library packages (`findings`, `review`, `agent`) and `internal/`, not an equivalence (see `spec/README.md`). A change to logic a law describes has to be mirrored in `spec/` in the same change, or the proof stays green while describing a program that no longer exists. Two checks hold the seam: per-package conformance tests pin the shared constants and vocabularies, and `spec/witnesses.txt` classifies every law as witnessed by a named Go test or explicitly model-only (`internal/specconf` fails otherwise). A new law must be classified there in the same change.
 
 Do not add `bunfig.toml`. A new product rule is a `law` in `LAWS.bend` plus a proof in `PROOF.bend` in the same change. Do not edit `LAWS.bend` unless the user changes a product rule.
