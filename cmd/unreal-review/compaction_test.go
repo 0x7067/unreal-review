@@ -40,8 +40,8 @@ func TestRunCompactionFlag(t *testing.T) {
 		t.Fatal("percent without a window started a review")
 	}
 	outFloor := filepath.Join(t.TempDir(), "floor.jsonl")
-	if err := run([]string{"run", "--model", "test-model", "--compaction", "39999", "--workspace", dir, "--out", outFloor}); err == nil {
-		t.Fatal("cutoff below 40000 tokens started a review")
+	if err := run([]string{"run", "--model", "test-model", "--compaction", "149999", "--workspace", dir, "--out", outFloor}); err == nil {
+		t.Fatal("cutoff below 150000 tokens started a review")
 	}
 	if _, err := os.Stat(outFloor); !os.IsNotExist(err) {
 		t.Fatalf("below-floor cutoff wrote %s: %v", outFloor, err)

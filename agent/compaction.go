@@ -2,25 +2,34 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
+	"unicode/utf8"
+	"uuid"
 
+	"github.com/unreallabsai/unreal-agent/harness/inbox"
 	"github.com/unreallabsai/unreal-agent/harness/llm"
 	"github.com/unreallabsai/unreal-agent/harness/settings"
+
+	"github.com/0x7067/unreal-review/findings"
 )
 
 const (
 	defaultCompactionPercent = 75
-	// compactionRetainedTokens is the harness verbatim tail. It matches the
-	// unexported contextbuilder.compactionRetainedTokens constant in
-	// unreal-agent v0.3.1 harness/contextbuilder/compaction.go.
-	compactionRetainedTokens = 20_000
-	// compactionMinCutoff is twice that tail. The post-compaction request still
-	// holds the system prompt, tools, summary, and up to the verbatim tail, so
-	// a cutoff any closer makes every following response compact again.
-	compactionMinCutoff = compactionRetainedTokens * 2
+	// compactionMinCutoff is the lowest accepted cutoff. A 40,000 cutoff
+	// compacted on nearly every other turn in a real review.
+	compactionMinCutoff = 150_000
+	// After a compaction, the cutoff stays off until both of these have passed.
+	compactionGapTurns  = 4
+	compactionGapTokens = 50_000
+	// The handoff lists findings from disk, capped so the block stays small.
+	maxRecordedFindings = 20
+	maxClaimBytes       = 160
 )
 
 // CompactionThreshold resolves the harness cutoff in tokens of the latest
@@ -64,7 +73,7 @@ func cutoffNote(tokens int64) string {
 }
 
 func cutoffFloorError(tokens int64) error {
-	return fmt.Errorf("compaction cutoff %d tokens is below %d, twice the %d-token verbatim tail; a lower cutoff makes every following response compact again", tokens, compactionMinCutoff, compactionRetainedTokens)
+	return fmt.Errorf("compaction cutoff %d tokens is below %d", tokens, compactionMinCutoff)
 }
 
 func applyPercent(window int64, percent int, explicit bool) (int64, string, error) {
@@ -153,26 +162,155 @@ func builtinContextWindow(model string) (int64, bool) {
 // harness/contextbuilder/compaction.go. llm.Request has no compaction flag.
 const compactionUserInstruction = "This is system message. You are performing context compaction. Return only the text of a handoff summary for another LLM assistant to resume the original task."
 
-// guardCompaction rejects a compaction response the coordinator would ignore or
-// apply as an empty summary. NeedsCompaction reads the threshold stored by
-// SetModel, so the live cutoff cannot be raised mid-run.
-func guardCompaction(inner llm.Adapter) llm.Adapter {
-	return &compactionGuard{inner: inner}
+const compactionHypotheses = "List hypotheses already checked and rejected, one per line, each with a one-line reason."
+
+// guardCompaction rejects an unusable compaction response, stamps findings from
+// disk onto the handoff, and holds the cutoff up via inbox UpdateSettings.
+// NeedsCompaction reads the threshold stored by SetModel; inbox.Settings
+// carries CompactionThreshold and AddControlMessage applies it.
+func guardCompaction(inner llm.Adapter, floor int64, findingsPath string) *compactionGuard {
+	return &compactionGuard{inner: inner, floor: floor, findingsPath: findingsPath}
 }
 
 type compactionGuard struct {
-	inner llm.Adapter
+	inner        llm.Adapter
+	box          inbox.Writer
+	floor        int64
+	findingsPath string
+
+	held         bool
+	regularTurns int
+	baseline     int64
+	haveBaseline bool
 }
 
 func (g *compactionGuard) Respond(ctx context.Context, req llm.Request, opts llm.RequestOptions) (llm.Response, error) {
+	compacting := compactionRequest(req)
+	if compacting {
+		req = annotateCompactionRequest(req)
+	}
 	response, err := g.inner.Respond(ctx, req, opts)
-	if err != nil || !compactionRequest(req) {
+	if err != nil {
 		return response, err
+	}
+	if !compacting {
+		if err := g.observeRegular(ctx, response); err != nil {
+			return response, err
+		}
+		return response, nil
 	}
 	if response.Stop != llm.StopComplete || compactionSummary(response) == "" {
 		return llm.Response{}, fmt.Errorf("compaction response stop %q is not a usable summary; resuming with the same --out replays the compaction; --compaction off avoids it", response.Stop)
 	}
+	response = stampSummary(response, recordedFindingsBlock(g.findingsPath))
+	if err := g.hold(ctx); err != nil {
+		return llm.Response{}, err
+	}
 	return response, nil
+}
+
+func (g *compactionGuard) hold(ctx context.Context) error {
+	g.held = true
+	g.regularTurns = 0
+	g.haveBaseline = false
+	g.baseline = 0
+	return g.setThreshold(ctx, compactionDisabled)
+}
+
+func (g *compactionGuard) observeRegular(ctx context.Context, response llm.Response) error {
+	if !g.held {
+		return nil
+	}
+	g.regularTurns++
+	tokens := response.Usage.InputTokens + response.Usage.OutputTokens
+	if !g.haveBaseline {
+		g.baseline = tokens
+		g.haveBaseline = true
+	}
+	if g.regularTurns >= compactionGapTurns && tokens-g.baseline >= compactionGapTokens {
+		g.held = false
+		return g.setThreshold(ctx, g.floor)
+	}
+	return nil
+}
+
+func (g *compactionGuard) setThreshold(ctx context.Context, threshold int64) error {
+	payload, err := json.Marshal(inbox.ControlMessage{
+		Mode:       inbox.UpdateSettings,
+		Parameters: inbox.Settings{CompactionThreshold: &threshold},
+	})
+	if err != nil {
+		return fmt.Errorf("encode compaction threshold: %w", err)
+	}
+	if g.box == nil {
+		return fmt.Errorf("compaction inbox is not open")
+	}
+	if err := g.box.Submit(ctx, inbox.Input{
+		ID:      inbox.ID(uuid.New().String()),
+		Kind:    inbox.InputControl,
+		Payload: payload,
+	}); err != nil {
+		return fmt.Errorf("update compaction threshold: %w", err)
+	}
+	return nil
+}
+
+func annotateCompactionRequest(req llm.Request) llm.Request {
+	input := append([]llm.Item(nil), req.Input...)
+	last := input[len(input)-1]
+	message := last.Data.(llm.Message)
+	message.Text += "\n\n" + compactionHypotheses
+	last.Data = message
+	input[len(input)-1] = last
+	req.Input = input
+	return req
+}
+
+func stampSummary(response llm.Response, block string) llm.Response {
+	for i := len(response.Output) - 1; i >= 0; i-- {
+		message, ok := response.Output[i].Data.(llm.Message)
+		if response.Output[i].Type == llm.ItemMessage && ok && message.Role == llm.RoleAssistant && strings.TrimSpace(message.Text) != "" {
+			message.Text = strings.TrimSpace(message.Text) + "\n\n" + block
+			response.Output[i].Data = message
+			return response
+		}
+	}
+	return response
+}
+
+func recordedFindingsBlock(path string) string {
+	report, err := findings.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "Findings already recorded: unreadable."
+	}
+	if err != nil || len(report.Findings) == 0 {
+		return "Findings already recorded: none."
+	}
+	shown := len(report.Findings)
+	if shown > maxRecordedFindings {
+		shown = maxRecordedFindings
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Findings already recorded (at most %d):\n", maxRecordedFindings)
+	for _, finding := range report.Findings[:shown] {
+		fmt.Fprintf(&b, "- %s:%d-%d %s\n", finding.Path, finding.StartLine, finding.EndLine, trimClaim(finding.Body))
+	}
+	if extra := len(report.Findings) - shown; extra > 0 {
+		fmt.Fprintf(&b, "- and %d more\n", extra)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func trimClaim(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if len(text) <= maxClaimBytes {
+		return text
+	}
+	cut := maxClaimBytes
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut] + "..."
 }
 
 func compactionRequest(req llm.Request) bool {

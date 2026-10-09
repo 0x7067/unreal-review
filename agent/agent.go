@@ -147,7 +147,7 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 		threshold = compactionDisabled
 	}
 	if threshold != compactionDisabled {
-		adapter = guardCompaction(adapter)
+		adapter = guardCompaction(adapter, threshold, req.FindingsPath)
 	}
 	storeDirectory, err := sessionDirectory()
 	if err != nil {
@@ -276,6 +276,9 @@ func (s harnessSession) turn(ctx context.Context, messageID inbox.ID, message st
 		if err := inputs.Submit(ctx, input); err != nil {
 			return fmt.Errorf("submit input: %w", err)
 		}
+	}
+	if guard, ok := s.llm.(*compactionGuard); ok {
+		guard.box = inputs
 	}
 	builder := contextbuilder.NewBuilder()
 	builder.SetModel(s.model)
