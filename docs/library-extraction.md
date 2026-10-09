@@ -1,6 +1,9 @@
 # Extract the review logic as a reusable library
 
-Status: not started. No consumer can import this repository today.
+Status: done as of `v0.1.0`. `findings`, `diffmap`, `review`, and `agent`
+are top-level packages under `module github.com/0x7067/unreal-review`; a
+scratch consumer `go get`s the tag and completes `review.Run` against a
+local git range with its own `review.Agent`.
 
 ## Why
 
