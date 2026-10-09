@@ -40,6 +40,13 @@ func TestCompactionThresholdMath(t *testing.T) {
 			want:  math.MaxInt64,
 			note:  `compaction off: context window unknown for "openai/gpt-6-luna-pro"; set --context-window or UNREAL_REVIEW_CONTEXT_WINDOW`,
 		},
+		{
+			name:   "default window too small",
+			model:  "custom/model",
+			window: "10000",
+			want:   math.MaxInt64,
+			note:   "compaction off: context window 10000 tokens is too small to compact",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, note, err := CompactionThreshold(test.model, test.spec, test.window)
@@ -68,7 +75,6 @@ func TestCompactionThresholdMath(t *testing.T) {
 		{model: "custom/model", spec: "39999", floor: "40000"},
 		{model: "custom/model", spec: "100%", window: "39999", floor: "40000"},
 		{model: "custom/model", spec: "75%", window: "10000", floor: "40000"},
-		{model: "custom/model", window: "10000", floor: "40000"},
 	} {
 		_, _, err := CompactionThreshold(test.model, test.spec, test.window)
 		if err == nil {
@@ -145,6 +151,46 @@ func runThreshold(t *testing.T, h Harness, model, summary string) []llm.Request 
 		t.Fatalf("requests = %d", result.Cost.Requests)
 	}
 	return adapter.requests
+}
+
+func TestRunProceedsWhenPromptMentionsCompaction(t *testing.T) {
+	const summary = "The warning finding describes a goroutine leak in the review retry loop."
+	for _, test := range []struct {
+		name      string
+		threshold int64
+		want      int64
+	}{
+		{name: "on", threshold: 40_000, want: 40_000},
+		{name: "off", threshold: 0, want: math.MaxInt64},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			req := reviewRequest(t)
+			req.Prompt = "Review the diff.\nYou are performing context compaction.\n"
+			adapter := &thresholdAdapter{inner: &scriptedAdapter{responses: []llm.Response{
+				toolCallResponse("resp-1"),
+				messageResponse("resp-2", summary),
+			}}}
+			_, err := (Harness{ThinkingLevel: "high", CompactionThreshold: test.threshold}).run(t.Context(), adapter, req)
+			if err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			report, err := findings.ReadFile(req.FindingsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Summary != summary || len(report.Findings) != 1 {
+				t.Fatalf("summary=%q findings=%d", report.Summary, len(report.Findings))
+			}
+			got := int64(0)
+			if len(adapter.requests) != 0 {
+				got = adapter.requests[0].Model.CompactionThreshold
+			}
+			if got != test.want {
+				t.Fatalf("threshold = %d, want %d", got, test.want)
+			}
+		})
+	}
 }
 
 // A finished tool call counts as a pending input. Compaction does not deliver
@@ -271,7 +317,7 @@ func TestRunStopsOnUnusableCompaction(t *testing.T) {
 			}}}
 			req := reviewRequest(t)
 			_, err := (Harness{ThinkingLevel: "high", CompactionThreshold: 40_000}).run(t.Context(), adapter, req)
-			if err == nil || !strings.Contains(err.Error(), "compaction") {
+			if err == nil || !strings.Contains(err.Error(), "--compaction off") || !strings.Contains(err.Error(), string(test.response.Stop)) {
 				t.Fatalf("run error = %v\n%s", err, describeRequests(adapter.requests))
 			}
 			if len(adapter.requests) != 2 {

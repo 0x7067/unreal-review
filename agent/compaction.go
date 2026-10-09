@@ -50,12 +50,12 @@ func CompactionThreshold(model, spec, window string) (int64, string, error) {
 		if !known {
 			return 0, "", fmt.Errorf("compaction %q: context window unknown for %q", spec, model)
 		}
-		return applyPercent(size, parsed.percent)
+		return applyPercent(size, parsed.percent, true)
 	default:
 		if !known {
 			return compactionDisabled, fmt.Sprintf("compaction off: context window unknown for %q; set --context-window or %s", model, ContextWindowEnv), nil
 		}
-		return applyPercent(size, defaultCompactionPercent)
+		return applyPercent(size, defaultCompactionPercent, false)
 	}
 }
 
@@ -67,12 +67,15 @@ func cutoffFloorError(tokens int64) error {
 	return fmt.Errorf("compaction cutoff %d tokens is below %d, twice the %d-token verbatim tail; a lower cutoff makes every following response compact again", tokens, compactionMinCutoff, compactionRetainedTokens)
 }
 
-func applyPercent(window int64, percent int) (int64, string, error) {
+func applyPercent(window int64, percent int, explicit bool) (int64, string, error) {
 	if window > math.MaxInt64/int64(percent) {
 		return 0, "", fmt.Errorf("compaction threshold overflows")
 	}
 	threshold := window * int64(percent) / 100
 	if threshold < compactionMinCutoff {
+		if !explicit {
+			return compactionDisabled, fmt.Sprintf("compaction off: context window %d tokens is too small to compact", window), nil
+		}
 		return 0, "", cutoffFloorError(threshold)
 	}
 	return threshold, cutoffNote(threshold), nil
@@ -145,51 +148,40 @@ func builtinContextWindow(model string) (int64, bool) {
 	return window, true
 }
 
-// compactionUserInstruction is the trailing user message BuildCompaction always
-// appends in unreal-agent v0.3.1 harness/contextbuilder/compaction.go.
-const compactionUserInstruction = "You are performing context compaction."
+// compactionUserInstruction is the full text of the user message BuildCompaction
+// appends as the last input item in unreal-agent v0.3.1
+// harness/contextbuilder/compaction.go. llm.Request has no compaction flag.
+const compactionUserInstruction = "This is system message. You are performing context compaction. Return only the text of a handoff summary for another LLM assistant to resume the original task."
 
-// guardCompaction stops a run that would otherwise pay for compaction forever.
-// NeedsCompaction reads the threshold stored by SetModel. The request passed
-// to Respond is a copy, and this adapter cannot submit an inbox settings
-// update, so the live threshold cannot be raised to MaxInt64 mid-run.
+// guardCompaction rejects a compaction response the coordinator would ignore or
+// apply as an empty summary. NeedsCompaction reads the threshold stored by
+// SetModel, so the live cutoff cannot be raised mid-run.
 func guardCompaction(inner llm.Adapter) llm.Adapter {
 	return &compactionGuard{inner: inner}
 }
 
 type compactionGuard struct {
-	inner  llm.Adapter
-	streak int
+	inner llm.Adapter
 }
 
 func (g *compactionGuard) Respond(ctx context.Context, req llm.Request, opts llm.RequestOptions) (llm.Response, error) {
-	compacting := compactionRequest(req)
-	if compacting {
-		g.streak++
-		if g.streak >= 2 {
-			return llm.Response{}, fmt.Errorf("compaction repeated without a regular turn")
-		}
-	} else {
-		g.streak = 0
-	}
 	response, err := g.inner.Respond(ctx, req, opts)
-	if err != nil || !compacting {
+	if err != nil || !compactionRequest(req) {
 		return response, err
 	}
 	if response.Stop != llm.StopComplete || compactionSummary(response) == "" {
-		return llm.Response{}, fmt.Errorf("compaction response is not a complete summary")
+		return llm.Response{}, fmt.Errorf("compaction response stop %q is not a usable summary; resuming with the same --out replays the compaction; --compaction off avoids it", response.Stop)
 	}
 	return response, nil
 }
 
 func compactionRequest(req llm.Request) bool {
-	for _, item := range req.Input {
-		message, ok := item.Data.(llm.Message)
-		if ok && strings.Contains(message.Text, compactionUserInstruction) {
-			return true
-		}
+	if len(req.Input) == 0 {
+		return false
 	}
-	return false
+	item := req.Input[len(req.Input)-1]
+	message, ok := item.Data.(llm.Message)
+	return item.Type == llm.ItemMessage && ok && message.Role == llm.RoleUser && message.Text == compactionUserInstruction
 }
 
 func compactionSummary(response llm.Response) string {
