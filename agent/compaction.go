@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	defaultCompactionPercent = 75
 	// compactionMinCutoff is the lowest accepted cutoff. A lower cutoff
 	// compacted on nearly every other turn in a real review.
 	//
@@ -34,9 +33,8 @@ const (
 )
 
 // CompactionThreshold resolves the harness cutoff in tokens of the latest
-// model response (input tokens plus output tokens). An empty spec uses
-// defaultCompactionPercent of a known context window. An unknown window
-// disables compaction and returns a note. An explicit percent with an unknown
+// model response (input tokens plus output tokens). An empty spec leaves
+// compaction off and returns no note. An explicit percent with an unknown
 // window is an error. The returned threshold is never zero.
 func CompactionThreshold(model, spec, window string) (int64, string, error) {
 	spec = strings.TrimSpace(spec)
@@ -46,27 +44,25 @@ func CompactionThreshold(model, spec, window string) (int64, string, error) {
 	}
 	switch parsed.mode {
 	case compactionOff:
+		if spec == "" {
+			return compactionDisabled, "", nil
+		}
 		return compactionDisabled, "compaction off", nil
 	case compactionTokens:
 		if parsed.tokens < compactionMinCutoff {
 			return 0, "", cutoffFloorError(parsed.tokens)
 		}
 		return parsed.tokens, cutoffNote(parsed.tokens), nil
-	}
-	size, known, err := contextWindow(model, window)
-	if err != nil {
-		return 0, "", err
-	}
-	if parsed.mode == compactionPercent {
+	default:
+		size, known, err := contextWindow(model, window)
+		if err != nil {
+			return 0, "", err
+		}
 		if !known {
 			return 0, "", fmt.Errorf("compaction %q: context window unknown for %q", spec, model)
 		}
-		return applyPercent(size, parsed.percent, true)
+		return applyPercent(size, parsed.percent)
 	}
-	if !known {
-		return compactionDisabled, fmt.Sprintf("compaction off: context window unknown for %q; set --context-window or %s", model, ContextWindowEnv), nil
-	}
-	return applyPercent(size, defaultCompactionPercent, false)
 }
 
 func cutoffNote(tokens int64) string {
@@ -77,13 +73,10 @@ func cutoffFloorError(tokens int64) error {
 	return fmt.Errorf("compaction cutoff %d tokens is below %d", tokens, compactionMinCutoff)
 }
 
-func applyPercent(window int64, percent int, explicit bool) (int64, string, error) {
+func applyPercent(window int64, percent int) (int64, string, error) {
 	// percent is 1..100, so this is exact and cannot overflow int64.
 	threshold := window/100*int64(percent) + (window%100)*int64(percent)/100
 	if threshold < compactionMinCutoff {
-		if !explicit {
-			return compactionDisabled, fmt.Sprintf("compaction off: context window %d tokens is too small to compact", window), nil
-		}
 		return 0, "", cutoffFloorError(threshold)
 	}
 	return threshold, cutoffNote(threshold), nil
@@ -92,8 +85,7 @@ func applyPercent(window int64, percent int, explicit bool) (int64, string, erro
 type compactionMode int
 
 const (
-	compactionAuto compactionMode = iota
-	compactionOff
+	compactionOff compactionMode = iota
 	compactionTokens
 	compactionPercent
 )
@@ -107,7 +99,7 @@ type compactionSpec struct {
 func parseCompactionSpec(spec string) (compactionSpec, error) {
 	switch {
 	case spec == "":
-		return compactionSpec{mode: compactionAuto}, nil
+		return compactionSpec{mode: compactionOff}, nil
 	case strings.EqualFold(spec, "off"):
 		return compactionSpec{mode: compactionOff}, nil
 	case strings.HasSuffix(spec, "%"):

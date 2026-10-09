@@ -45,8 +45,7 @@ const (
 	// The harness treats a zero threshold as "compact after every response".
 	compactionDisabled = math.MaxInt64
 
-	// CompactionEnv is the default for --compaction: off, a positive token
-	// count, or a percent of the context window such as 75%.
+	// CompactionEnv is the default for --compaction. Unset leaves compaction off.
 	CompactionEnv = "UNREAL_REVIEW_COMPACTION"
 	// ContextWindowEnv is the default for --context-window, in tokens.
 	ContextWindowEnv = "UNREAL_REVIEW_CONTEXT_WINDOW"

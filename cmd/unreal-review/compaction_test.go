@@ -50,6 +50,18 @@ func TestRunCompactionFlag(t *testing.T) {
 		t.Fatalf("percent without a window wrote %s: %v", outPercent, err)
 	}
 
+	outDefault := filepath.Join(t.TempDir(), "default.jsonl")
+	if err := run([]string{"run", "--model", "test-model", "--workspace", dir, "--out", outDefault}); err != nil {
+		t.Fatal(err)
+	}
+	assertEmptyReview(t, outDefault, want)
+
+	outTokens := filepath.Join(t.TempDir(), "tokens.jsonl")
+	if err := run([]string{"run", "--model", "test-model", "--compaction", "150000", "--workspace", dir, "--out", outTokens}); err != nil {
+		t.Fatal(err)
+	}
+	assertEmptyReview(t, outTokens, want)
+
 	outOff := filepath.Join(t.TempDir(), "off.jsonl")
 	if err := run([]string{"run", "--model", "test-model", "--compaction", "off", "--workspace", dir, "--out", outOff}); err != nil {
 		t.Fatal(err)
