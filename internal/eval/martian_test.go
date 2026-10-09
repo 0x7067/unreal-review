@@ -87,6 +87,23 @@ func TestScoreMartianTalliesPerSeverity(t *testing.T) {
 	}
 }
 
+func TestScoreMartianUnknownProfile(t *testing.T) {
+	c := MartianCase{Name: "pr", Repo: "o/r", Comments: []MartianComment{
+		{Comment: "nil deref", Severity: "High", Category: "bug"},
+	}}
+	report := findings.Report{Findings: []findings.Finding{{Severity: findings.SeverityError, Body: "nil pointer"}}}
+	score, err := ScoreMartian(c, report, []Pair{{Golden: 0, Finding: 0}}, "nope")
+	_, want := MartianProfile("nope")
+	if want == nil || err == nil || err.Error() != want.Error() {
+		t.Fatalf("err=%v, want MartianProfile error %v", err, want)
+	}
+	if score.Name != "" || score.Class != "" || score.Repo != "" || score.URL != "" ||
+		score.Produced != 0 || score.Extra != 0 || score.Gold != 0 || score.Matched != 0 ||
+		score.MatchedExcluded != 0 || len(score.ByProfile) != 0 || len(score.BySeverity) != 0 || len(score.Pairs) != 0 {
+		t.Fatalf("score=%+v, want zero", score)
+	}
+}
+
 func TestJudgeMatchScoresOpenRouterReply(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

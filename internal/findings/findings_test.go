@@ -165,6 +165,17 @@ func TestAppendSummaryRequiresBody(t *testing.T) {
 	if err := AppendSummary(work, "   "); err == nil {
 		t.Fatal("accepted empty summary")
 	}
+	body := "The cache write races with the reader, so readers can see torn entries."
+	if err := AppendSummary(work, body); err != nil {
+		t.Fatal(err)
+	}
+	report, err := ReadFile(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary != body {
+		t.Fatalf("summary=%q", report.Summary)
+	}
 }
 
 func TestNormalizeRejectsInvalidFindings(t *testing.T) {
