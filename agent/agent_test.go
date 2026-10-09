@@ -49,11 +49,13 @@ func toolCallResponse(id string) llm.Response {
 			Data:       llm.ToolCall{CallID: "call-1", Name: review.RecordFindingTool, Arguments: findingArguments()},
 		}},
 		Usage: llm.Usage{
-			InputTokens:       120,
-			OutputTokens:      30,
-			ReasoningTokens:   10,
-			CachedInputTokens: 40,
-			Raw:               jsontext.Value(`{"cost":0.013}`),
+			TokenUsage: llm.TokenUsage{
+				InputTokens:       120,
+				OutputTokens:      30,
+				ReasoningTokens:   10,
+				CachedInputTokens: 40,
+			},
+			Raw: jsontext.Value(`{"cost":0.013}`),
 		},
 	}
 }
@@ -67,7 +69,7 @@ func messageResponse(id, text string) llm.Response {
 			Type:       llm.ItemMessage,
 			Data:       llm.Message{Role: llm.RoleAssistant, Text: text},
 		}},
-		Usage: llm.Usage{InputTokens: 180, OutputTokens: 20},
+		Usage: llm.Usage{TokenUsage: llm.TokenUsage{InputTokens: 180, OutputTokens: 20}},
 	}
 }
 

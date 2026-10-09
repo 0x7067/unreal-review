@@ -19,8 +19,10 @@ github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/unreallabsai/unreal-agent v0.2.0 h1:L6Mmh+m1kHzCBdREJh7slJrib+xypVOzWzn8MdiGdxY=
-github.com/unreallabsai/unreal-agent v0.2.0/go.mod h1:YhIX5wPE03rifKcjsIasoXk/thjLF8olyHV0TD0pPpE=
+github.com/unreallabsai/unreal-agent v0.3.1 h1:V5zwQsgc8csicG3CUnaKCHPYq63nv/Zuav6GUK02sWQ=
+github.com/unreallabsai/unreal-agent v0.3.1/go.mod h1:blaXPxijHvknJyjpymKAmwio6y96WrbAD75Sy10EXkQ=
+go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
+go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
 golang.org/x/image v0.46.0 h1:b1+oYj0Jbp6K5MDT4i4/eZpYlk3V8SJhhDKh6LBHAyQ=
 golang.org/x/image v0.46.0/go.mod h1:3B3W05VGVQyuXucLINLjXKrqISASfi4Xj+iCVkLMwew=
 golang.org/x/sys v0.48.0 h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=

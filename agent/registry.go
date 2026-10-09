@@ -113,16 +113,25 @@ func (recordFindingTranslator) Translate(ctx tool.Context, call llm.ToolCall) to
 	return submitRecord(ctx, finding)
 }
 
-func (recordFindingTranslator) TranslateResult(callID string, status tool.CallStatus, _ []operation.Operation) (llm.ToolResult, error) {
+func (recordFindingTranslator) TranslateResult(callID string, status tool.CallStatus, _ []operation.Operation) (tool.Result, error) {
 	return recordResult(callID, status), nil
 }
 
-func recordResult(callID string, status tool.CallStatus) llm.ToolResult {
+type textToolResult struct {
+	CallID string
+	Text   string
+}
+
+func (r textToolResult) ToLLMResult() llm.ToolResult {
+	return llm.ToolResult{CallID: r.CallID, Output: []llm.ToolResultOutput{{Kind: llm.ToolResultText, Value: r.Text}}}
+}
+
+func recordResult(callID string, status tool.CallStatus) tool.Result {
 	text := "recorded"
 	if status.Error != "" {
 		text = "Error: " + status.Error
 	}
-	return llm.ToolResult{CallID: callID, Output: []llm.ToolResultOutput{{Kind: llm.ToolResultText, Value: text}}}
+	return textToolResult{CallID: callID, Text: text}
 }
 
 func submitRecord(ctx tool.Context, finding findings.Finding) tool.CallStatus {
