@@ -68,12 +68,6 @@ def Incomplete(s: Status) -> Type:
     case StatusFailed{}:
       Unit
 
-def startLine(pred: Nat) -> Nat:
-  1n+pred
-
-def endLine(pred: Nat, extra: Nat) -> Nat:
-  Nat.add(1n+pred, extra)
-
 type MaybeNat is Data:
   NoNat{}
   SomeNat{n: Nat}
@@ -136,17 +130,6 @@ def hashEqRefl(h: Hash) -> {hashEq(h, h) == True{} : Bool}:
   match h:
     case Hash{n}:
       N.eqRefl(n)
-
-def fidEq(a: Fid, b: Fid) -> Bool:
-  match a b:
-    case NoId{} NoId{}:
-      True{}
-    case NoId{} Id{n}:
-      False{}
-    case Id{n} NoId{}:
-      False{}
-    case Id{x} Id{y}:
-      Nat.is_eq(x, y)
 
 def mergePairBoth(a: Finding, b: Finding, eq: Bool) -> List<&2, Finding>:
   match eq:

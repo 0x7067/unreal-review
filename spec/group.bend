@@ -43,10 +43,6 @@ type Pathspec is Data:
   SpecDir{}
   SpecFiles{}
 
-type PackSt is Data:
-  AtRest{rest: List<&2, ChangedFile>, chunk: List<&2, ChangedFile>, nf: Nat, nl: Nat, acc: List<&2, Group>}
-  AtNeed{t: List<&2, ChangedFile>, h: ChangedFile, chunk: List<&2, ChangedFile>, nf: Nat, nl: Nat, acc: List<&2, Group>, need: Bool}
-
 def maxFiles() -> Nat:
   25n
 
@@ -138,11 +134,6 @@ def fileDir(f: ChangedFile) -> Nat:
   match f:
     case File{id, dir, stem, ext, kind, lines}:
       dir
-
-def fileStem(f: ChangedFile) -> Nat:
-  match f:
-    case File{id, dir, stem, ext, kind, lines}:
-      stem
 
 def fileExt(f: ChangedFile) -> Nat:
   match f:
@@ -926,15 +917,6 @@ def remapKeyFiles(+old: GKey, +new: GKey, xs: List<&2, Item>) -> {filesOf(remapK
       %remapKeyFiles(old, new, t) : {f <> filesOf(remapKey(old, new, t)) == f <> _ : List<&2, ChangedFile>}
       {==}
 
-def unionKeysFiles(+xs: List<&2, Item>, ka: Maybe<&2, GKey>, kb: Maybe<&2, GKey>) -> {filesOf(unionKeys(xs, ka, kb)) == filesOf(xs) : List<&2, ChangedFile>}:
-  match ka kb:
-    case None{} kb0:
-      {==}
-    case Some{a} None{}:
-      {==}
-    case Some{a} Some{b}:
-      remapKeyFiles(b, a, xs)
-
 def applyEdgeBFiles(+id: Nat, k: Maybe<&2, GKey>, xs: List<&2, Item>) -> {filesOf(applyEdgeB(id, k, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
   match k:
     case None{}:
@@ -1217,9 +1199,6 @@ def notBigCapped(+fs: List<&2, ChangedFile>, e: {oversized(Group{fs}) == False{}
       Unit{}
     case h <> t:
       notBigCappedT(h, t, e)
-
-def allCappedNil() -> AllCapped(Nil{}):
-  Unit{}
 
 def allCappedAppend(a: List<&2, Group>, b: List<&2, Group>, ca: AllCapped(a), cb: AllCapped(b)) -> AllCapped(List.append(&2, Group, a, b)):
   match a:
