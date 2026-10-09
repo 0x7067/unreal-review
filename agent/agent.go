@@ -72,8 +72,7 @@ type Harness struct {
 	// negative disables Bash for stages that must operate only on supplied data.
 	MaxBashCalls int
 	// CompactionThreshold is the cutoff in tokens of the latest model response
-	// (input + output). Zero resolves from CompactionEnv and ContextWindowEnv.
-	// A value that reaches the model is never zero.
+	// (input + output). Zero means compaction is off.
 	CompactionThreshold int64
 }
 
@@ -143,14 +142,9 @@ func newLoopbackModelAdapter(apiKey, base string) (llm.Adapter, func() error, er
 }
 
 func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentRequest) (review.AgentResult, error) {
-	threshold, note, err := h.modelCompaction(req.Model)
-	if err != nil {
-		return review.AgentResult{}, err
-	}
-	if note != "" && h.Log != nil {
-		if _, err := fmt.Fprintf(h.Log, "unreal-review: %s\n", note); err != nil {
-			return review.AgentResult{}, fmt.Errorf("write compaction note: %w", err)
-		}
+	threshold := h.CompactionThreshold
+	if threshold <= 0 {
+		threshold = compactionDisabled
 	}
 	storeDirectory, err := sessionDirectory()
 	if err != nil {

@@ -69,10 +69,12 @@ master. --workspace selects the checkout. --model names the OpenRouter
 model. --fresh starts over an existing --out. --strategy is single or
 focused. --decompose requests bounded tasks below the automatic size
 threshold. --timeout limits the review. --thinking-level defaults to
-high (low|medium|high|xhigh|max). --compaction is off, a positive token
-count, or a percent of the context window such as 75%. The default is 75%
+high (low|medium|high|xhigh|max). --compaction is off, a token count above
+20000, or a percent of the context window such as 75%. The default is 75%
 when the window is known from --context-window or the harness model table,
-and off when it is not. A zero threshold is rejected. --agent-log writes the harness
+and off when it is not. An explicit percent with an unknown window is an
+error. Stderr states the cutoff in tokens, or that compaction is off. A zero
+threshold is rejected. --agent-log writes the harness
 session JSONL. Interrupt to pause; run again with the same --out to continue.
 Group prints related files; it does not start the agent. --pr narrows the
 range to the commits pushed since the newest commit carrying an
