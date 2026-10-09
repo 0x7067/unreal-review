@@ -40,6 +40,8 @@ With no range flags, `run` reviews staged, unstaged, and untracked changes again
 
 `--thinking-level` is `low`, `medium`, `high` (default), `xhigh`, or `max`.
 
+`--agent-log` writes the harness session JSONL.
+
 ```sh
 unreal-review run --from origin/main --to HEAD --out findings.jsonl
 unreal-review run --branch feature --out findings.jsonl
