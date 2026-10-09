@@ -1,12 +1,13 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"math"
-	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/unreallabsai/unreal-agent/harness/llm"
 	"github.com/unreallabsai/unreal-agent/harness/settings"
 )
 
@@ -14,9 +15,12 @@ const (
 	defaultCompactionPercent = 75
 	// compactionRetainedTokens is the harness verbatim tail. It matches the
 	// unexported contextbuilder.compactionRetainedTokens constant in
-	// unreal-agent v0.3.1 harness/contextbuilder/compaction.go. A cutoff at or
-	// below this floor never compacts.
+	// unreal-agent v0.3.1 harness/contextbuilder/compaction.go.
 	compactionRetainedTokens = 20_000
+	// compactionMinCutoff is twice that tail. The post-compaction request still
+	// holds the system prompt, tools, summary, and up to the verbatim tail, so
+	// a cutoff any closer makes every following response compact again.
+	compactionMinCutoff = compactionRetainedTokens * 2
 )
 
 // CompactionThreshold resolves the harness cutoff in tokens of the latest
@@ -38,7 +42,7 @@ func CompactionThreshold(model, spec, window string) (int64, string, error) {
 	case compactionOff:
 		return compactionDisabled, "compaction off", nil
 	case compactionTokens:
-		if parsed.tokens <= compactionRetainedTokens {
+		if parsed.tokens < compactionMinCutoff {
 			return 0, "", cutoffFloorError(parsed.tokens)
 		}
 		return parsed.tokens, cutoffNote(parsed.tokens), nil
@@ -60,7 +64,7 @@ func cutoffNote(tokens int64) string {
 }
 
 func cutoffFloorError(tokens int64) error {
-	return fmt.Errorf("compaction cutoff %d tokens is at or below the %d-token verbatim tail", tokens, compactionRetainedTokens)
+	return fmt.Errorf("compaction cutoff %d tokens is below %d, twice the %d-token verbatim tail; a lower cutoff makes every following response compact again", tokens, compactionMinCutoff, compactionRetainedTokens)
 }
 
 func applyPercent(window int64, percent int) (int64, string, error) {
@@ -68,7 +72,7 @@ func applyPercent(window int64, percent int) (int64, string, error) {
 		return 0, "", fmt.Errorf("compaction threshold overflows")
 	}
 	threshold := window * int64(percent) / 100
-	if threshold <= compactionRetainedTokens {
+	if threshold < compactionMinCutoff {
 		return 0, "", cutoffFloorError(threshold)
 	}
 	return threshold, cutoffNote(threshold), nil
@@ -123,16 +127,14 @@ func contextWindow(model, window string) (int64, bool, error) {
 	return size, ok, nil
 }
 
-// builtinSettingsMiss is a path that is not a settings file. settings.Load
-// returns the harness built-in model table when the file is absent.
-const builtinSettingsMiss = "/unreal-review-builtin-settings-miss.json"
-
 func builtinContextWindow(model string) (int64, bool) {
 	provider, id, ok := strings.Cut(strings.TrimSpace(model), "/")
 	if !ok || provider == "" || id == "" {
 		return 0, false
 	}
-	configured, err := settings.Load(filepath.Clean(builtinSettingsMiss))
+	// settings.Load returns the built-in table when the file is missing.
+	// os.ReadFile("") is ErrNotExist, so no sentinel path is required.
+	configured, err := settings.Load("")
 	if err != nil {
 		return 0, false
 	}
@@ -141,4 +143,62 @@ func builtinContextWindow(model string) (int64, bool) {
 		return 0, false
 	}
 	return window, true
+}
+
+// compactionUserInstruction is the trailing user message BuildCompaction always
+// appends in unreal-agent v0.3.1 harness/contextbuilder/compaction.go.
+const compactionUserInstruction = "You are performing context compaction."
+
+// guardCompaction stops a run that would otherwise pay for compaction forever.
+// NeedsCompaction reads the threshold stored by SetModel. The request passed
+// to Respond is a copy, and this adapter cannot submit an inbox settings
+// update, so the live threshold cannot be raised to MaxInt64 mid-run.
+func guardCompaction(inner llm.Adapter) llm.Adapter {
+	return &compactionGuard{inner: inner}
+}
+
+type compactionGuard struct {
+	inner  llm.Adapter
+	streak int
+}
+
+func (g *compactionGuard) Respond(ctx context.Context, req llm.Request, opts llm.RequestOptions) (llm.Response, error) {
+	compacting := compactionRequest(req)
+	if compacting {
+		g.streak++
+		if g.streak >= 2 {
+			return llm.Response{}, fmt.Errorf("compaction repeated without a regular turn")
+		}
+	} else {
+		g.streak = 0
+	}
+	response, err := g.inner.Respond(ctx, req, opts)
+	if err != nil || !compacting {
+		return response, err
+	}
+	if response.Stop != llm.StopComplete || compactionSummary(response) == "" {
+		return llm.Response{}, fmt.Errorf("compaction response is not a complete summary")
+	}
+	return response, nil
+}
+
+func compactionRequest(req llm.Request) bool {
+	for _, item := range req.Input {
+		message, ok := item.Data.(llm.Message)
+		if ok && strings.Contains(message.Text, compactionUserInstruction) {
+			return true
+		}
+	}
+	return false
+}
+
+func compactionSummary(response llm.Response) string {
+	for i := len(response.Output) - 1; i >= 0; i-- {
+		item := response.Output[i]
+		message, ok := item.Data.(llm.Message)
+		if item.Type == llm.ItemMessage && ok && message.Role == llm.RoleAssistant && strings.TrimSpace(message.Text) != "" {
+			return message.Text
+		}
+	}
+	return ""
 }

@@ -40,11 +40,11 @@ func TestRunCompactionFlag(t *testing.T) {
 		t.Fatal("percent without a window started a review")
 	}
 	outFloor := filepath.Join(t.TempDir(), "floor.jsonl")
-	if err := run([]string{"run", "--model", "test-model", "--compaction", "20000", "--workspace", dir, "--out", outFloor}); err == nil {
-		t.Fatal("cutoff at the verbatim tail started a review")
+	if err := run([]string{"run", "--model", "test-model", "--compaction", "39999", "--workspace", dir, "--out", outFloor}); err == nil {
+		t.Fatal("cutoff below 40000 tokens started a review")
 	}
 	if _, err := os.Stat(outFloor); !os.IsNotExist(err) {
-		t.Fatalf("verbatim-tail cutoff wrote %s: %v", outFloor, err)
+		t.Fatalf("below-floor cutoff wrote %s: %v", outFloor, err)
 	}
 	if _, err := os.Stat(outPercent); !os.IsNotExist(err) {
 		t.Fatalf("percent without a window wrote %s: %v", outPercent, err)

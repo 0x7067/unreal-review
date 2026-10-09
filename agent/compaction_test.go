@@ -30,8 +30,8 @@ func TestCompactionThresholdMath(t *testing.T) {
 		{name: "explicit window", model: "custom/model", window: "1000000", want: 750_000, note: "compaction cutoff 750000 tokens"},
 		{name: "percent of window", model: "custom/model", spec: "80%", window: "1000000", want: 800_000, note: "compaction cutoff 800000 tokens"},
 		{name: "percent of known model", model: "openai/gpt-6-luna", spec: "70%", want: 735_000, note: "compaction cutoff 735000 tokens"},
-		{name: "absolute tokens", model: "custom/model", spec: "25000", window: "1000", want: 25_000, note: "compaction cutoff 25000 tokens"},
-		{name: "just above tail", model: "custom/model", spec: "20001", want: 20_001, note: "compaction cutoff 20001 tokens"},
+		{name: "absolute tokens", model: "custom/model", spec: "40000", window: "1000", want: 40_000, note: "compaction cutoff 40000 tokens"},
+		{name: "just above floor", model: "custom/model", spec: "40001", want: 40_001, note: "compaction cutoff 40001 tokens"},
 		{name: "off", model: "openai/gpt-6-luna-pro", spec: "off", want: math.MaxInt64, note: "compaction off"},
 		{name: "off any case", model: "custom/model", spec: "OFF", want: math.MaxInt64, note: "compaction off"},
 		{
@@ -60,12 +60,15 @@ func TestCompactionThresholdMath(t *testing.T) {
 		{model: "custom/model", spec: "75%"},
 		{model: "custom/model", window: "0"},
 		{model: "custom/model", spec: "-5"},
-		{model: "custom/model", window: "1", spec: "75%", floor: "20000"},
+		{model: "custom/model", window: "1", spec: "75%", floor: "40000"},
 		{model: "openai/gpt-6-luna", spec: "nope"},
-		{model: "custom/model", spec: "20000", floor: "20000"},
-		{model: "custom/model", spec: "100%", window: "20000", floor: "20000"},
-		{model: "custom/model", spec: "75%", window: "10000", floor: "20000"},
-		{model: "custom/model", window: "10000", floor: "20000"},
+		{model: "custom/model", spec: "20000", floor: "40000"},
+		{model: "custom/model", spec: "20001", floor: "40000"},
+		{model: "custom/model", spec: "25000", floor: "40000"},
+		{model: "custom/model", spec: "39999", floor: "40000"},
+		{model: "custom/model", spec: "100%", window: "39999", floor: "40000"},
+		{model: "custom/model", spec: "75%", window: "10000", floor: "40000"},
+		{model: "custom/model", window: "10000", floor: "40000"},
 	} {
 		_, _, err := CompactionThreshold(test.model, test.spec, test.window)
 		if err == nil {
@@ -156,13 +159,13 @@ func TestRunContinuesAfterCompaction(t *testing.T) {
 		after   = "The retry loop leaks the cancel function after compaction."
 	)
 	adapter := &thresholdAdapter{inner: &scriptedAdapter{responses: []llm.Response{
-		findingResponse("before", "call-before", before, 30_000),
+		findingResponse("before", "call-before", before, 50_000),
 		messageResponse("compact", handoff),
 		findingResponse("after", "call-after", after, 1_000),
 		messageResponse("final", summary),
 	}}}
 	req := reviewRequest(t)
-	_, err := (Harness{ThinkingLevel: "high", CompactionThreshold: 25_000}).run(t.Context(), adapter, req)
+	_, err := (Harness{ThinkingLevel: "high", CompactionThreshold: 40_000}).run(t.Context(), adapter, req)
 	if err != nil {
 		t.Fatalf("run: %v\nrequests:\n%s", err, describeRequests(adapter.requests))
 	}
@@ -242,4 +245,82 @@ func describeRequests(requests []llm.Request) string {
 		fmt.Fprintf(&b, "--- request %d threshold %d ---\n%s", i, request.Model.CompactionThreshold, requestText(request))
 	}
 	return b.String()
+}
+
+func TestRunStopsOnUnusableCompaction(t *testing.T) {
+	const (
+		before = "The retry loop leaks the cancel function before compaction."
+		later  = "Warnings describe cancel leaks recorded before and after compaction."
+	)
+	partial := messageResponse("compact", "partial handoff that must not replace the review")
+	partial.Stop = llm.StopMaxOutputTokens
+	for _, test := range []struct {
+		name     string
+		response llm.Response
+	}{
+		{name: "non-complete", response: partial},
+		{name: "empty summary", response: llm.Response{ID: "compact", Stop: llm.StopComplete}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			adapter := &thresholdAdapter{inner: &scriptedAdapter{responses: []llm.Response{
+				findingResponse("before", "call-before", before, 50_000),
+				test.response,
+				messageResponse("final", later),
+				messageResponse("again", later),
+			}}}
+			req := reviewRequest(t)
+			_, err := (Harness{ThinkingLevel: "high", CompactionThreshold: 40_000}).run(t.Context(), adapter, req)
+			if err == nil || !strings.Contains(err.Error(), "compaction") {
+				t.Fatalf("run error = %v\n%s", err, describeRequests(adapter.requests))
+			}
+			if len(adapter.requests) != 2 {
+				t.Fatalf("requests = %d, want the tool turn and one compaction\n%s", len(adapter.requests), describeRequests(adapter.requests))
+			}
+			report, readErr := findings.ReadFile(req.FindingsPath)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if report.Summary == later || report.Summary != "" {
+				t.Fatalf("summary = %q", report.Summary)
+			}
+			if len(report.Findings) != 1 || report.Findings[0].Body != before {
+				t.Fatalf("findings = %#v", report.Findings)
+			}
+		})
+	}
+}
+
+func TestRunIgnoresCompactionTextAsSummary(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const (
+		handoff = "The warning finding describes a leaked cancel recorded before compaction."
+		before  = "The retry loop leaks the cancel function before compaction."
+		after   = "The retry loop leaks the cancel function after compaction."
+	)
+	adapter := &thresholdAdapter{inner: &scriptedAdapter{responses: []llm.Response{
+		findingResponse("before", "call-before", before, 50_000),
+		messageResponse("compact", handoff),
+		findingResponse("after", "call-after", after, 1_000),
+		{ID: "final", Stop: llm.StopComplete},
+	}}}
+	req := reviewRequest(t)
+	_, err := (Harness{ThinkingLevel: "high", CompactionThreshold: 40_000}).run(t.Context(), adapter, req)
+	if err == nil {
+		t.Fatal("run accepted a summary")
+	}
+	report, readErr := findings.ReadFile(req.FindingsPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if report.Summary == handoff || report.Summary != "" {
+		t.Fatalf("summary = %q", report.Summary)
+	}
+	var bodies []string
+	for _, finding := range report.Findings {
+		bodies = append(bodies, finding.Body)
+	}
+	if strings.Join(bodies, "\n") != before+"\n"+after {
+		t.Fatalf("findings = %q, run error = %v", bodies, err)
+	}
 }

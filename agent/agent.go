@@ -146,6 +146,7 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	if threshold <= 0 {
 		threshold = compactionDisabled
 	}
+	adapter = guardCompaction(adapter)
 	storeDirectory, err := sessionDirectory()
 	if err != nil {
 		return review.AgentResult{}, fmt.Errorf("resolve session directory: %w", err)
