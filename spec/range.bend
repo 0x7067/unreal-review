@@ -37,14 +37,3 @@ def pullBase(base: Nat, receipt: Receipt) -> Nat:
       base
     case Receipt{rev}:
       rev
-
-def isWorkspace(s: Spec) -> Bool:
-  match s:
-    case Workspace{}:
-      True{}
-    case Range{f, t}:
-      False{}
-    case Commit{r, p}:
-      False{}
-    case Branch{n}:
-      False{}
