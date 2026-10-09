@@ -6,7 +6,7 @@
 
 - `focused-invalid` rejects a strategy other than `single` or `focused` before reviewing a repository.
 - `focused-empty` completes an empty range without starting any discovery or verifier session.
-- `focused-success` the compiled CLI records only verified candidate ids, with cost across all child requests and one complete root report.
+- `focused-success` the compiled CLI records cost across all child requests and one complete root report.
 - `focused-complete` a second invocation refuses an already-complete root file without new model calls.
 - `focused-fresh` starts a new review id and independent child sessions with `--fresh`.
 - `focused-resume` reuses completed stages with the same settings and retains already-recorded cost rather than charging completed stages twice.
