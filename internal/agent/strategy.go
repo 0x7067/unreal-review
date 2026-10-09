@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"unreal-review/internal/review"
+	"github.com/0x7067/unreal-review/internal/review"
 )
 
 // plannedMaxBashCalls bounds evidence gathering in each planned discovery or

@@ -14,7 +14,7 @@ import (
 	"github.com/unreallabsai/unreal-agent/harness/session"
 	"github.com/unreallabsai/unreal-agent/harness/sessionstore"
 
-	"unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/internal/findings"
 )
 
 type sessionObserver struct {

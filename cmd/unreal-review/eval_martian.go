@@ -8,9 +8,9 @@ import (
 	"sync"
 	"text/tabwriter"
 
-	"unreal-review/internal/agent"
-	"unreal-review/internal/eval"
-	"unreal-review/internal/review"
+	"github.com/0x7067/unreal-review/internal/agent"
+	"github.com/0x7067/unreal-review/internal/eval"
+	"github.com/0x7067/unreal-review/internal/review"
 )
 
 type martianFlags struct {

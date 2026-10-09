@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 
-	"unreal-review/internal/review"
+	"github.com/0x7067/unreal-review/internal/review"
 )
 
 type specFlags struct {

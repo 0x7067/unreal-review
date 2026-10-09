@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"unreal-review/internal/diffmap"
-	"unreal-review/internal/findings"
-	"unreal-review/internal/github"
+	"github.com/0x7067/unreal-review/internal/diffmap"
+	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/internal/github"
 )
 
 const (

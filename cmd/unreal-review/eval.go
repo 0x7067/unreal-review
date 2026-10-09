@@ -11,8 +11,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"unreal-review/internal/agent"
-	"unreal-review/internal/eval"
+	"github.com/0x7067/unreal-review/internal/agent"
+	"github.com/0x7067/unreal-review/internal/eval"
 )
 
 type evalSummary struct {

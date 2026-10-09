@@ -6,10 +6,10 @@ import (
 	"os"
 	"time"
 
-	"unreal-review/internal/agent"
-	"unreal-review/internal/github"
-	"unreal-review/internal/render"
-	"unreal-review/internal/review"
+	"github.com/0x7067/unreal-review/internal/agent"
+	"github.com/0x7067/unreal-review/internal/github"
+	"github.com/0x7067/unreal-review/internal/render"
+	"github.com/0x7067/unreal-review/internal/review"
 )
 
 const checkName = "unreal-review"

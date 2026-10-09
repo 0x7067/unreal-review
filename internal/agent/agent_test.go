@@ -15,8 +15,8 @@ import (
 
 	"github.com/unreallabsai/unreal-agent/harness/llm"
 
-	"unreal-review/internal/findings"
-	"unreal-review/internal/review"
+	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/internal/review"
 )
 
 type scriptedAdapter struct {

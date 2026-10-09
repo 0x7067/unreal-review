@@ -16,8 +16,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"unreal-review/internal/findings"
-	"unreal-review/internal/review"
+	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/internal/review"
 )
 
 // Focused is an opt-in adapter. Its children and hypotheses are private to the

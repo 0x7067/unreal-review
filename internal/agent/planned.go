@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"unreal-review/internal/findings"
-	"unreal-review/internal/review"
+	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/internal/review"
 )
 
 // Planned executes a source-bound coverage plan without publishing hypotheses.

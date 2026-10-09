@@ -3,7 +3,7 @@ package review
 import (
 	"context"
 
-	"unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/internal/findings"
 )
 
 type Agent interface {

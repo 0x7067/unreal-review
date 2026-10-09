@@ -20,7 +20,7 @@ linters:
             - "**/internal/review/**"
           allow:
             - $gostd
-            - unreal-review/internal/findings
+            - github.com/0x7067/unreal-review/internal/findings
 
 formatters:
   enable:
@@ -31,4 +31,4 @@ formatters:
       simplify: true
     goimports:
       local-prefixes:
-        - unreal-review
+        - github.com/0x7067/unreal-review

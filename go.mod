@@ -1,4 +1,4 @@
-module unreal-review
+module github.com/0x7067/unreal-review
 
 go 1.27.0
 

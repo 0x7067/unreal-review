@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"unreal-review/internal/agent"
-	"unreal-review/internal/findings"
-	"unreal-review/internal/review"
+	"github.com/0x7067/unreal-review/internal/agent"
+	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/internal/review"
 )
 
 func cmdRun(args []string) error {

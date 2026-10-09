@@ -8,10 +8,10 @@ import (
 	"io"
 	"os"
 
-	"unreal-review/internal/diffmap"
-	"unreal-review/internal/findings"
-	"unreal-review/internal/github"
-	"unreal-review/internal/render"
+	"github.com/0x7067/unreal-review/internal/diffmap"
+	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/internal/github"
+	"github.com/0x7067/unreal-review/internal/render"
 )
 
 func cmdRender(args []string) error {
