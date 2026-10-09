@@ -106,7 +106,7 @@ few dollars.
 ## 2. `group` provided decomposition; aggregate execution is now implemented
 
 `unreal-review group` prints pathspec groups.
-`internal/review/group.go` already combines directories, stem companions,
+`review/group.go` already combines directories, stem companions,
 implementation/tests, lockfiles, locales, headers, and selected Go import
 relationships. `group_import.go` supplies Go-specific dependency edges.
 

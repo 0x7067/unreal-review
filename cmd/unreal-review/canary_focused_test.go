@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/findings"
 )
 
 func focusedCanaryEnv(t *testing.T, url string) []string {

@@ -12,7 +12,7 @@ import (
 	"github.com/unreallabsai/unreal-agent/harness/sessionstore"
 	"github.com/unreallabsai/unreal-agent/harness/tool"
 
-	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/findings"
 )
 
 func completedValueOperation(t *testing.T, value jsontext.Value) operation.Operation {

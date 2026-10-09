@@ -11,8 +11,8 @@ import (
 	"github.com/unreallabsai/unreal-agent/harness/tool/bash"
 	"github.com/unreallabsai/unreal-agent/harness/tool/viewimage"
 
-	"github.com/0x7067/unreal-review/internal/findings"
-	"github.com/0x7067/unreal-review/internal/review"
+	"github.com/0x7067/unreal-review/findings"
+	"github.com/0x7067/unreal-review/review"
 )
 
 type recordingContext struct {

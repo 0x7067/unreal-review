@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/findings"
 )
 
 type accountingAgentFunc func(context.Context, AgentRequest) (AgentResult, error)

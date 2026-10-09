@@ -5,13 +5,19 @@ import (
 	"regexp"
 	"strconv"
 	"testing"
+
+	"github.com/0x7067/unreal-review/internal/specpath"
 )
 
 // spec/github.bend models the inline-comment cap this package enforces, and
 // keeps its own copy of the number. Pin them together so a change to one side
 // cannot leave the model describing a limit the renderer does not use.
 func TestBendModelInlineCapMatchesGo(t *testing.T) {
-	src, err := os.ReadFile("../../spec/github.bend")
+	github, err := specpath.File("github.bend")
+	if err != nil {
+		t.Fatalf("locate spec/github.bend: %v", err)
+	}
+	src, err := os.ReadFile(github)
 	if err != nil {
 		t.Fatalf("read spec/github.bend: %v", err)
 	}

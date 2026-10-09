@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/0x7067/unreal-review/internal/diffmap"
-	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/diffmap"
+	"github.com/0x7067/unreal-review/findings"
 	"github.com/0x7067/unreal-review/internal/github"
 )
 

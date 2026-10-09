@@ -38,7 +38,7 @@ check "scratch is outside the repo" [ "$(under_repo "$VERIFY_SCRATCH")" = no ]
 check "evidence is outside the repo" [ "$(under_repo "$VERIFY_EVIDENCE")" = no ]
 
 newer=0
-for src in "$VERIFY_REPO"/cmd/unreal-review/*.go "$VERIFY_REPO"/internal/*/*.go; do
+for src in "$VERIFY_REPO"/cmd/unreal-review/*.go "$VERIFY_REPO"/internal/*/*.go "$VERIFY_REPO"/findings/*.go "$VERIFY_REPO"/diffmap/*.go "$VERIFY_REPO"/review/*.go "$VERIFY_REPO"/agent/*.go; do
 	[ -f "$src" ] || continue
 	if [ "$src" -nt "$VERIFY_BIN" ]; then
 		newer=1

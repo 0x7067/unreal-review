@@ -2,13 +2,36 @@ package review
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"testing"
 )
 
+// specFile locates a file under the repository spec/ directory by walking up
+// from the test working directory to the module root. Stdlib only: this
+// package is public and cannot import internal/.
+func specFile(t *testing.T, name string) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("working directory: %v", err)
+	}
+	dir := wd
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return filepath.Join(dir, "spec", name)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("go.mod not found above %s", wd)
+		}
+		dir = parent
+	}
+}
+
 func TestBendPlanCapsMatchGo(t *testing.T) {
-	src, err := os.ReadFile("../../spec/plan.bend")
+	src, err := os.ReadFile(specFile(t, "plan.bend"))
 	if err != nil {
 		t.Fatalf("read spec/plan.bend: %v", err)
 	}
@@ -30,7 +53,7 @@ func TestBendPlanCapsMatchGo(t *testing.T) {
 }
 
 func TestBendModelCapsMatchGo(t *testing.T) {
-	src, err := os.ReadFile("../../spec/group.bend")
+	src, err := os.ReadFile(specFile(t, "group.bend"))
 	if err != nil {
 		t.Fatalf("read spec/group.bend: %v", err)
 	}

@@ -1,6 +1,6 @@
 import Base
 
-# Hand-written abstraction of internal/agent/focused.go, not an equivalence
+# Hand-written abstraction of agent/focused.go, not an equivalence
 # certificate for Go, filesystem durability, or the model's semantic judgment.
 # Focused.Run's run closure rejects agent errors and ctx.Err(), then calls
 # focusedComplete. summaryOk abstracts findings.CheckSummary (syntax AND verdict).

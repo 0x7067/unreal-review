@@ -11,7 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/0x7067/unreal-review/internal/agent"
+	"github.com/0x7067/unreal-review/agent"
 	"github.com/0x7067/unreal-review/internal/eval"
 )
 

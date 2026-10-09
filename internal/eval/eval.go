@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/0x7067/unreal-review/internal/findings"
-	"github.com/0x7067/unreal-review/internal/review"
+	"github.com/0x7067/unreal-review/findings"
+	"github.com/0x7067/unreal-review/review"
 )
 
 type Gold struct {

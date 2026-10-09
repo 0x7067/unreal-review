@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/findings"
 )
 
 func Markdown(w io.Writer, report findings.Report) error {

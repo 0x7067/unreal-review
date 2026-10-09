@@ -37,7 +37,7 @@ It must report `doctor: ok` and confirm all of:
 
 - `VERIFY_BIN` is `$REPO/bin/unreal-review` and executable
 - `unreal-review help` exits 0 and names `run` and `group`
-- the binary is not older than `cmd/unreal-review/*.go` or `internal/*/*.go`
+- the binary is not older than `cmd/unreal-review/*.go`, `internal/*/*.go`, or the library packages (`findings`, `diffmap`, `review`, `agent`)
 - `go` and `git` are on `PATH`
 - evidence and scratch live under `$VERIFY_ROOT`, outside the repo
 

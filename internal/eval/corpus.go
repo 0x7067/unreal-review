@@ -1,6 +1,6 @@
 package eval
 
-import "github.com/0x7067/unreal-review/internal/findings"
+import "github.com/0x7067/unreal-review/findings"
 
 const cacheBase = `package evalrace
 

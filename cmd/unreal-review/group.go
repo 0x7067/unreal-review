@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/0x7067/unreal-review/internal/review"
+	"github.com/0x7067/unreal-review/review"
 )
 
 func cmdGroup(args []string) error {

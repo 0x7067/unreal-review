@@ -708,7 +708,7 @@ func canaryBinary(t *testing.T) string {
 	// Only these source trees were checked for freshness. Start there rather
 	// than walking unrelated benchmark worktrees and dependency checkouts,
 	// which can consume the entire canary timeout without checking more code.
-	for _, tree := range []string{filepath.Join("cmd", "unreal-review"), "internal"} {
+	for _, tree := range []string{filepath.Join("cmd", "unreal-review"), "internal", "findings", "diffmap", "review", "agent"} {
 		err = filepath.WalkDir(filepath.Join(root, tree), func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err

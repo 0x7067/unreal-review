@@ -10,7 +10,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/0x7067/unreal-review/internal/findings"
+	"github.com/0x7067/unreal-review/findings"
 )
 
 const RecordFindingTool = "record_finding"

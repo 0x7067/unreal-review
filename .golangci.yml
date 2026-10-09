@@ -12,15 +12,15 @@ linters:
       rules:
         findings:
           files:
-            - "**/internal/findings/**"
+            - "**/findings/**"
           allow:
             - $gostd
         review:
           files:
-            - "**/internal/review/**"
+            - "**/review/**"
           allow:
             - $gostd
-            - github.com/0x7067/unreal-review/internal/findings
+            - github.com/0x7067/unreal-review/findings
 
 formatters:
   enable:

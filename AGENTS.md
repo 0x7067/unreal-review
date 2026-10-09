@@ -10,14 +10,14 @@ unreal-review is a pipeline of replaceable pieces around one product: [schema/fi
 
 | Piece | Owns | Seam |
 | --- | --- | --- |
-| Source | The diff under review | git workspace (staged + unstaged + untracked vs HEAD), `--from`/`--to` (merge-base; omit `--to` for the working tree), `--commit` (parent..commit), `--branch` (merge-base of main/master), `--pr` (commits since the newest commit carrying an `unreal-review` check run; full base range when none exists), pathspecs, `--exclude`; diffs above 200,000 bytes automatically become a bounded full-byte-ownership review plan and `--decompose` requests the same path below that threshold; `unreal-review group` only prints pathspec groups; inside `internal/review` |
+| Source | The diff under review | git workspace (staged + unstaged + untracked vs HEAD), `--from`/`--to` (merge-base; omit `--to` for the working tree), `--commit` (parent..commit), `--branch` (merge-base of main/master), `--pr` (commits since the newest commit carrying an `unreal-review` check run; full base range when none exists), pathspecs, `--exclude`; diffs above 200,000 bytes automatically become a bounded full-byte-ownership review plan and `--decompose` requests the same path below that threshold; `unreal-review group` only prints pathspec groups; inside `review` |
 | Agent | Prompt + workspace → findings JSONL and cost | `review.Agent` |
-| Review | Checkpoint, SHA binding, prompt, status | `internal/review` |
+| Review | Checkpoint, SHA binding, prompt, status | `review` |
 | Renderer | Display a report | functions on `findings.Report` (markdown, GitHub) |
 
 Review the complete selected diff: every byte must reach the agent directly or through bounded plan tasks. Never truncate it; fail explicitly if full coverage cannot be represented.
 
-Wire a replacement at `cmd/unreal-review`. `AgentRequest.ReviewID` is the review id; any continuation mapping stays inside the adapter (`internal/agent` for the unreal-agent harness).
+Wire a replacement at `cmd/unreal-review`. `AgentRequest.ReviewID` is the review id; any continuation mapping stays inside the adapter (`agent` for the unreal-agent harness).
 `AgentRequest.PriorCost` is already included in the root checkpoint,
 `Resuming` distinguishes a resumed checkpoint from a fresh run, and `Plan`
 binds bounded local/boundary tasks to the complete diff. Stateful adapters
@@ -58,6 +58,6 @@ Apply [principle-test-behavior-not-implementation](.agents/skills/principle-test
 
 Five of the six gate project-local hooks behind one-time trust, so a fresh clone is ungated until it is granted: Claude Code's workspace trust dialog, Codex `[hooks.state]` in `~/.codex/config.toml`, Cursor `--trust`, Pi `--approve`, Grok's `trusted_folders.toml`. An untrusted hook does not error, it just never runs.
 
-`spec/` is a hand-written Bend model of the Go in `internal/`, and nothing checks that the two agree. A change to logic a law describes has to be mirrored in `spec/` in the same change, or the proof stays green while describing a program that no longer exists.
+`spec/` is a hand-written Bend model of the Go in the library packages (`findings`, `review`, `agent`) and `internal/`, and nothing checks that the two agree. A change to logic a law describes has to be mirrored in `spec/` in the same change, or the proof stays green while describing a program that no longer exists.
 
 Do not add `bunfig.toml`. A new product rule is a `law` in `LAWS.bend` plus a proof in `PROOF.bend` in the same change. Do not edit `LAWS.bend` unless the user changes a product rule.
