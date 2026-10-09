@@ -40,6 +40,8 @@ With no range flags, `run` reviews staged, unstaged, and untracked changes again
 
 `--thinking-level` is `low`, `medium`, `high` (default), `xhigh`, or `max`.
 
+`--compaction` is `off`, a positive token count, or a percent of the context window such as `75%`. The default is 75% of the window when it is known, and compaction stays off when it is not. The window comes from `--context-window`, `UNREAL_REVIEW_CONTEXT_WINDOW`, or the harness built-in table for an OpenRouter id such as `openai/gpt-6-luna` (1,050,000 tokens, so the default cutoff is 787,500). `openai/gpt-6-luna-pro` is not in that table. An unknown window prints one stderr line and disables compaction. The cutoff is tokens of the latest model response (input plus output). Zero is rejected. `UNREAL_REVIEW_COMPACTION` is the default for `--compaction`.
+
 `--agent-log` writes the harness session JSONL.
 
 ```sh

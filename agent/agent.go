@@ -44,6 +44,12 @@ const (
 	// compactionDisabled keeps the full session in the model request.
 	// The harness treats a zero threshold as "compact after every response".
 	compactionDisabled = math.MaxInt64
+
+	// CompactionEnv is the default for --compaction: off, a positive token
+	// count, or a percent of the context window such as 75%.
+	CompactionEnv = "UNREAL_REVIEW_COMPACTION"
+	// ContextWindowEnv is the default for --context-window, in tokens.
+	ContextWindowEnv = "UNREAL_REVIEW_CONTEXT_WINDOW"
 )
 
 func OpenRouterBase() (string, error) {
@@ -65,6 +71,10 @@ type Harness struct {
 	// MaxBashCalls limits Bash tool calls within one Run. Zero is unlimited;
 	// negative disables Bash for stages that must operate only on supplied data.
 	MaxBashCalls int
+	// CompactionThreshold is the cutoff in tokens of the latest model response
+	// (input + output). Zero resolves from CompactionEnv and ContextWindowEnv.
+	// A value that reaches the model is never zero.
+	CompactionThreshold int64
 }
 
 var _ review.Agent = Harness{}
@@ -133,6 +143,15 @@ func newLoopbackModelAdapter(apiKey, base string) (llm.Adapter, func() error, er
 }
 
 func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentRequest) (review.AgentResult, error) {
+	threshold, note, err := h.modelCompaction(req.Model)
+	if err != nil {
+		return review.AgentResult{}, err
+	}
+	if note != "" && h.Log != nil {
+		if _, err := fmt.Fprintf(h.Log, "unreal-review: %s\n", note); err != nil {
+			return review.AgentResult{}, fmt.Errorf("write compaction note: %w", err)
+		}
+	}
 	storeDirectory, err := sessionDirectory()
 	if err != nil {
 		return review.AgentResult{}, fmt.Errorf("resolve session directory: %w", err)
@@ -175,7 +194,7 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 		registry: registry,
 		model: llm.Model{
 			ID:                  req.Model,
-			CompactionThreshold: compactionDisabled,
+			CompactionThreshold: threshold,
 			ReasoningEffort:     llm.ReasoningEffort(h.ThinkingLevel),
 		},
 		systemPrompt: systemPrompt,

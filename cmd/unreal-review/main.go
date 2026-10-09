@@ -47,12 +47,14 @@ Usage:
   unreal-review run [--workspace <dir>] [--from <rev> [--to <rev>] | --commit <rev> | --branch <name> | --pr owner/repo#n]
                     [--repo owner/repo] [--exclude <glob>] [--out <path>] [--fresh] [--model <id>] [--strategy single|focused]
                     [--decompose] [--timeout <duration>] [--thinking-level low|medium|high|xhigh|max]
+                    [--compaction off|<tokens>|<percent>%] [--context-window <tokens>]
                     [--agent-log <path>] [paths...]
   unreal-review group [--workspace <dir>] [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>]
                       [--exclude <glob>] [paths...]
   unreal-review eval [--model <id>] [--out <dir>] [--json] [--corpus planted|martian]
                      [--profile core|strict|all] [--parallel N] [--cases a,b] [--judge-model <id>]
                      [--thinking-level low|medium|high|xhigh|max] [--strategy single|focused]
+                     [--compaction off|<tokens>|<percent>%] [--context-window <tokens>]
                      [--decompose] [--timeout <duration>]
   unreal-review render github [--pr owner/repo#n] [--repo owner/repo] [--commit <sha>] [--dry-run] [findings.jsonl]
   unreal-review render markdown [--out <path>] [findings.jsonl]
@@ -67,7 +69,10 @@ master. --workspace selects the checkout. --model names the OpenRouter
 model. --fresh starts over an existing --out. --strategy is single or
 focused. --decompose requests bounded tasks below the automatic size
 threshold. --timeout limits the review. --thinking-level defaults to
-high (low|medium|high|xhigh|max). --agent-log writes the harness
+high (low|medium|high|xhigh|max). --compaction is off, a positive token
+count, or a percent of the context window such as 75%. The default is 75%
+when the window is known from --context-window or the harness model table,
+and off when it is not. A zero threshold is rejected. --agent-log writes the harness
 session JSONL. Interrupt to pause; run again with the same --out to continue.
 Group prints related files; it does not start the agent. --pr narrows the
 range to the commits pushed since the newest commit carrying an
@@ -85,6 +90,8 @@ the review itself. GitHub posting requires a complete review.
 Environment:
   OPENROUTER_API_KEY             required for run
   UNREAL_HARNESS_LLM_MODEL       default --model
+  UNREAL_REVIEW_COMPACTION       default --compaction
+  UNREAL_REVIEW_CONTEXT_WINDOW   default --context-window
   GH_TOKEN                       required for --pr and to post a GitHub review
 `)
 }

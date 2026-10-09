@@ -30,6 +30,8 @@ func cmdRun(args []string) error {
 	decompose := fs.Bool("decompose", false, "use bounded scopes and aggregate coverage even below the automatic large-diff threshold")
 	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
+	compaction := fs.String("compaction", os.Getenv(agent.CompactionEnv), "off, token count, or percent of the context window")
+	contextWindow := fs.String("context-window", os.Getenv(agent.ContextWindowEnv), "model context window in tokens")
 	strategy := fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
 	timeout := fs.Duration("timeout", 20*time.Minute, "timeout for the whole review")
 	agentLog := fs.String("agent-log", "", "optional path for the harness session JSONL log")
@@ -44,6 +46,10 @@ func cmdRun(args []string) error {
 		return fmt.Errorf("set OPENROUTER_API_KEY")
 	}
 	level, err := agent.SanitizeLevel(*thinking)
+	if err != nil {
+		return err
+	}
+	threshold, err := compactionThreshold(*model, *compaction, *contextWindow)
 	if err != nil {
 		return err
 	}
@@ -69,6 +75,7 @@ func cmdRun(args []string) error {
 	defer stop()
 	reviewer, err := agent.ReviewPipeline(*strategy, agent.Harness{
 		APIKey: key, ThinkingLevel: level, Log: logWriter, Timeout: *timeout,
+		CompactionThreshold: threshold,
 	})
 	if err != nil {
 		return err
