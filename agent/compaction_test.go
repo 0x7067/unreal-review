@@ -317,9 +317,9 @@ func TestRunStampsEmptyFindingsOnCompaction(t *testing.T) {
 func TestNoBackToBackCompaction(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	const summary = "The warning findings describe cancel leaks across the retry loop."
-	// Usage models the rebuilt context: the first response after compaction is
-	// system prompt + tools + summary + tail, well under the floor, then each
-	// later turn grows by a realistic increment until the floor is crossed.
+	// Reported usage grows from a small post-compaction response until it
+	// crosses the floor. The observable result is two separated compactions
+	// and a finished review.
 	usages := []int64{40_000, 60_000, 80_000, 100_000, 120_000, 145_000, 165_000}
 	responses := []llm.Response{
 		findingResponse("t0", "call-0", "The retry loop leaks the cancel function on the first pass.", 160_000),
@@ -343,8 +343,6 @@ func TestNoBackToBackCompaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, describeRequests(adapter.requests))
 	}
-	// Usage above is the rebuilt-context model. The result that matters is two
-	// compactions separated by regular turns, and a finished review.
 	kinds := requestKinds(adapter.requests)
 	var compactions []int
 	for i, kind := range kinds {
@@ -373,6 +371,113 @@ func TestNoBackToBackCompaction(t *testing.T) {
 	}
 	if report.Summary != summary || len(report.Findings) != 1+len(usages) {
 		t.Fatalf("summary=%q findings=%d", report.Summary, len(report.Findings))
+	}
+}
+
+func TestNoBackToBackCompactionWhenNextResponseIsAlreadyOver(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const (
+		summary = "The warning findings describe cancel leaks across the retry loop."
+		first   = "The retry loop leaks the cancel function on the first pass."
+		second  = "The retry loop leaks the cancel function on the next pass."
+	)
+	adapter := &thresholdAdapter{inner: &scriptedAdapter{responses: []llm.Response{
+		findingResponse("t0", "call-0", first, 160_000),
+		messageResponse("compact-1", "Handoff for the next assistant."),
+		findingResponse("t1", "call-1", second, 160_000),
+		messageResponse("compact-2", "Second handoff for the next assistant."),
+		messageResponse("final", summary),
+	}}}
+	req := reviewRequest(t)
+	_, err := (Harness{ThinkingLevel: "high", CompactionThreshold: 150_000}).run(t.Context(), adapter, req)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, describeRequests(adapter.requests))
+	}
+	kinds := requestKinds(adapter.requests)
+	var compactions []int
+	for i, kind := range kinds {
+		if kind == "compaction" {
+			compactions = append(compactions, i)
+		}
+		if i > 0 && kind == "compaction" && kinds[i-1] == "compaction" {
+			t.Fatalf("adjacent compactions at %d, turns = %v", i, kinds)
+		}
+	}
+	if len(compactions) != 2 || compactions[1]-compactions[0]-1 != 1 {
+		t.Fatalf("compactions = %v, turns = %v", compactions, kinds)
+	}
+	report, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary != summary || len(report.Findings) != 2 || report.Findings[0].Body != first || report.Findings[1].Body != second {
+		t.Fatalf("summary=%q findings=%v", report.Summary, report.Findings)
+	}
+}
+
+func TestRunStampsFindingsFileEdges(t *testing.T) {
+	const summary = "No material issues: the selected range has no changes."
+	for _, test := range []struct {
+		name    string
+		body    string
+		want    string
+		absent  string
+		wantErr string
+	}{
+		{
+			name: "run and summary only",
+			body: "{\"v\":1,\"type\":\"run\",\"status\":\"running\"}\n{\"v\":1,\"type\":\"summary\",\"body\":\"No material issues: the selected range has no changes.\"}\n",
+			want: "Findings already recorded: none.",
+		},
+		{
+			name:    "corrupt middle line",
+			body:    "{\"v\":1,\"type\":\"finding\",\"id\":\"a\",\"path\":\"a.go\",\"start_line\":1,\"end_line\":1,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"A kept claim about the cancel leak.\"}\n{\"v\":1,\"type\":\"finding\",\"path\":\n{\"v\":1,\"type\":\"finding\",\"id\":\"b\",\"path\":\"b.go\",\"start_line\":2,\"end_line\":2,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"A later claim about the cancel leak.\"}\n",
+			want:    "Findings already recorded: unavailable (findings file unreadable)",
+			absent:  "Findings already recorded: none.",
+			wantErr: "decode findings",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			req := reviewRequest(t)
+			if err := os.WriteFile(req.FindingsPath, []byte(test.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			adapter := &thresholdAdapter{inner: &scriptedAdapter{responses: []llm.Response{
+				{
+					ID:   "bad",
+					Stop: llm.StopComplete,
+					Output: []llm.Item{{
+						Type: llm.ItemToolCall,
+						Data: llm.ToolCall{CallID: "bad-call", Name: review.RecordFindingTool, Arguments: `{}`},
+					}},
+					Usage: llm.Usage{TokenUsage: llm.TokenUsage{InputTokens: 160_000}},
+				},
+				messageResponse("compact", "Handoff lists recorded warnings."),
+				messageResponse("final", summary),
+			}}}
+			_, err := (Harness{ThinkingLevel: "high", CompactionThreshold: 150_000}).run(t.Context(), adapter, req)
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("run: %v\n%s", err, describeRequests(adapter.requests))
+				}
+			} else if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("run: %v\n%s", err, describeRequests(adapter.requests))
+			}
+			if len(adapter.requests) < 3 || requestKinds(adapter.requests)[1] != "compaction" {
+				t.Fatalf("turns = %v", requestKinds(adapter.requests))
+			}
+			later := requestText(adapter.requests[2])
+			if !strings.Contains(later, test.want) {
+				t.Fatalf("post-compaction request missing %q\n%s", test.want, later)
+			}
+			if test.absent != "" && strings.Contains(later, test.absent) {
+				t.Fatalf("post-compaction request contains %q\n%s", test.absent, later)
+			}
+			if test.name == "run and summary only" && strings.Contains(later, "Findings already recorded:\n") {
+				t.Fatalf("bare heading\n%s", later)
+			}
+		})
 	}
 }
 

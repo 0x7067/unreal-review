@@ -21,12 +21,11 @@ const (
 	// compactionMinCutoff is the lowest accepted cutoff. A lower cutoff
 	// compacted on nearly every other turn in a real review.
 	//
-	// The minimum gap after a compaction is this floor plus upstream's rebuild,
-	// not runtime state. unreal-agent v0.3.1 Compact starts a new builder with
-	// an empty token prefix, so the next request is the system prompt, tools,
-	// the summary, and at most a 20,000-token tail, plus the findings block
-	// below. That total cannot cross 150,000. Upstream copies the assistant
-	// summary with no size cap; the block is capped instead.
+	// At least one regular turn between compactions is guaranteed. unreal-agent
+	// v0.3.1 Compact clears prefixTokens, so NeedsCompaction is false until a
+	// regular response arrives. The post-compaction context is normally well
+	// under the floor but not guaranteed: the summary is uncapped model output,
+	// and the retained tail copies whole turns and the staged suffix verbatim.
 	compactionMinCutoff = 150_000
 	// The handoff lists the newest findings from disk. Path and claim are
 	// collapsed to one line and truncated so the block stays small.
@@ -233,10 +232,14 @@ func recordedFindingsBlock(path string) string {
 	report, err := findings.Parse(bytes.NewReader(raw))
 	if err != nil {
 		// A torn trailing line must not drop findings already written.
-		// Unreadable is only for a file that cannot be read at all.
+		// A corrupt line that is not last stays unreadable, so the handoff
+		// does not claim that nothing was recorded.
 		report, err = findings.Parse(bytes.NewReader(withoutLastLine(raw)))
+		if err != nil {
+			return "Findings already recorded: unavailable (findings file unreadable)"
+		}
 	}
-	if err != nil || len(report.Findings) == 0 {
+	if len(report.Findings) == 0 {
 		return "Findings already recorded: none."
 	}
 	shown, omitted := newestFindings(report.Findings)
