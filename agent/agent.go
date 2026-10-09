@@ -146,8 +146,10 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	if threshold <= 0 {
 		threshold = compactionDisabled
 	}
+	var guard *compactionGuard
 	if threshold != compactionDisabled {
-		adapter = guardCompaction(adapter, threshold, req.FindingsPath)
+		guard = guardCompaction(adapter, req.FindingsPath)
+		adapter = guard
 	}
 	storeDirectory, err := sessionDirectory()
 	if err != nil {
@@ -180,6 +182,9 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	}, tool.BashName, tool.ViewImageName))
 
 	observer := newSessionObserver(sessionID, req.FindingsPath, h.Log, cancel)
+	if guard != nil {
+		guard.recordUsage = observer.addUsage
+	}
 	observerID := store.AddObserver(observer.Observe)
 	defer store.RemoveObserver(observerID)
 
@@ -276,9 +281,6 @@ func (s harnessSession) turn(ctx context.Context, messageID inbox.ID, message st
 		if err := inputs.Submit(ctx, input); err != nil {
 			return fmt.Errorf("submit input: %w", err)
 		}
-	}
-	if guard, ok := s.llm.(*compactionGuard); ok {
-		guard.box = inputs
 	}
 	builder := contextbuilder.NewBuilder()
 	builder.SetModel(s.model)

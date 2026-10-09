@@ -71,9 +71,13 @@ func (o *sessionObserver) Observe(id session.ID, item sessionstore.Item) {
 	}
 }
 
-func (o *sessionObserver) observeModelResponse(response llm.Response) {
+func (o *sessionObserver) addUsage(response llm.Response) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	o.addUsageLocked(response)
+}
+
+func (o *sessionObserver) addUsageLocked(response llm.Response) {
 	o.cost.Requests++
 	o.cost.InputTokens += response.Usage.InputTokens
 	o.cost.OutputTokens += response.Usage.OutputTokens
@@ -85,6 +89,12 @@ func (o *sessionObserver) observeModelResponse(response llm.Response) {
 	if json.Unmarshal(response.Usage.Raw, &usage) == nil {
 		o.cost.AmountUSD += usage.Cost
 	}
+}
+
+func (o *sessionObserver) observeModelResponse(response llm.Response) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.addUsageLocked(response)
 	if o.compactionTurn {
 		return
 	}

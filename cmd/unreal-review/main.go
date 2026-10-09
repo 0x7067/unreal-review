@@ -74,8 +74,9 @@ high (low|medium|high|xhigh|max). --compaction is off, a token count of
 when the window is known from --context-window or the harness model table,
 and off when it is not or when that default cutoff is below 150000 (a window
 below 200000 tokens). An explicit percent with an unknown window is an
-error. Stderr states the cutoff in tokens, or that compaction is off. A zero
-threshold is rejected. --agent-log writes the harness
+error. Stderr states the cutoff in tokens, or that compaction is off. Explicit
+token counts below 150000, and percents whose cutoff lands below that floor,
+are rejected. --agent-log writes the harness
 session JSONL. Interrupt to pause; run again with the same --out to continue.
 Group prints related files; it does not start the agent. --pr narrows the
 range to the commits pushed since the newest commit carrying an

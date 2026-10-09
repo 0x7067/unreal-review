@@ -1,18 +1,15 @@
 package agent
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"strconv"
 	"strings"
 	"unicode/utf8"
-	"uuid"
 
-	"github.com/unreallabsai/unreal-agent/harness/inbox"
 	"github.com/unreallabsai/unreal-agent/harness/llm"
 	"github.com/unreallabsai/unreal-agent/harness/settings"
 
@@ -21,13 +18,18 @@ import (
 
 const (
 	defaultCompactionPercent = 75
-	// compactionMinCutoff is the lowest accepted cutoff. A 40,000 cutoff
+	// compactionMinCutoff is the lowest accepted cutoff. A lower cutoff
 	// compacted on nearly every other turn in a real review.
+	//
+	// The minimum gap after a compaction is this floor plus upstream's rebuild,
+	// not runtime state. unreal-agent v0.3.1 Compact starts a new builder with
+	// an empty token prefix, so the next request is the system prompt, tools,
+	// the summary, and at most a 20,000-token tail, plus the findings block
+	// below. That total cannot cross 150,000. Upstream copies the assistant
+	// summary with no size cap; the block is capped instead.
 	compactionMinCutoff = 150_000
-	// After a compaction, the cutoff stays off until both of these have passed.
-	compactionGapTurns  = 4
-	compactionGapTokens = 50_000
-	// The handoff lists findings from disk, capped so the block stays small.
+	// The handoff lists the newest findings from disk. Path and claim are
+	// collapsed to one line and truncated so the block stays small.
 	maxRecordedFindings = 20
 	maxClaimBytes       = 160
 )
@@ -77,10 +79,8 @@ func cutoffFloorError(tokens int64) error {
 }
 
 func applyPercent(window int64, percent int, explicit bool) (int64, string, error) {
-	if window > math.MaxInt64/int64(percent) {
-		return 0, "", fmt.Errorf("compaction threshold overflows")
-	}
-	threshold := window * int64(percent) / 100
+	// percent is 1..100, so this is exact and cannot overflow int64.
+	threshold := window/100*int64(percent) + (window%100)*int64(percent)/100
 	if threshold < compactionMinCutoff {
 		if !explicit {
 			return compactionDisabled, fmt.Sprintf("compaction off: context window %d tokens is too small to compact", window), nil
@@ -164,24 +164,18 @@ const compactionUserInstruction = "This is system message. You are performing co
 
 const compactionHypotheses = "List hypotheses already checked and rejected, one per line, each with a one-line reason."
 
-// guardCompaction rejects an unusable compaction response, stamps findings from
-// disk onto the handoff, and holds the cutoff up via inbox UpdateSettings.
-// NeedsCompaction reads the threshold stored by SetModel; inbox.Settings
-// carries CompactionThreshold and AddControlMessage applies it.
-func guardCompaction(inner llm.Adapter, floor int64, findingsPath string) *compactionGuard {
-	return &compactionGuard{inner: inner, floor: floor, findingsPath: findingsPath}
+// guardCompaction rejects an unusable compaction response and stamps findings
+// from disk onto the handoff. It does not submit settings or keep state.
+func guardCompaction(inner llm.Adapter, findingsPath string) *compactionGuard {
+	return &compactionGuard{inner: inner, findingsPath: findingsPath}
 }
 
 type compactionGuard struct {
 	inner        llm.Adapter
-	box          inbox.Writer
-	floor        int64
 	findingsPath string
-
-	held         bool
-	regularTurns int
-	baseline     int64
-	haveBaseline bool
+	// recordUsage keeps billed tokens when the coordinator will drop the
+	// response. An error from Respond is not stored as a model response.
+	recordUsage func(llm.Response)
 }
 
 func (g *compactionGuard) Respond(ctx context.Context, req llm.Request, opts llm.RequestOptions) (llm.Response, error) {
@@ -194,65 +188,15 @@ func (g *compactionGuard) Respond(ctx context.Context, req llm.Request, opts llm
 		return response, err
 	}
 	if !compacting {
-		if err := g.observeRegular(ctx, response); err != nil {
-			return response, err
-		}
 		return response, nil
 	}
 	if response.Stop != llm.StopComplete || compactionSummary(response) == "" {
+		if g.recordUsage != nil {
+			g.recordUsage(response)
+		}
 		return llm.Response{}, fmt.Errorf("compaction response stop %q is not a usable summary; resuming with the same --out replays the compaction; --compaction off avoids it", response.Stop)
 	}
-	response = stampSummary(response, recordedFindingsBlock(g.findingsPath))
-	if err := g.hold(ctx); err != nil {
-		return llm.Response{}, err
-	}
-	return response, nil
-}
-
-func (g *compactionGuard) hold(ctx context.Context) error {
-	g.held = true
-	g.regularTurns = 0
-	g.haveBaseline = false
-	g.baseline = 0
-	return g.setThreshold(ctx, compactionDisabled)
-}
-
-func (g *compactionGuard) observeRegular(ctx context.Context, response llm.Response) error {
-	if !g.held {
-		return nil
-	}
-	g.regularTurns++
-	tokens := response.Usage.InputTokens + response.Usage.OutputTokens
-	if !g.haveBaseline {
-		g.baseline = tokens
-		g.haveBaseline = true
-	}
-	if g.regularTurns >= compactionGapTurns && tokens-g.baseline >= compactionGapTokens {
-		g.held = false
-		return g.setThreshold(ctx, g.floor)
-	}
-	return nil
-}
-
-func (g *compactionGuard) setThreshold(ctx context.Context, threshold int64) error {
-	payload, err := json.Marshal(inbox.ControlMessage{
-		Mode:       inbox.UpdateSettings,
-		Parameters: inbox.Settings{CompactionThreshold: &threshold},
-	})
-	if err != nil {
-		return fmt.Errorf("encode compaction threshold: %w", err)
-	}
-	if g.box == nil {
-		return fmt.Errorf("compaction inbox is not open")
-	}
-	if err := g.box.Submit(ctx, inbox.Input{
-		ID:      inbox.ID(uuid.New().String()),
-		Kind:    inbox.InputControl,
-		Payload: payload,
-	}); err != nil {
-		return fmt.Errorf("update compaction threshold: %w", err)
-	}
-	return nil
+	return stampSummary(response, recordedFindingsBlock(g.findingsPath)), nil
 }
 
 func annotateCompactionRequest(req llm.Request) llm.Request {
@@ -279,29 +223,69 @@ func stampSummary(response llm.Response, block string) llm.Response {
 }
 
 func recordedFindingsBlock(path string) string {
-	report, err := findings.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "Findings already recorded: none."
+	}
+	if err != nil {
 		return "Findings already recorded: unreadable."
+	}
+	report, err := findings.Parse(bytes.NewReader(raw))
+	if err != nil {
+		// A torn trailing line must not drop findings already written.
+		// Unreadable is only for a file that cannot be read at all.
+		report, err = findings.Parse(bytes.NewReader(withoutLastLine(raw)))
 	}
 	if err != nil || len(report.Findings) == 0 {
 		return "Findings already recorded: none."
 	}
-	shown := len(report.Findings)
-	if shown > maxRecordedFindings {
-		shown = maxRecordedFindings
-	}
+	shown, omitted := newestFindings(report.Findings)
 	var b strings.Builder
-	fmt.Fprintf(&b, "Findings already recorded (at most %d):\n", maxRecordedFindings)
-	for _, finding := range report.Findings[:shown] {
-		fmt.Fprintf(&b, "- %s:%d-%d %s\n", finding.Path, finding.StartLine, finding.EndLine, trimClaim(finding.Body))
+	b.WriteString("Findings already recorded:\n")
+	for _, finding := range shown {
+		fmt.Fprintf(&b, "- %s:%d-%d %s\n", trimField(finding.Path), finding.StartLine, finding.EndLine, trimField(finding.Body))
 	}
-	if extra := len(report.Findings) - shown; extra > 0 {
-		fmt.Fprintf(&b, "- and %d more\n", extra)
+	if omitted > 0 {
+		fmt.Fprintf(&b, "omitted %d older findings\n", omitted)
 	}
 	return strings.TrimSpace(b.String())
 }
 
-func trimClaim(text string) string {
+func newestFindings(all []findings.Finding) ([]findings.Finding, int) {
+	seen := make(map[string]struct{}, len(all))
+	newest := make([]findings.Finding, 0, len(all))
+	for i := len(all) - 1; i >= 0; i-- {
+		finding := all[i]
+		id := finding.ID
+		if id == "" {
+			id = findings.Fingerprint(finding)
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		newest = append(newest, finding)
+	}
+	omitted := 0
+	if len(newest) > maxRecordedFindings {
+		omitted = len(newest) - maxRecordedFindings
+		newest = newest[:maxRecordedFindings]
+	}
+	for i, j := 0, len(newest)-1; i < j; i, j = i+1, j-1 {
+		newest[i], newest[j] = newest[j], newest[i]
+	}
+	return newest, omitted
+}
+
+func withoutLastLine(raw []byte) []byte {
+	raw = bytes.TrimRight(raw, "\r\n")
+	if i := bytes.LastIndexByte(raw, '\n'); i >= 0 {
+		return raw[:i]
+	}
+	return nil
+}
+
+func trimField(text string) string {
 	text = strings.Join(strings.Fields(text), " ")
 	if len(text) <= maxClaimBytes {
 		return text

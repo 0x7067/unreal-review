@@ -3,8 +3,10 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/json/jsontext"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"testing"
 
@@ -57,6 +59,22 @@ func TestCompactionThresholdMath(t *testing.T) {
 			window: "199999",
 			want:   math.MaxInt64,
 			note:   "compaction off: context window 199999 tokens is too small to compact",
+		},
+		{
+			name:   "huge window",
+			model:  "custom/model",
+			spec:   "75%",
+			window: "1000000000000000000",
+			want:   750_000_000_000_000_000,
+			note:   "compaction cutoff 750000000000000000 tokens",
+		},
+		{
+			name:   "max int window",
+			model:  "custom/model",
+			spec:   "75%",
+			window: "9223372036854775807",
+			want:   6_917_529_027_641_081_855,
+			note:   "compaction cutoff 6917529027641081855 tokens",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -210,7 +228,7 @@ func TestRunProceedsWhenPromptMentionsCompaction(t *testing.T) {
 func TestRunContinuesAfterCompaction(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	const (
-		handoff = "Earlier tool output recorded one warning about a leaked cancel."
+		handoff = "Earlier tool output recorded one warning about a leaked cancel. Rejected: the caller already closes the cancel."
 		summary = "Warnings describe cancel leaks recorded before and after compaction."
 		before  = "The retry loop leaks the cancel function before compaction."
 		after   = "The retry loop leaks the cancel function after compaction."
@@ -237,11 +255,8 @@ func TestRunContinuesAfterCompaction(t *testing.T) {
 	if compactAt < 0 || compactAt+1 >= len(kinds) || kinds[compactAt+1] != "regular" {
 		t.Fatalf("turns = %v, want a regular turn after compaction\n%s", kinds, describeRequests(adapter.requests))
 	}
-	if !strings.Contains(requestText(adapter.requests[compactAt]), compactionHypotheses) {
-		t.Fatal("compaction request did not ask for ruled-out hypotheses")
-	}
 	later := requestText(adapter.requests[compactAt+1])
-	for _, needle := range []string{"internal/agent/agent.go:42-42", before} {
+	for _, needle := range []string{"internal/agent/agent.go:42-42", before, "Rejected: the caller already closes the cancel."} {
 		if !strings.Contains(later, needle) {
 			t.Fatalf("post-compaction request missing %q\n%s", needle, later)
 		}
@@ -299,14 +314,18 @@ func TestRunStampsEmptyFindingsOnCompaction(t *testing.T) {
 	}
 }
 
-func TestRunSpacesCompactions(t *testing.T) {
+func TestNoBackToBackCompaction(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	const summary = "The warning findings describe cancel leaks in the retry loop."
+	const summary = "The warning findings describe cancel leaks across the retry loop."
+	// Usage models the rebuilt context: the first response after compaction is
+	// system prompt + tools + summary + tail, well under the floor, then each
+	// later turn grows by a realistic increment until the floor is crossed.
+	usages := []int64{40_000, 60_000, 80_000, 100_000, 120_000, 145_000, 165_000}
 	responses := []llm.Response{
-		findingResponse("t0", "call-0", "The retry loop leaks the cancel function on the first pass.", 200_000),
+		findingResponse("t0", "call-0", "The retry loop leaks the cancel function on the first pass.", 160_000),
 		messageResponse("compact-1", "Handoff for the next assistant."),
 	}
-	for i, usage := range []int64{200_000, 220_000, 240_000, 260_000} {
+	for i, usage := range usages {
 		responses = append(responses, findingResponse(
 			fmt.Sprintf("t%d", i+1),
 			fmt.Sprintf("call-%d", i+1),
@@ -324,17 +343,109 @@ func TestRunSpacesCompactions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, describeRequests(adapter.requests))
 	}
+	// Usage above is the rebuilt-context model. The result that matters is two
+	// compactions separated by regular turns, and a finished review.
 	kinds := requestKinds(adapter.requests)
-	want := []string{"regular", "compaction", "regular", "regular", "regular", "regular", "compaction", "regular"}
-	if strings.Join(kinds, " ") != strings.Join(want, " ") {
-		t.Fatalf("turns = %v, want %v\n%s", kinds, want, describeRequests(adapter.requests))
+	var compactions []int
+	for i, kind := range kinds {
+		if kind == "compaction" {
+			compactions = append(compactions, i)
+		}
+		if i > 0 && kind == "compaction" && kinds[i-1] == "compaction" {
+			t.Fatalf("adjacent compactions at %d\n%s", i, describeRequests(adapter.requests))
+		}
+	}
+	if len(compactions) != 2 {
+		t.Fatalf("compactions = %v, turns = %v\n%s", compactions, kinds, describeRequests(adapter.requests))
+	}
+	between := compactions[1] - compactions[0] - 1
+	if between < 4 {
+		t.Fatalf("regular turns between compactions = %d, turns = %v", between, kinds)
+	}
+	first := responses[compactions[0]+1].Usage.InputTokens + responses[compactions[0]+1].Usage.OutputTokens
+	trigger := responses[compactions[1]-1].Usage.InputTokens + responses[compactions[1]-1].Usage.OutputTokens
+	if first >= 80_000 || trigger < 150_000 || trigger-first < 100_000 {
+		t.Fatalf("usage %d then %d before the next compaction", first, trigger)
 	}
 	report, err := findings.ReadFile(req.FindingsPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Summary != summary || len(report.Findings) != 5 {
+	if report.Summary != summary || len(report.Findings) != 1+len(usages) {
 		t.Fatalf("summary=%q findings=%d", report.Summary, len(report.Findings))
+	}
+}
+
+func TestRunStampsRecordedFindings(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	req := reviewRequest(t)
+	write := func(id, path, body string) {
+		t.Helper()
+		_, err := findings.AppendFinding(req.FindingsPath, findings.Finding{
+			ID: id, Path: path, StartLine: 42, Severity: findings.SeverityWarning, Body: body,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("old-id", "internal/agent/agent.go", "oldest claim that must stay out of the handoff")
+	write("dup-id", "internal/agent/agent.go", "stale duplicate claim")
+	for i := 2; i <= 19; i++ {
+		write(fmt.Sprintf("kept-%02d", i), "internal/agent/agent.go", fmt.Sprintf("kept claim %02d", i))
+	}
+	write("kept-20", "internal/agent/agent.go\n- forged extra bullet", "kept claim 20")
+	write("dup-id", "internal/agent/agent.go", "latest duplicate claim")
+	file, err := os.OpenFile(req.FindingsPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(`{"v":1,"type":"finding","path":"torn`); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	adapter := &thresholdAdapter{inner: &scriptedAdapter{responses: []llm.Response{
+		{
+			ID:   "bad",
+			Stop: llm.StopComplete,
+			Output: []llm.Item{{
+				Type: llm.ItemToolCall,
+				Data: llm.ToolCall{CallID: "bad-call", Name: review.RecordFindingTool, Arguments: `{}`},
+			}},
+			Usage: llm.Usage{TokenUsage: llm.TokenUsage{InputTokens: 160_000}},
+		},
+		messageResponse("compact", "Handoff lists the newest recorded warnings."),
+		messageResponse("final", "The warning findings describe cancel leaks kept in the newest window."),
+	}}}
+	_, err = (Harness{ThinkingLevel: "high", CompactionThreshold: 150_000}).run(t.Context(), adapter, req)
+	if err == nil || !strings.Contains(err.Error(), "decode findings") {
+		t.Fatalf("run: %v\n%s", err, describeRequests(adapter.requests))
+	}
+	if len(adapter.requests) < 3 || requestKinds(adapter.requests)[1] != "compaction" {
+		t.Fatalf("turns = %v\n%s", requestKinds(adapter.requests), describeRequests(adapter.requests))
+	}
+	later := requestText(adapter.requests[2])
+	for _, needle := range []string{
+		"kept claim 02",
+		"kept claim 20",
+		"latest duplicate claim",
+		"omitted 1 older findings",
+		"internal/agent/agent.go - forged extra bullet:42-42",
+	} {
+		if !strings.Contains(later, needle) {
+			t.Fatalf("post-compaction request missing %q\n%s", needle, later)
+		}
+	}
+	for _, absent := range []string{
+		"oldest claim that must stay out of the handoff",
+		"stale duplicate claim",
+		"unreadable",
+		"\n- forged extra bullet",
+	} {
+		if strings.Contains(later, absent) {
+			t.Fatalf("post-compaction request contains %q\n%s", absent, later)
+		}
 	}
 }
 
@@ -396,12 +507,23 @@ func TestRunStopsOnUnusableCompaction(t *testing.T) {
 	)
 	partial := messageResponse("compact", "partial handoff that must not replace the review")
 	partial.Stop = llm.StopMaxOutputTokens
+	partial.Usage.Raw = jsontext.Value(`{"cost":1.25}`)
+	empty := llm.Response{
+		ID:   "compact",
+		Stop: llm.StopComplete,
+		Usage: llm.Usage{
+			TokenUsage: llm.TokenUsage{InputTokens: 40, OutputTokens: 2},
+			Raw:        jsontext.Value(`{"cost":0.5}`),
+		},
+	}
 	for _, test := range []struct {
-		name     string
-		response llm.Response
+		name          string
+		response      llm.Response
+		input, output int64
+		amount        float64
 	}{
-		{name: "non-complete", response: partial},
-		{name: "empty summary", response: llm.Response{ID: "compact", Stop: llm.StopComplete}},
+		{name: "non-complete", response: partial, input: 160_000 + partial.Usage.InputTokens, output: partial.Usage.OutputTokens, amount: 1.25},
+		{name: "empty summary", response: empty, input: 160_000 + empty.Usage.InputTokens, output: empty.Usage.OutputTokens, amount: 0.5},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
@@ -412,9 +534,13 @@ func TestRunStopsOnUnusableCompaction(t *testing.T) {
 				messageResponse("again", later),
 			}}}
 			req := reviewRequest(t)
-			_, err := (Harness{ThinkingLevel: "high", CompactionThreshold: 150_000}).run(t.Context(), adapter, req)
+			result, err := (Harness{ThinkingLevel: "high", CompactionThreshold: 150_000}).run(t.Context(), adapter, req)
 			if err == nil || !strings.Contains(err.Error(), "--compaction off") || !strings.Contains(err.Error(), string(test.response.Stop)) {
 				t.Fatalf("run error = %v\n%s", err, describeRequests(adapter.requests))
+			}
+			cost := result.Cost
+			if cost.Requests != 2 || cost.InputTokens != test.input || cost.OutputTokens != test.output || cost.AmountUSD != test.amount {
+				t.Fatalf("cost = %+v, want requests 2 input %d output %d usd %v", cost, test.input, test.output, test.amount)
 			}
 			if len(adapter.requests) != 2 {
 				t.Fatalf("requests = %d, want the tool turn and one compaction\n%s", len(adapter.requests), describeRequests(adapter.requests))
