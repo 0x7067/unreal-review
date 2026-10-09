@@ -30,10 +30,6 @@ const (
 // window is an error. The returned threshold is never zero.
 func CompactionThreshold(model, spec, window string) (int64, string, error) {
 	spec = strings.TrimSpace(spec)
-	size, known, err := contextWindow(model, window)
-	if err != nil {
-		return 0, "", err
-	}
 	parsed, err := parseCompactionSpec(spec)
 	if err != nil {
 		return 0, "", err
@@ -46,17 +42,21 @@ func CompactionThreshold(model, spec, window string) (int64, string, error) {
 			return 0, "", cutoffFloorError(parsed.tokens)
 		}
 		return parsed.tokens, cutoffNote(parsed.tokens), nil
-	case compactionPercent:
+	}
+	size, known, err := contextWindow(model, window)
+	if err != nil {
+		return 0, "", err
+	}
+	if parsed.mode == compactionPercent {
 		if !known {
 			return 0, "", fmt.Errorf("compaction %q: context window unknown for %q", spec, model)
 		}
 		return applyPercent(size, parsed.percent, true)
-	default:
-		if !known {
-			return compactionDisabled, fmt.Sprintf("compaction off: context window unknown for %q; set --context-window or %s", model, ContextWindowEnv), nil
-		}
-		return applyPercent(size, defaultCompactionPercent, false)
 	}
+	if !known {
+		return compactionDisabled, fmt.Sprintf("compaction off: context window unknown for %q; set --context-window or %s", model, ContextWindowEnv), nil
+	}
+	return applyPercent(size, defaultCompactionPercent, false)
 }
 
 func cutoffNote(tokens int64) string {

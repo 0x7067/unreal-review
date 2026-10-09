@@ -34,6 +34,9 @@ func TestCompactionThresholdMath(t *testing.T) {
 		{name: "just above floor", model: "custom/model", spec: "40001", want: 40_001, note: "compaction cutoff 40001 tokens"},
 		{name: "off", model: "openai/gpt-6-luna-pro", spec: "off", want: math.MaxInt64, note: "compaction off"},
 		{name: "off any case", model: "custom/model", spec: "OFF", want: math.MaxInt64, note: "compaction off"},
+		{name: "off ignores bad window", model: "custom/model", spec: "off", window: "abc", want: math.MaxInt64, note: "compaction off"},
+		{name: "off ignores zero window", model: "custom/model", spec: "off", window: "0", want: math.MaxInt64, note: "compaction off"},
+		{name: "absolute ignores bad window", model: "custom/model", spec: "40000", window: "abc", want: 40_000, note: "compaction cutoff 40000 tokens"},
 		{
 			name:  "unknown window",
 			model: "openai/gpt-6-luna-pro",
@@ -66,6 +69,8 @@ func TestCompactionThresholdMath(t *testing.T) {
 		{model: "custom/model", spec: "0%", window: "1000000"},
 		{model: "custom/model", spec: "75%"},
 		{model: "custom/model", window: "0"},
+		{model: "custom/model", window: "abc"},
+		{model: "custom/model", spec: "75%", window: "abc"},
 		{model: "custom/model", spec: "-5"},
 		{model: "custom/model", window: "1", spec: "75%", floor: "40000"},
 		{model: "openai/gpt-6-luna", spec: "nope"},
