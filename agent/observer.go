@@ -23,11 +23,10 @@ type sessionObserver struct {
 	log          io.Writer
 	cancel       context.CancelFunc
 
-	mu             sync.Mutex
-	err            error
-	cost           findings.Cost
-	finalText      string
-	compactionTurn bool
+	mu        sync.Mutex
+	err       error
+	cost      findings.Cost
+	finalText string
 }
 
 func newSessionObserver(sessionID session.ID, findingsPath string, log io.Writer, cancel context.CancelFunc) *sessionObserver {
@@ -54,12 +53,6 @@ func (o *sessionObserver) Observe(id session.ID, item sessionstore.Item) {
 		}
 	}
 	switch item.Kind {
-	case sessionstore.ItemTurn:
-		if turn, ok := item.Data.(session.Turn); ok {
-			o.mu.Lock()
-			o.compactionTurn = turn.Type == session.TurnCompaction
-			o.mu.Unlock()
-		}
 	case sessionstore.ItemModelResponse:
 		if response, ok := item.Data.(sessionstore.ModelResponse); ok {
 			o.observeModelResponse(response.Response)
@@ -71,13 +64,8 @@ func (o *sessionObserver) Observe(id session.ID, item sessionstore.Item) {
 	}
 }
 
-func (o *sessionObserver) addUsage(response llm.Response) {
+func (o *sessionObserver) observeModelResponse(response llm.Response) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.addUsageLocked(response)
-}
-
-func (o *sessionObserver) addUsageLocked(response llm.Response) {
 	o.cost.Requests++
 	o.cost.InputTokens += response.Usage.InputTokens
 	o.cost.OutputTokens += response.Usage.OutputTokens
@@ -89,20 +77,12 @@ func (o *sessionObserver) addUsageLocked(response llm.Response) {
 	if json.Unmarshal(response.Usage.Raw, &usage) == nil {
 		o.cost.AmountUSD += usage.Cost
 	}
-}
-
-func (o *sessionObserver) observeModelResponse(response llm.Response) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.addUsageLocked(response)
-	if o.compactionTurn {
-		return
-	}
 	for _, item := range response.Output {
 		if message, ok := item.Data.(llm.Message); ok && message.Role == llm.RoleAssistant && strings.TrimSpace(message.Text) != "" {
 			o.finalText = message.Text
 		}
 	}
+	o.mu.Unlock()
 }
 
 func (o *sessionObserver) observeToolCallStatus(status sessionstore.ToolCallStatus) {
