@@ -21,7 +21,7 @@ func cmdGroup(args []string) error {
 	var exclude stringList
 	fs.Var(&exclude, "exclude", "git glob to omit from the diff; repeatable")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return successOnHelp(err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

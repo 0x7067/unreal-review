@@ -24,10 +24,7 @@ func cmdRender(args []string) error {
 	case "markdown":
 		return renderMarkdown(args[1:])
 	case "-h", "--help", "help":
-		_, _ = fmt.Fprint(os.Stdout, `Usage:
-  unreal-review render github [--pr owner/repo#n] [--repo owner/repo] [--commit <sha>] [--dry-run] [findings.jsonl]
-  unreal-review render markdown [--out <path>] [findings.jsonl]
-`)
+		printUsage(os.Stdout)
 		return nil
 	default:
 		return fmt.Errorf("unknown render target %q", args[0])
@@ -39,7 +36,7 @@ func renderMarkdown(args []string) error {
 	fs.SetOutput(os.Stderr)
 	outPath := fs.String("out", "-", "output path, or - for stdout")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return successOnHelp(err)
 	}
 	report, err := loadReport(fs.Arg(0))
 	if err != nil {
@@ -61,7 +58,7 @@ func renderGitHub(args []string) error {
 	commit := fs.String("commit", "", "commit SHA for inline comments (default: PR head)")
 	dryRun := fs.Bool("dry-run", false, "print the review payload instead of posting")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return successOnHelp(err)
 	}
 	report, err := loadReport(fs.Arg(0))
 	if err != nil {
