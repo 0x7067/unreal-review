@@ -39,6 +39,8 @@ func cmdEval(args []string) error {
 	outDir := fs.String("out", "", "directory for eval artifacts (default: a fresh temp dir)")
 	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
+	compaction := fs.String("compaction", os.Getenv(agent.CompactionEnv), "off, token count, or percent of the context window")
+	contextWindow := fs.String("context-window", os.Getenv(agent.ContextWindowEnv), "model context window in tokens")
 	strategy := fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
 	decompose := fs.Bool("decompose", false, "use bounded aggregate scopes for every review case")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
@@ -67,7 +69,13 @@ func cmdEval(args []string) error {
 	if err != nil {
 		return err
 	}
-	reviewer, err := agent.ReviewPipeline(*strategy, agent.Harness{APIKey: key, ThinkingLevel: level, Timeout: *timeout})
+	threshold, err := compactionThreshold(*model, *compaction, *contextWindow)
+	if err != nil {
+		return err
+	}
+	reviewer, err := agent.ReviewPipeline(*strategy, agent.Harness{
+		APIKey: key, ThinkingLevel: level, Timeout: *timeout, CompactionThreshold: threshold,
+	})
 	if err != nil {
 		return err
 	}

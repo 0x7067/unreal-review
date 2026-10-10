@@ -71,7 +71,7 @@ Live review of a non-empty diff spends OpenRouter credit. Drive it only when the
 
 Do not post a GitHub review unless the user names a disposable pull request. Default GitHub proof is `--dry-run`.
 
-Stable handles: subcommands `run`, `group`, `eval`, `render markdown`, `render github`; flags `--from`, `--to`, `--commit`, `--branch`, `--exclude`, `--out`, `--fresh`, `--workspace`, `--dry-run`, `--pr`, `--repo`, `--model`, `--thinking-level`, `--strategy`, `--decompose`, `--timeout`, `--agent-log`, and the eval-only `--corpus`, `--cases`, `--json`, `--judge-model`, `--profile`, `--parallel`; positional pathspecs; `examples/findings.jsonl`.
+Stable handles: subcommands `run`, `group`, `eval`, `render markdown`, `render github`; flags `--from`, `--to`, `--commit`, `--branch`, `--exclude`, `--out`, `--fresh`, `--workspace`, `--dry-run`, `--pr`, `--repo`, `--model`, `--thinking-level`, `--strategy`, `--decompose`, `--timeout`, `--compaction`, `--context-window`, `--agent-log`, and the eval-only `--corpus`, `--cases`, `--json`, `--judge-model`, `--profile`, `--parallel`; positional pathspecs; `examples/findings.jsonl`.
 
 ## Evidence
 

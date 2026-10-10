@@ -44,6 +44,11 @@ const (
 	// compactionDisabled keeps the full session in the model request.
 	// The harness treats a zero threshold as "compact after every response".
 	compactionDisabled = math.MaxInt64
+
+	// CompactionEnv is the default for --compaction. Unset leaves compaction off.
+	CompactionEnv = "UNREAL_REVIEW_COMPACTION"
+	// ContextWindowEnv is the default for --context-window, in tokens.
+	ContextWindowEnv = "UNREAL_REVIEW_CONTEXT_WINDOW"
 )
 
 func OpenRouterBase() (string, error) {
@@ -65,6 +70,9 @@ type Harness struct {
 	// MaxBashCalls limits Bash tool calls within one Run. Zero is unlimited;
 	// negative disables Bash for stages that must operate only on supplied data.
 	MaxBashCalls int
+	// CompactionThreshold is the cutoff in tokens of the latest model response
+	// (input + output). Zero means compaction is off.
+	CompactionThreshold int64
 }
 
 var _ review.Agent = Harness{}
@@ -133,6 +141,15 @@ func newLoopbackModelAdapter(apiKey, base string) (llm.Adapter, func() error, er
 }
 
 func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentRequest) (review.AgentResult, error) {
+	threshold := h.CompactionThreshold
+	if threshold <= 0 {
+		threshold = compactionDisabled
+	}
+	var guard *compactionGuard
+	if threshold != compactionDisabled {
+		guard = guardCompaction(adapter, req.FindingsPath)
+		adapter = guard
+	}
 	storeDirectory, err := sessionDirectory()
 	if err != nil {
 		return review.AgentResult{}, fmt.Errorf("resolve session directory: %w", err)
@@ -164,6 +181,9 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	}, tool.BashName, tool.ViewImageName))
 
 	observer := newSessionObserver(sessionID, req.FindingsPath, h.Log, cancel)
+	if guard != nil {
+		guard.recordUsage = observer.addUsage
+	}
 	observerID := store.AddObserver(observer.Observe)
 	defer store.RemoveObserver(observerID)
 
@@ -175,7 +195,7 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 		registry: registry,
 		model: llm.Model{
 			ID:                  req.Model,
-			CompactionThreshold: compactionDisabled,
+			CompactionThreshold: threshold,
 			ReasoningEffort:     llm.ReasoningEffort(h.ThinkingLevel),
 		},
 		systemPrompt: systemPrompt,
