@@ -568,22 +568,6 @@ def keyOf(+id: Nat, xs: List<&2, Item>) -> Maybe<&2, GKey>:
     case Item{+f, k} <> t:
       Bool.pick(Maybe<&2, GKey>, Nat.is_eq(id, fileId(f)), Some{k}, keyOf(id, t))
 
-def remapKey(+old: GKey, +new: GKey, xs: List<&2, Item>) -> List<&2, Item>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case Item{f, +k} <> t:
-      Item{f, Bool.pick(GKey, keyEq(old, k), new, k)} <> remapKey(old, new, t)
-
-def unionKeys(xs: List<&2, Item>, ka: Maybe<&2, GKey>, kb: Maybe<&2, GKey>) -> List<&2, Item>:
-  match ka kb:
-    case None{} kb0:
-      xs
-    case Some{a} None{}:
-      xs
-    case Some{a} Some{b}:
-      remapKey(b, a, xs)
-
 # An edge records that the importing file follows one representative.
 # Parents are file ids. Only those sources are rekeyed, and only after every
 # edge has been linked, so a representative that itself imports does not leave
@@ -782,27 +766,6 @@ def AllCapped(gs: List<&2, Group>) -> Type:
     case Group{fs} <> t:
       (CappedFiles(fs) & AllCapped(t))
 
-def inFiles(+id: Nat, fs: List<&2, ChangedFile>) -> Bool:
-  match fs:
-    case Nil{}:
-      False{}
-    case File{fid, dir, stem, ext, kind, lines} <> t:
-      Bool.or(Nat.is_eq(id, fid), inFiles(id, t))
-
-def inGroups(+id: Nat, gs: List<&2, Group>) -> Bool:
-  match gs:
-    case Nil{}:
-      False{}
-    case Group{fs} <> t:
-      Bool.or(inFiles(id, fs), inGroups(id, t))
-
-def sameGroup(+a: Nat, +b: Nat, gs: List<&2, Group>) -> Bool:
-  match gs:
-    case Nil{}:
-      False{}
-    case Group{+fs} <> t:
-      Bool.or(Bool.and(inFiles(a, fs), inFiles(b, fs)), sameGroup(a, b, t))
-
 def rekeyFiles(+pass: FamPass, +fam: FamId, xs: List<&2, Item>) -> {filesOf(rekeyFam(pass, fam, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
   match xs:
     case Nil{}:
@@ -908,14 +871,6 @@ def attachFromFiles(todo: List<&2, Item>, +xs: List<&2, Item>) -> {filesOf(attac
 
 def attachAllFiles(+xs: List<&2, Item>) -> {filesOf(attachAll(xs)) == filesOf(xs) : List<&2, ChangedFile>}:
   attachFromFiles(xs, xs)
-
-def remapKeyFiles(+old: GKey, +new: GKey, xs: List<&2, Item>) -> {filesOf(remapKey(old, new, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
-  match xs:
-    case Nil{}:
-      {==}
-    case Item{+f, +k} <> +t:
-      %remapKeyFiles(old, new, t) : {f <> filesOf(remapKey(old, new, t)) == f <> _ : List<&2, ChangedFile>}
-      {==}
 
 def applyEdgeBFiles(+id: Nat, k: Maybe<&2, GKey>, xs: List<&2, Item>) -> {filesOf(applyEdgeB(id, k, xs)) == filesOf(xs) : List<&2, ChangedFile>}:
   match k:
