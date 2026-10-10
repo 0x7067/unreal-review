@@ -952,6 +952,80 @@ func TestStageFindingsBlock(t *testing.T) {
 		}
 	})
 
+	t.Run("unreadable sibling adds a note", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		corrupt := "{\"v\":1,\"type\":\"finding\",\"id\":\"bad\",\"path\":\"agent/planned.go\",\"start_line\":4,\"end_line\":4,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"corrupt sibling claim\"}\n{\"v\":1,\"type\":\"finding\",\"path\":\n{\"v\":1,\"type\":\"finding\",\"id\":\"later\",\"path\":\"agent/planned.go\",\"start_line\":5,\"end_line\":5,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"later corrupt claim\"}\n"
+		if err := os.WriteFile(filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), []byte(corrupt), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[1]))
+		appendClaim(t, current, "ok", "readable current claim")
+		got := recordedFindingsBlock(current)
+		if !strings.Contains(got, "readable current claim") || !strings.Contains(got, "(some findings files were unreadable)") || strings.Contains(got, "corrupt sibling claim") {
+			t.Fatalf("block = %s", got)
+		}
+	})
+
+	t.Run("unreadable current adds a note", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		appendClaim(t, filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), "ok", "readable sibling claim")
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[1]))
+		corrupt := "{\"v\":1,\"type\":\"finding\",\"id\":\"bad\",\"path\":\"agent/planned.go\",\"start_line\":4,\"end_line\":4,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"corrupt current claim\"}\n{\"v\":1,\"type\":\"finding\",\"path\":\n{\"v\":1,\"type\":\"finding\",\"id\":\"later\",\"path\":\"agent/planned.go\",\"start_line\":5,\"end_line\":5,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"later corrupt claim\"}\n"
+		if err := os.WriteFile(current, []byte(corrupt), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got := recordedFindingsBlock(current)
+		if !strings.Contains(got, "readable sibling claim") || !strings.Contains(got, "(some findings files were unreadable)") || strings.Contains(got, "corrupt current claim") {
+			t.Fatalf("block = %s", got)
+		}
+	})
+
+	t.Run("window on a record boundary keeps the first line", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[0]))
+		line := claimLine(t, "kept", "boundary first claim")
+		if len(line) >= maxStageFindingBytes {
+			t.Fatal("finding line fills the window")
+		}
+		window := line + strings.Repeat("y", maxStageFindingBytes-len(line))
+		body := append([]byte("dropped head\n"), []byte(window)...)
+		if err := os.WriteFile(current, body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got := recordedFindingsBlock(current)
+		if !strings.Contains(got, "boundary first claim") || strings.Contains(got, "dropped head") {
+			t.Fatalf("block = %s", got)
+		}
+	})
+
+	t.Run("file cap drops the names that sort first", func(t *testing.T) {
+		dir := testStageDir(t, "planned")
+		for i := 0; i < maxStageFindingFiles+2; i++ {
+			appendClaim(t, filepath.Join(dir, fmt.Sprintf("%064x.jsonl", i)), fmt.Sprintf("id-%03d", i), fmt.Sprintf("cap file %03d", i))
+		}
+		current := filepath.Join(dir, strings.Repeat("f", 64)+".jsonl")
+		appendClaim(t, current, "cur", "current cap claim")
+		got := recordedFindingsBlock(current)
+		if !strings.Contains(got, "cap file 129") || !strings.Contains(got, "current cap claim") || !strings.Contains(got, "omitted 109 older findings") {
+			t.Fatalf("block = %s", got)
+		}
+		if strings.Contains(got, "cap file 000") || strings.Contains(got, "cap file 001") {
+			t.Fatalf("block = %s", got)
+		}
+	})
+
+	t.Run("lone non-regular file is unavailable", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[0]))
+		if err := unix.Mkfifo(current, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got := recordedFindingsBlock(current)
+		if got != "Findings already recorded: unavailable (findings file unreadable)" {
+			t.Fatalf("block = %q", got)
+		}
+	})
+
 	t.Run("single stage ignores neighboring jsonl", func(t *testing.T) {
 		dir := t.TempDir()
 		current := filepath.Join(dir, "findings.jsonl")

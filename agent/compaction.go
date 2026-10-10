@@ -251,9 +251,20 @@ func oneFileFindingsBlock(path string) string {
 func mergeStageFindings(paths []string) string {
 	var all []findings.Finding
 	failed := false
+	currentUnreadable := false
+	current := ""
+	if len(paths) > 0 {
+		current = paths[len(paths)-1]
+	}
 	for _, path := range paths {
 		raw, err := readStageBytes(path)
-		if errors.Is(err, os.ErrNotExist) || errors.Is(err, errNotStageFile) {
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if errors.Is(err, errNotStageFile) {
+			if path == current {
+				currentUnreadable = true
+			}
 			continue
 		}
 		if err != nil {
@@ -268,12 +279,18 @@ func mergeStageFindings(paths []string) string {
 		all = append(all, report.Findings...)
 	}
 	if len(all) == 0 {
-		if failed {
+		if failed || currentUnreadable {
 			return "Findings already recorded: unavailable (findings file unreadable)"
 		}
 		return "Findings already recorded: none."
 	}
-	return formatRecordedFindings(all)
+	block := formatRecordedFindings(all)
+	// A partial list must not look complete. Symlinks and other non-regular
+	// files are skipped; the current file alone being one of those is unavailable.
+	if failed {
+		block += "\n(some findings files were unreadable)"
+	}
+	return block
 }
 
 func formatRecordedFindings(all []findings.Finding) string {
@@ -305,17 +322,11 @@ func parseFindingsBytes(raw []byte) (findings.Report, error) {
 	return findings.Parse(bytes.NewReader(withoutLastLine(raw)))
 }
 
-var (
-	errNotStageFile  = errors.New("not a regular stage findings file")
-	errPartialRecord = errors.New("findings record exceeds read window")
-)
+var errNotStageFile = errors.New("not a regular stage findings file")
 
 func readStageBytes(path string) ([]byte, error) {
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW, 0)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, os.ErrNotExist
-		}
 		if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENXIO) || errors.Is(err, unix.EAGAIN) {
 			return nil, errNotStageFile
 		}
@@ -344,18 +355,18 @@ func readStageBytes(path string) ([]byte, error) {
 		return nil, err
 	}
 	if len(raw) == 0 {
-		return nil, errPartialRecord
+		return nil, fmt.Errorf("findings record exceeds read window")
 	}
 	window := raw[1:]
 	if raw[0] != '\n' {
 		i := bytes.IndexByte(window, '\n')
 		if i < 0 {
-			return nil, errPartialRecord
+			return nil, fmt.Errorf("findings record exceeds read window")
 		}
 		window = window[i+1:]
 	}
 	if len(bytes.TrimSpace(window)) == 0 {
-		return nil, errPartialRecord
+		return nil, fmt.Errorf("findings record exceeds read window")
 	}
 	return window, nil
 }
