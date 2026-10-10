@@ -5,7 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -26,10 +29,18 @@ const (
 	// under the floor but not guaranteed: the summary is uncapped model output,
 	// and the retained tail copies whole turns and the staged suffix verbatim.
 	compactionMinCutoff = 150_000
-	// The handoff lists the newest findings from disk. Path and claim are
-	// collapsed to one line and truncated so the block stays small.
+	// The handoff lists the newest findings from disk. When the current
+	// findings path is a child file in this run's planned or focused stage
+	// directory, sibling stage files in that directory are included. Path
+	// and claim are collapsed to one line and truncated so the block stays small.
 	maxRecordedFindings = 20
 	maxClaimBytes       = 160
+	// The handoff read is bounded: at most this many stage files, the names
+	// that sort last, and at most this many bytes from each file. A longer
+	// file contributes its tail. The current stage file stays if the file
+	// cap would drop it. Nothing outside the stage directory is opened.
+	maxStageFindingFiles = 128
+	maxStageFindingBytes = 256 << 10
 )
 
 // CompactionThreshold resolves the harness cutoff in tokens of the latest
@@ -214,6 +225,16 @@ func stampSummary(response llm.Response, block string) llm.Response {
 }
 
 func recordedFindingsBlock(path string) string {
+	if paths, stage, listed := stageFindingPaths(path); stage {
+		if !listed {
+			return "Findings already recorded: unavailable (findings file unreadable)"
+		}
+		return mergeStageFindings(paths)
+	}
+	return oneFileFindingsBlock(path)
+}
+
+func oneFileFindingsBlock(path string) string {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return "Findings already recorded: none."
@@ -221,20 +242,43 @@ func recordedFindingsBlock(path string) string {
 	if err != nil {
 		return "Findings already recorded: unreadable."
 	}
-	report, err := findings.Parse(bytes.NewReader(raw))
+	report, err := parseFindingsBytes(raw)
 	if err != nil {
-		// A torn trailing line must not drop findings already written.
-		// A corrupt line that is not last stays unreadable, so the handoff
-		// does not claim that nothing was recorded.
-		report, err = findings.Parse(bytes.NewReader(withoutLastLine(raw)))
-		if err != nil {
-			return "Findings already recorded: unavailable (findings file unreadable)"
+		return "Findings already recorded: unavailable (findings file unreadable)"
+	}
+	return formatRecordedFindings(report.Findings)
+}
+
+// Stage files are merged in sorted base-name order. Within a file, findings
+// stay in the order they were recorded, which is that stage's order. A later
+// file, then a later line, is the newer occurrence of an id.
+func mergeStageFindings(paths []string) string {
+	var all []findings.Finding
+	failed := 0
+	for _, path := range paths {
+		report, status := readStageFindings(path)
+		switch status {
+		case stageReadOK:
+			all = append(all, report.Findings...)
+		case stageReadMissing, stageReadSkip:
+		default:
+			failed++
 		}
 	}
-	if len(report.Findings) == 0 {
+	if len(all) == 0 {
+		if failed > 0 {
+			return "Findings already recorded: unavailable (findings file unreadable)"
+		}
 		return "Findings already recorded: none."
 	}
-	shown, omitted := newestFindings(report.Findings)
+	return formatRecordedFindings(all)
+}
+
+func formatRecordedFindings(all []findings.Finding) string {
+	if len(all) == 0 {
+		return "Findings already recorded: none."
+	}
+	shown, omitted := newestFindings(all)
 	var b strings.Builder
 	b.WriteString("Findings already recorded:\n")
 	for _, finding := range shown {
@@ -244,6 +288,239 @@ func recordedFindingsBlock(path string) string {
 		fmt.Fprintf(&b, "omitted %d older findings\n", omitted)
 	}
 	return strings.TrimSpace(b.String())
+}
+
+type stageRead int
+
+const (
+	stageReadOK stageRead = iota
+	stageReadMissing
+	stageReadSkip
+	stageReadBad
+)
+
+func readStageFindings(path string) (findings.Report, stageRead) {
+	raw, err := readStageBytes(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return findings.Report{}, stageReadMissing
+	}
+	if errors.Is(err, errNotStageFile) {
+		return findings.Report{}, stageReadSkip
+	}
+	if err != nil {
+		return findings.Report{}, stageReadBad
+	}
+	report, err := parseFindingsBytes(raw)
+	if err != nil {
+		return findings.Report{}, stageReadBad
+	}
+	return report, stageReadOK
+}
+
+// A torn trailing line must not drop findings already written. A corrupt
+// line that is not last stays unreadable, so one file does not claim that
+// nothing was recorded.
+func parseFindingsBytes(raw []byte) (findings.Report, error) {
+	report, err := findings.Parse(bytes.NewReader(raw))
+	if err == nil {
+		return report, nil
+	}
+	return findings.Parse(bytes.NewReader(withoutLastLine(raw)))
+}
+
+var errNotStageFile = errors.New("not a regular stage findings file")
+
+func readStageBytes(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errNotStageFile
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+	limit := maxStageFindingBytes
+	if info.Size() > int64(limit) {
+		if _, err := file.Seek(-int64(limit), io.SeekEnd); err != nil {
+			return nil, err
+		}
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > int64(limit) {
+		if i := bytes.IndexByte(raw, '\n'); i >= 0 {
+			raw = raw[i+1:]
+		} else {
+			raw = nil
+		}
+	}
+	return raw, nil
+}
+
+// stageFindingPaths lists child findings files for the same planned or
+// focused run. ok is false when path is not inside that run's stage
+// directory, and the caller then reads only path. Manifests, receipts, the
+// lock, and any other name are not stage findings files.
+func stageFindingPaths(current string) (paths []string, ok bool, listed bool) {
+	dir, kind, ok := stageDirectoryOf(current)
+	if !ok {
+		return nil, false, false
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, true, false
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if name != filepath.Base(name) || !stageFindingName(kind, name) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	names = capStageNames(names, filepath.Base(current))
+	paths = make([]string, 0, len(names))
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		if !insideDir(dir, path) {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return paths, true, true
+}
+
+func capStageNames(names []string, current string) []string {
+	if len(names) <= maxStageFindingFiles {
+		return names
+	}
+	tail := append([]string(nil), names[len(names)-maxStageFindingFiles:]...)
+	for _, name := range tail {
+		if name == current {
+			return tail
+		}
+	}
+	present := false
+	for _, name := range names {
+		if name == current {
+			present = true
+			break
+		}
+	}
+	if !present {
+		return tail
+	}
+	tail = append([]string{current}, tail[1:]...)
+	sort.Strings(tail)
+	return tail
+}
+
+func stageDirectoryOf(current string) (dir, kind string, ok bool) {
+	abs, err := filepath.Abs(current)
+	if err != nil {
+		return "", "", false
+	}
+	abs = filepath.Clean(abs)
+	dir = filepath.Dir(abs)
+	if !insideDir(dir, abs) {
+		return "", "", false
+	}
+	root, err := sessionDirectory()
+	if err != nil {
+		return "", "", false
+	}
+	root = filepath.Clean(root)
+	parent := filepath.Dir(dir)
+	kind = filepath.Base(parent)
+	if kind != "planned" && kind != "focused" {
+		return "", "", false
+	}
+	if filepath.Clean(filepath.Dir(parent)) != root || !hex64(filepath.Base(dir)) {
+		return "", "", false
+	}
+	info, err := os.Lstat(dir)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", "", false
+	}
+	return dir, kind, true
+}
+
+func insideDir(dir, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
+	return err == nil && rel != "" && rel == filepath.Base(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func stageFindingName(kind, base string) bool {
+	switch kind {
+	case "focused":
+		return focusedStageFile(base)
+	case "planned":
+		return plannedChildFile(base)
+	default:
+		return false
+	}
+}
+
+func focusedStageFile(base string) bool {
+	name, ok := strings.CutSuffix(base, ".jsonl")
+	if !ok {
+		return false
+	}
+	if name == "verification" {
+		return true
+	}
+	for _, lens := range focusedLenses {
+		if name == lens {
+			return true
+		}
+	}
+	return false
+}
+
+// plannedChildFile matches the child files planned.go writes:
+// focusedHash(stage)+".jsonl" and focusedHash(stage)+"-"+generation+".jsonl".
+func plannedChildFile(base string) bool {
+	name, ok := strings.CutSuffix(base, ".jsonl")
+	if !ok || name == "" || strings.Count(name, "-") > 1 {
+		return false
+	}
+	hash, gen, found := strings.Cut(name, "-")
+	if !found {
+		return hex64(name)
+	}
+	if !hex64(hash) || gen == "" {
+		return false
+	}
+	for _, c := range gen {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func hex64(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func newestFindings(all []findings.Finding) ([]findings.Finding, int) {
