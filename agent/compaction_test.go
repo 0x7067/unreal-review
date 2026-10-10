@@ -722,8 +722,8 @@ func TestRunCompactionListsSiblingStageFindings(t *testing.T) {
 		t.Fatalf("turns = %v", requestKinds(adapter.requests))
 	}
 	later := requestText(adapter.requests[2])
-	if !strings.Contains(later, "agent/planned.go:10-12 stage A recorded a cancel leak") {
-		t.Fatalf("post-compaction request missing stage A\n%s", later)
+	if !strings.Contains(later, "agent/planned.go:10-12 stage A recorded a cancel leak") || !strings.Contains(later, "Findings YOU recorded in this task: none.") || !strings.Contains(later, "Do not describe them in your summary") || !strings.Contains(later, "call record_finding") {
+		t.Fatalf("post-compaction request missing the split handoff\n%s", later)
 	}
 	if strings.Contains(later, "Findings already recorded: none.") || strings.Contains(later, "unrelated notes claim") {
 		t.Fatalf("post-compaction request = %s", later)
@@ -739,7 +739,9 @@ func TestStageFindingsBlock(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := recordedFindingsBlock(current)
-		want := "Findings already recorded:\n- agent/planned.go:10-12 stage A recorded a cancel leak"
+		want := "Findings YOU recorded in this task: none.\n\n" +
+			"Findings recorded by OTHER tasks of this review (not yours). Do not describe them in your summary. If you independently confirmed the same issue, still call record_finding for it; duplicates are merged later in verification. If you recorded nothing yourself, your summary must start with \"No material issues\".\n" +
+			"- agent/planned.go:10-12 stage A recorded a cancel leak"
 		if got != want {
 			t.Fatalf("block = %q", got)
 		}
@@ -756,10 +758,14 @@ func TestStageFindingsBlock(t *testing.T) {
 		current := filepath.Join(dir, focusedFindingsFile(curLens))
 		appendClaim(t, current, "shared", "current copy of the shared finding")
 		got := recordedFindingsBlock(current)
-		if !strings.Contains(got, "current copy of the shared finding") || !strings.Contains(got, "sibling only claim") {
+		you := strings.Index(got, "Findings YOU recorded in this task:")
+		other := strings.Index(got, "Findings recorded by OTHER tasks")
+		cur := strings.Index(got, "current copy of the shared finding")
+		sib := strings.Index(got, "sibling only claim")
+		if you < 0 || other < you || cur < you || cur > other || sib < other || strings.Contains(got, "sibling copy of the shared finding") {
 			t.Fatalf("block = %s", got)
 		}
-		if strings.Contains(got, "sibling copy of the shared finding") || strings.Index(got, "sibling only claim") > strings.Index(got, "current copy of the shared finding") {
+		if !strings.Contains(got, "Do not describe them in your summary") || !strings.Contains(got, "your summary must start with \"No material issues\"") {
 			t.Fatalf("block = %s", got)
 		}
 	})
@@ -947,7 +953,7 @@ func TestStageFindingsBlock(t *testing.T) {
 		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[1]))
 		appendClaim(t, current, "own", "claim beside a fifo")
 		got := recordedFindingsBlock(current)
-		if got != "Findings already recorded:\n- agent/planned.go:10-12 claim beside a fifo" {
+		if got != "Findings YOU recorded in this task:\n- agent/planned.go:10-12 claim beside a fifo\n\nFindings recorded by OTHER tasks of this review (not yours). Do not describe them in your summary. If you independently confirmed the same issue, still call record_finding for it; duplicates are merged later in verification. If you recorded nothing yourself, your summary must start with \"No material issues\".\nnone." {
 			t.Fatalf("block = %q", got)
 		}
 	})

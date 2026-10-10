@@ -216,7 +216,7 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 			coordinatorErr = fmt.Errorf("summary breaks the contract: %w", err)
 			break
 		}
-		coordinatorErr = s.turn(runCtx, inbox.ID(uuid.New().String()), summaryCorrection(err))
+		coordinatorErr = s.turn(runCtx, inbox.ID(uuid.New().String()), summaryCorrection(err, count))
 	}
 	if observerErr := observer.Err(); observerErr != nil {
 		coordinatorErr = observerErr
@@ -312,8 +312,12 @@ func findingCount(findingsPath string) (int, error) {
 	return len(report.Findings), err
 }
 
-func summaryCorrection(err error) string {
-	return fmt.Sprintf("Your final message is the review summary, and it breaks the summary contract: %v. Reply with only the corrected summary.", err)
+func summaryCorrection(err error, findingCount int) string {
+	text := fmt.Sprintf("Your final message is the review summary, and it breaks the summary contract: %v. Reply with only the corrected summary.", err)
+	if findingCount == 0 {
+		text += ` You recorded 0 findings in this task. If you confirmed a real issue, call record_finding now; otherwise reply with a summary that starts with "No material issues".`
+	}
+	return text
 }
 
 func openSession(ctx context.Context, store *localfile.Store, id session.ID) (sessionstore.ResumeState, error) {

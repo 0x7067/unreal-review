@@ -33,7 +33,10 @@ const (
 	// The handoff lists findings from disk. Path and claim are collapsed to
 	// one line and truncated so the block stays small. Only a discovery
 	// stage also reads other discovery files in the same stage directory.
+	// Own findings take the first of these slots; other tasks fill the rest.
 	maxRecordedFindings = 20
+	ownFindingsLabel    = "Findings YOU recorded in this task:"
+	otherFindingsLabel  = `Findings recorded by OTHER tasks of this review (not yours). Do not describe them in your summary. If you independently confirmed the same issue, still call record_finding for it; duplicates are merged later in verification. If you recorded nothing yourself, your summary must start with "No material issues".`
 	maxClaimBytes       = 160
 	// Sibling discovery files opened, besides the current file. Names that
 	// sort first are dropped. That order is not chronological.
@@ -247,10 +250,11 @@ func oneFileFindingsBlock(path string) string {
 }
 
 // paths lists sibling discovery files in sorted base-name order, then the
-// current file. Name order is deterministic, not chronological. The current
-// file is last, so its findings fill the newest slots and win an id clash.
+// current file. Sibling name order is deterministic, not chronological. The
+// current file is last and wins an id clash. Its findings take the newest
+// slots; siblings fill whatever remains of the 20.
 func mergeStageFindings(paths []string, enumErr error) string {
-	var all []findings.Finding
+	var own, others []findings.Finding
 	failed := enumErr != nil
 	current := ""
 	if len(paths) > 0 {
@@ -276,15 +280,19 @@ func mergeStageFindings(paths []string, enumErr error) string {
 			failed = true
 			continue
 		}
-		all = append(all, report.Findings...)
+		if path == current {
+			own = append(own, report.Findings...)
+		} else {
+			others = append(others, report.Findings...)
+		}
 	}
-	if len(all) == 0 {
+	if len(own) == 0 && len(others) == 0 {
 		if failed {
 			return "Findings already recorded: unavailable (findings file unreadable)"
 		}
-		return "Findings already recorded: none."
 	}
-	block := formatRecordedFindings(all)
+	// An unlistable directory did not prove that other tasks recorded nothing.
+	block := formatTaskFindings(own, withoutFindingIDs(others, own), enumErr != nil && len(others) == 0)
 	// A partial list must not look complete. The current file being a symlink
 	// or other non-regular file counts; sibling symlinks stay skipped.
 	if failed {
@@ -293,11 +301,43 @@ func mergeStageFindings(paths []string, enumErr error) string {
 	return block
 }
 
+func formatTaskFindings(own, others []findings.Finding, othersUnreadable bool) string {
+	ownShown, ownOmitted := newestFindings(own, maxRecordedFindings)
+	otherShown, otherOmitted := newestFindings(others, maxRecordedFindings-len(ownShown))
+	ownText := formatFindingGroup(ownFindingsLabel, ownShown, ownOmitted, true)
+	otherText := formatFindingGroup(otherFindingsLabel, otherShown, otherOmitted, false)
+	if othersUnreadable && len(otherShown) == 0 && otherOmitted == 0 {
+		otherText = otherFindingsLabel + "\nunavailable (findings file unreadable)"
+	}
+	return ownText + "\n\n" + otherText
+}
+
+func formatFindingGroup(header string, shown []findings.Finding, omitted int, colonNone bool) string {
+	if len(shown) == 0 && omitted == 0 {
+		if colonNone {
+			return header + " none."
+		}
+		return header + "\nnone."
+	}
+	var b strings.Builder
+	b.WriteString(header)
+	b.WriteByte('\n')
+	for _, finding := range shown {
+		fmt.Fprintf(&b, "- %s:%d-%d %s\n", trimField(finding.Path), finding.StartLine, finding.EndLine, trimField(finding.Body))
+	}
+	// The count is a lower bound: the tail window and the sibling file cap
+	// can drop findings before this cap is applied.
+	if omitted > 0 {
+		fmt.Fprintf(&b, "omitted %d older findings\n", omitted)
+	}
+	return strings.TrimSpace(b.String())
+}
+
 func formatRecordedFindings(all []findings.Finding) string {
 	if len(all) == 0 {
 		return "Findings already recorded: none."
 	}
-	shown, omitted := newestFindings(all)
+	shown, omitted := newestFindings(all, maxRecordedFindings)
 	var b strings.Builder
 	b.WriteString("Findings already recorded:\n")
 	for _, finding := range shown {
@@ -470,15 +510,37 @@ func hex64(s string) bool {
 	return true
 }
 
-func newestFindings(all []findings.Finding) ([]findings.Finding, int) {
+func withoutFindingIDs(all, drop []findings.Finding) []findings.Finding {
+	if len(all) == 0 || len(drop) == 0 {
+		return all
+	}
+	seen := make(map[string]struct{}, len(drop))
+	for _, finding := range drop {
+		seen[findingKey(finding)] = struct{}{}
+	}
+	kept := make([]findings.Finding, 0, len(all))
+	for _, finding := range all {
+		if _, ok := seen[findingKey(finding)]; ok {
+			continue
+		}
+		kept = append(kept, finding)
+	}
+	return kept
+}
+
+func findingKey(finding findings.Finding) string {
+	if finding.ID != "" {
+		return finding.ID
+	}
+	return findings.Fingerprint(finding)
+}
+
+func newestFindings(all []findings.Finding, limit int) ([]findings.Finding, int) {
 	seen := make(map[string]struct{}, len(all))
 	newest := make([]findings.Finding, 0, len(all))
 	for i := len(all) - 1; i >= 0; i-- {
 		finding := all[i]
-		id := finding.ID
-		if id == "" {
-			id = findings.Fingerprint(finding)
-		}
+		id := findingKey(finding)
 		if _, ok := seen[id]; ok {
 			continue
 		}
@@ -486,9 +548,9 @@ func newestFindings(all []findings.Finding) ([]findings.Finding, int) {
 		newest = append(newest, finding)
 	}
 	omitted := 0
-	if len(newest) > maxRecordedFindings {
-		omitted = len(newest) - maxRecordedFindings
-		newest = newest[:maxRecordedFindings]
+	if len(newest) > limit {
+		omitted = len(newest) - limit
+		newest = newest[:limit]
 	}
 	for i, j := 0, len(newest)-1; i < j; i, j = i+1, j-1 {
 		newest[i], newest[j] = newest[j], newest[i]

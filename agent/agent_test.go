@@ -35,6 +35,22 @@ func (a *scriptedAdapter) Respond(ctx context.Context, _ llm.Request, _ llm.Requ
 	return next, nil
 }
 
+func TestSummaryCorrectionZeroFindingsPointsAtRecordFinding(t *testing.T) {
+	err := errors.New(`summary of a review with no findings must start with "No material issues"`)
+	zero := summaryCorrection(err, 0)
+	if !strings.Contains(zero, "You recorded 0 findings in this task.") || !strings.Contains(zero, "call record_finding now") || !strings.Contains(zero, `starts with "No material issues"`) {
+		t.Fatalf("zero = %q", zero)
+	}
+	if !strings.HasPrefix(zero, "Your final message is the review summary, and it breaks the summary contract: "+err.Error()+". Reply with only the corrected summary.") {
+		t.Fatalf("zero = %q", zero)
+	}
+	some := summaryCorrection(err, 2)
+	want := "Your final message is the review summary, and it breaks the summary contract: " + err.Error() + ". Reply with only the corrected summary."
+	if some != want || strings.Contains(some, "recorded 0 findings") || strings.Contains(some, "record_finding") {
+		t.Fatalf("count>0 = %q", some)
+	}
+}
+
 func findingArguments() string {
 	return `{"path":"internal/agent/agent.go","start_line":42,"severity":"warning","body":"The retry loop leaks the cancel function."}`
 }
