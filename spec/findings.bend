@@ -46,28 +46,6 @@ def complete(s: Status) -> Bool:
     case StatusFailed{}:
       False{}
 
-def Complete(s: Status) -> Type:
-  match s:
-    case StatusNone{}:
-      Unit
-    case StatusRunning{}:
-      Empty
-    case StatusComplete{}:
-      Unit
-    case StatusFailed{}:
-      Empty
-
-def Incomplete(s: Status) -> Type:
-  match s:
-    case StatusNone{}:
-      Empty
-    case StatusRunning{}:
-      Unit
-    case StatusComplete{}:
-      Empty
-    case StatusFailed{}:
-      Unit
-
 type MaybeNat is Data:
   NoNat{}
   SomeNat{n: Nat}

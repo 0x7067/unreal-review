@@ -34,7 +34,7 @@ case $VERIFY_RUN_ID in
 	;;
 esac
 mkdir -p "$VERIFY_ROOT"
-unset GH_TOKEN GITHUB_REPOSITORY UNREAL_HARNESS_LLM_MODEL OPENROUTER_API_KEY UNREAL_REVIEW_GITHUB_API UNREAL_REVIEW_OPENROUTER_API || true
+unset GH_TOKEN GITHUB_REPOSITORY UNREAL_HARNESS_LLM_MODEL OPENROUTER_API_KEY UNREAL_REVIEW_GITHUB_API UNREAL_REVIEW_OPENROUTER_API UNREAL_REVIEW_COMPACTION UNREAL_REVIEW_CONTEXT_WINDOW || true
 
 # lib.sh keys off $0, so sourcing it from this script would point at tools/.
 # Launch still sources lib.sh itself; these are the same paths it derives.
@@ -421,6 +421,61 @@ expect cli-usage.md "empty --exclude" "$(stderr_of run-exclude-empty)" "run-excl
 cli --name render-unknown -- render html
 require_exit render-unknown 1
 expect cli-usage.md 'unreal-review: unknown render target "html"' "$(stderr_of render-unknown)" "render-unknown"
+
+say "compaction gates"
+env -u UNREAL_REVIEW_COMPACTION -u UNREAL_REVIEW_CONTEXT_WINDOW OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-default -- run --model x --workspace "$VERIFY_FIXTURE" --from HEAD --to HEAD --out "$VERIFY_SCRATCH/compaction-default.jsonl"
+require_exit compaction-default 0
+expect cli-usage.md "cost: USD 0.000000" "$(stderr_of compaction-default)" "compaction-default"
+feature_has cli-usage.md 'does not contain `compaction`'
+require_absent "$(stderr_of compaction-default)" "compaction" "compaction-default"
+
+env -u UNREAL_REVIEW_CONTEXT_WINDOW OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-off -- run --model x --compaction off --workspace "$VERIFY_FIXTURE" --from HEAD --to HEAD --out "$VERIFY_SCRATCH/compaction-off.jsonl"
+require_exit compaction-off 0
+expect cli-usage.md "unreal-review: compaction off" "$(stderr_of compaction-off)" "compaction-off"
+
+env -u UNREAL_REVIEW_CONTEXT_WINDOW UNREAL_REVIEW_COMPACTION=off OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-env-off -- run --model x --workspace "$VERIFY_FIXTURE" --from HEAD --to HEAD --out "$VERIFY_SCRATCH/compaction-env-off.jsonl"
+require_exit compaction-env-off 0
+expect cli-usage.md "unreal-review: compaction off" "$(stderr_of compaction-env-off)" "compaction-env-off"
+
+env -u UNREAL_REVIEW_CONTEXT_WINDOW OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-zero -- run --model x --compaction 0 --workspace "$VERIFY_SCRATCH" --out "$VERIFY_SCRATCH/unused.jsonl"
+require_exit compaction-zero 1
+expect cli-usage.md 'unreal-review: compaction "0": want off, a positive token count, or a percent from 1% to 100%' "$(stderr_of compaction-zero)" "compaction-zero"
+
+env -u UNREAL_REVIEW_CONTEXT_WINDOW UNREAL_REVIEW_COMPACTION=0 OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-env-zero -- run --model x --workspace "$VERIFY_SCRATCH" --out "$VERIFY_SCRATCH/unused.jsonl"
+require_exit compaction-env-zero 1
+expect cli-usage.md 'unreal-review: compaction "0": want off, a positive token count, or a percent from 1% to 100%' "$(stderr_of compaction-env-zero)" "compaction-env-zero"
+
+env -u UNREAL_REVIEW_CONTEXT_WINDOW OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-floor -- run --model x --compaction 149999 --workspace "$VERIFY_SCRATCH" --out "$VERIFY_SCRATCH/unused.jsonl"
+require_exit compaction-floor 1
+expect cli-usage.md "unreal-review: compaction cutoff 149999 tokens is below 150000" "$(stderr_of compaction-floor)" "compaction-floor"
+
+env -u UNREAL_REVIEW_CONTEXT_WINDOW UNREAL_REVIEW_COMPACTION=149999 OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-env-floor -- run --model x --workspace "$VERIFY_SCRATCH" --out "$VERIFY_SCRATCH/unused.jsonl"
+require_exit compaction-env-floor 1
+expect cli-usage.md "unreal-review: compaction cutoff 149999 tokens is below 150000" "$(stderr_of compaction-env-floor)" "compaction-env-floor"
+
+env -u UNREAL_REVIEW_COMPACTION -u UNREAL_REVIEW_CONTEXT_WINDOW OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-window -- run --model x --compaction 75% --workspace "$VERIFY_SCRATCH" --out "$VERIFY_SCRATCH/unused.jsonl"
+require_exit compaction-window 1
+expect cli-usage.md 'unreal-review: compaction "75%": context window unknown for "x"' "$(stderr_of compaction-window)" "compaction-window"
+
+env -u UNREAL_REVIEW_CONTEXT_WINDOW UNREAL_REVIEW_COMPACTION=75% OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-env-window -- run --model x --workspace "$VERIFY_SCRATCH" --out "$VERIFY_SCRATCH/unused.jsonl"
+require_exit compaction-env-window 1
+expect cli-usage.md 'unreal-review: compaction "75%": context window unknown for "x"' "$(stderr_of compaction-env-window)" "compaction-env-window"
+
+env -u UNREAL_REVIEW_CONTEXT_WINDOW OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-tokens -- run --model x --compaction 150000 --workspace "$VERIFY_FIXTURE" --from HEAD --to HEAD --out "$VERIFY_SCRATCH/compaction-tokens.jsonl"
+require_exit compaction-tokens 0
+expect cli-usage.md "unreal-review: compaction cutoff 150000 tokens" "$(stderr_of compaction-tokens)" "compaction-tokens"
+
+env -u UNREAL_REVIEW_CONTEXT_WINDOW UNREAL_REVIEW_COMPACTION=150000 OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-env-tokens -- run --model x --workspace "$VERIFY_FIXTURE" --from HEAD --to HEAD --out "$VERIFY_SCRATCH/compaction-env-tokens.jsonl"
+require_exit compaction-env-tokens 0
+expect cli-usage.md "unreal-review: compaction cutoff 150000 tokens" "$(stderr_of compaction-env-tokens)" "compaction-env-tokens"
+
+OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-percent -- run --model x --compaction 75% --context-window 1000000 --workspace "$VERIFY_FIXTURE" --from HEAD --to HEAD --out "$VERIFY_SCRATCH/compaction-percent.jsonl"
+require_exit compaction-percent 0
+expect cli-usage.md "unreal-review: compaction cutoff 750000 tokens" "$(stderr_of compaction-percent)" "compaction-percent"
+
+env UNREAL_REVIEW_COMPACTION=75% UNREAL_REVIEW_CONTEXT_WINDOW=1000000 OPENROUTER_API_KEY=dummy "$SCRIPTS/cli.sh" --name compaction-env-percent -- run --model x --workspace "$VERIFY_FIXTURE" --from HEAD --to HEAD --out "$VERIFY_SCRATCH/compaction-env-percent.jsonl"
+require_exit compaction-env-percent 0
+expect cli-usage.md "unreal-review: compaction cutoff 750000 tokens" "$(stderr_of compaction-env-percent)" "compaction-env-percent"
 
 say "review git range"
 OPENROUTER_API_KEY=dummy cli --name range-empty -- run --model x --workspace "$VERIFY_FIXTURE" --from HEAD --to HEAD --out "$VERIFY_SCRATCH/empty.jsonl"
