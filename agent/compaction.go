@@ -224,10 +224,11 @@ func stampSummary(response llm.Response, block string) llm.Response {
 }
 
 func recordedFindingsBlock(path string) string {
-	if paths, discovery := discoverySiblingPaths(path); discovery {
-		return mergeStageFindings(paths)
+	paths, discovery, err := discoverySiblingPaths(path)
+	if !discovery {
+		return oneFileFindingsBlock(path)
 	}
-	return oneFileFindingsBlock(path)
+	return mergeStageFindings(paths, err)
 }
 
 func oneFileFindingsBlock(path string) string {
@@ -248,10 +249,9 @@ func oneFileFindingsBlock(path string) string {
 // paths lists sibling discovery files in sorted base-name order, then the
 // current file. Name order is deterministic, not chronological. The current
 // file is last, so its findings fill the newest slots and win an id clash.
-func mergeStageFindings(paths []string) string {
+func mergeStageFindings(paths []string, enumErr error) string {
 	var all []findings.Finding
-	failed := false
-	currentUnreadable := false
+	failed := enumErr != nil
 	current := ""
 	if len(paths) > 0 {
 		current = paths[len(paths)-1]
@@ -263,7 +263,7 @@ func mergeStageFindings(paths []string) string {
 		}
 		if errors.Is(err, errNotStageFile) {
 			if path == current {
-				currentUnreadable = true
+				failed = true
 			}
 			continue
 		}
@@ -279,14 +279,14 @@ func mergeStageFindings(paths []string) string {
 		all = append(all, report.Findings...)
 	}
 	if len(all) == 0 {
-		if failed || currentUnreadable {
+		if failed {
 			return "Findings already recorded: unavailable (findings file unreadable)"
 		}
 		return "Findings already recorded: none."
 	}
 	block := formatRecordedFindings(all)
-	// A partial list must not look complete. Symlinks and other non-regular
-	// files are skipped; the current file alone being one of those is unavailable.
+	// A partial list must not look complete. The current file being a symlink
+	// or other non-regular file counts; sibling symlinks stay skipped.
 	if failed {
 		block += "\n(some findings files were unreadable)"
 	}
@@ -371,21 +371,29 @@ func readStageBytes(path string) ([]byte, error) {
 	return window, nil
 }
 
+// stageReadDir lists a stage directory. Tests replace it to force an
+// enumeration failure while the current file stays readable.
+var stageReadDir = os.ReadDir
+
 // discoverySiblingPaths lists other discovery files for a discovery stage.
 // Verifier, consolidator, and verification stages are not discovery: planned
 // attempt files are plannedAttemptFile (a "-<gen>" suffix) and focused
 // verification is focusedFindingsFile("verification"). Those stages are
-// left to the single-file reader. Sibling names are sorted; that order is
-// not chronological. The current path is always appended last, whether or
-// not a sibling filter would have matched it.
-func discoverySiblingPaths(current string) ([]string, bool) {
+// left to the single-file reader. A missing directory or any other path that
+// is not a stage directory returns discovery=false and a nil error, so the
+// caller reads that one file and does not add an unreadable note. A ReadDir
+// error on a real stage directory is returned with the current path: it is
+// an unreadable-files failure, never a silent none. Sibling names are sorted;
+// that order is not chronological. The current path is always appended last,
+// whether or not a sibling filter would have matched it.
+func discoverySiblingPaths(current string) ([]string, bool, error) {
 	dir, kind, ok := stageDirectoryOf(current)
 	if !ok || !discoveryFindingsFile(kind, filepath.Base(current)) {
-		return nil, false
+		return nil, false, nil
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := stageReadDir(dir)
 	if err != nil {
-		return []string{current}, true
+		return []string{current}, true, err
 	}
 	base := filepath.Base(current)
 	names := make([]string, 0, len(entries))
@@ -404,7 +412,7 @@ func discoverySiblingPaths(current string) ([]string, bool) {
 	for _, name := range names {
 		paths = append(paths, filepath.Join(dir, name))
 	}
-	return append(paths, current), true
+	return append(paths, current), true, nil
 }
 
 func stageDirectoryOf(current string) (dir, kind string, ok bool) {

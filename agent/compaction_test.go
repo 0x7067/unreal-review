@@ -1014,6 +1014,66 @@ func TestStageFindingsBlock(t *testing.T) {
 		}
 	})
 
+	t.Run("unlistable stage directory is not none", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		appendClaim(t, filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), "sib", "unlistable sibling claim")
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[1]))
+		if err := os.WriteFile(current, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		stageReadDir = func(string) ([]os.DirEntry, error) { return nil, os.ErrPermission }
+		t.Cleanup(func() { stageReadDir = os.ReadDir })
+		got := recordedFindingsBlock(current)
+		if got != "Findings already recorded: unavailable (findings file unreadable)" || strings.Contains(got, "unlistable sibling claim") {
+			t.Fatalf("block = %q", got)
+		}
+	})
+
+	t.Run("unlistable stage directory keeps the current file", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		appendClaim(t, filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), "sib", "unlistable sibling claim")
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[1]))
+		appendClaim(t, current, "own", "claim while the directory is unlistable")
+		stageReadDir = func(string) ([]os.DirEntry, error) { return nil, os.ErrPermission }
+		t.Cleanup(func() { stageReadDir = os.ReadDir })
+		got := recordedFindingsBlock(current)
+		if !strings.Contains(got, "claim while the directory is unlistable") || !strings.Contains(got, "(some findings files were unreadable)") || strings.Contains(got, "unlistable sibling claim") {
+			t.Fatalf("block = %s", got)
+		}
+	})
+
+	t.Run("missing stage directory stays a single-file read", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		stageReadDir = func(string) ([]os.DirEntry, error) { return nil, os.ErrPermission }
+		t.Cleanup(func() { stageReadDir = os.ReadDir })
+		current := filepath.Join(home, sessionDirectoryName, "focused", focusedHash("gone"), focusedFindingsFile(focusedLenses[0]))
+		if got := recordedFindingsBlock(current); got != "Findings already recorded: none." {
+			t.Fatalf("block = %q", got)
+		}
+		outside := filepath.Join(t.TempDir(), "findings.jsonl")
+		appendClaim(t, outside, "own", "outside a stage directory")
+		got := recordedFindingsBlock(outside)
+		if got != "Findings already recorded:\n- agent/planned.go:10-12 outside a stage directory" {
+			t.Fatalf("block = %q", got)
+		}
+	})
+
+	t.Run("symlink current file adds a note", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		appendClaim(t, filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), "sib", "sibling beside a symlink")
+		target := filepath.Join(t.TempDir(), "elsewhere.jsonl")
+		appendClaim(t, target, "own", "claim behind the symlink")
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[1]))
+		if err := os.Symlink(target, current); err != nil {
+			t.Fatal(err)
+		}
+		got := recordedFindingsBlock(current)
+		if !strings.Contains(got, "sibling beside a symlink") || !strings.Contains(got, "(some findings files were unreadable)") || strings.Contains(got, "claim behind the symlink") {
+			t.Fatalf("block = %s", got)
+		}
+	})
+
 	t.Run("lone non-regular file is unavailable", func(t *testing.T) {
 		dir := testStageDir(t, "focused")
 		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[0]))
