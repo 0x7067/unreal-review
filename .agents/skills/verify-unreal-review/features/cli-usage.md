@@ -44,5 +44,5 @@ Preconditions:
 ## Gotchas
 
 - `cli.sh --name usage-required --` invokes the binary with no command. `cli.sh` still exits 0; the CLI status is `exit.txt`.
-- `run -h` prints flag usage on stderr and exits 1 (`unreal-review: flag: help requested`). Flag parsing still runs before the model check, so no model error appears even when `UNREAL_HARNESS_LLM_MODEL` is unset. Top-level `help`/`-h`/`--help` and the `render` help aliases (`render help`, `render -h`, `render --help`) exit 0.
+- `run -h`, `group -h`, `eval -h`, `render markdown -h`, and `render github -h` print that command's flag usage once and exit 0. There is no `unreal-review: flag: help requested` line. Flag parsing still runs before the model check, so no model error appears even when `UNREAL_HARNESS_LLM_MODEL` is unset. Top-level `help`/`-h`/`--help` and `render help` / `render -h` / `render --help` exit 0; the render aliases print the same usage as top-level `help`.
 - Flag parse errors (empty `--exclude`) print Go `flag` usage on stderr in addition to `unreal-review: …`.

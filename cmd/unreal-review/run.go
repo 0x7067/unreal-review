@@ -36,7 +36,7 @@ func cmdRun(args []string) error {
 	timeout := fs.Duration("timeout", 20*time.Minute, "timeout for the whole review")
 	agentLog := fs.String("agent-log", "", "optional path for the harness session JSONL log")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return successOnHelp(err)
 	}
 	if *model == "" {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")

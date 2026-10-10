@@ -51,7 +51,7 @@ func cmdEval(args []string) error {
 	only := fs.String("cases", "", "comma-separated case names for the selected corpus (default: all)")
 	judgeModel := fs.String("judge-model", "anthropic/claude-sonnet-5.5", "OpenRouter model that matches martian findings to golden comments")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return successOnHelp(err)
 	}
 	switch *corpus {
 	case "planted", "martian":

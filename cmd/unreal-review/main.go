@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 )
@@ -97,4 +99,12 @@ Environment:
   UNREAL_REVIEW_CONTEXT_WINDOW   default --context-window
   GH_TOKEN                       required for --pr and to post a GitHub review
 `)
+}
+
+// successOnHelp turns -h/--help into success. The flag set already printed usage.
+func successOnHelp(err error) error {
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	return err
 }
