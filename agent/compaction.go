@@ -251,11 +251,12 @@ func oneFileFindingsBlock(path string) string {
 
 // paths lists sibling discovery files in sorted base-name order, then the
 // current file. Sibling name order is deterministic, not chronological. The
-// current file is last and wins an id clash. Its findings take the newest
-// slots; siblings fill whatever remains of the 20.
+// current file is last and wins an id clash. Its findings are listed first
+// and take the first slots of the 20; other tasks fill the rest.
 func mergeStageFindings(paths []string, enumErr error) string {
 	var own, others []findings.Finding
 	failed := enumErr != nil
+	ownFailed := false
 	current := ""
 	if len(paths) > 0 {
 		current = paths[len(paths)-1]
@@ -268,16 +269,23 @@ func mergeStageFindings(paths []string, enumErr error) string {
 		if errors.Is(err, errNotStageFile) {
 			if path == current {
 				failed = true
+				ownFailed = true
 			}
 			continue
 		}
 		if err != nil {
 			failed = true
+			if path == current {
+				ownFailed = true
+			}
 			continue
 		}
 		report, err := parseFindingsBytes(raw)
 		if err != nil {
 			failed = true
+			if path == current {
+				ownFailed = true
+			}
 			continue
 		}
 		if path == current {
@@ -292,7 +300,8 @@ func mergeStageFindings(paths []string, enumErr error) string {
 		}
 	}
 	// An unlistable directory did not prove that other tasks recorded nothing.
-	block := formatTaskFindings(own, withoutFindingIDs(others, own), enumErr != nil && len(others) == 0)
+	// An unreadable own file is unavailable, not none.
+	block := formatTaskFindings(own, withoutFindingIDs(others, own), enumErr != nil && len(others) == 0, ownFailed)
 	// A partial list must not look complete. The current file being a symlink
 	// or other non-regular file counts; sibling symlinks stay skipped.
 	if failed {
@@ -301,10 +310,13 @@ func mergeStageFindings(paths []string, enumErr error) string {
 	return block
 }
 
-func formatTaskFindings(own, others []findings.Finding, othersUnreadable bool) string {
+func formatTaskFindings(own, others []findings.Finding, othersUnreadable, ownUnreadable bool) string {
 	ownShown, ownOmitted := newestFindings(own, maxRecordedFindings)
 	otherShown, otherOmitted := newestFindings(others, maxRecordedFindings-len(ownShown))
 	ownText := formatFindingGroup(ownFindingsLabel, ownShown, ownOmitted, true)
+	if ownUnreadable && len(ownShown) == 0 && ownOmitted == 0 {
+		ownText = ownFindingsLabel + " unavailable (findings file unreadable)."
+	}
 	otherText := formatFindingGroup(otherFindingsLabel, otherShown, otherOmitted, false)
 	if othersUnreadable && len(otherShown) == 0 && otherOmitted == 0 {
 		otherText = otherFindingsLabel + "\nunavailable (findings file unreadable)"

@@ -972,6 +972,44 @@ func TestStageFindingsBlock(t *testing.T) {
 		}
 	})
 
+	t.Run("unreadable own file is unavailable not none", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		appendClaim(t, filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), "ok", "readable sibling claim")
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[1]))
+		corrupt := "{\"v\":1,\"type\":\"finding\",\"id\":\"bad\",\"path\":\"agent/planned.go\",\"start_line\":4,\"end_line\":4,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"corrupt current claim\"}\n{\"v\":1,\"type\":\"finding\",\"path\":\n{\"v\":1,\"type\":\"finding\",\"id\":\"later\",\"path\":\"agent/planned.go\",\"start_line\":5,\"end_line\":5,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"later corrupt claim\"}\n"
+		if err := os.WriteFile(current, []byte(corrupt), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got := recordedFindingsBlock(current)
+		if !strings.Contains(got, "Findings YOU recorded in this task: unavailable (findings file unreadable).") || strings.Contains(got, "Findings YOU recorded in this task: none.") {
+			t.Fatalf("block = %s", got)
+		}
+		if !strings.Contains(got, "readable sibling claim") || !strings.Contains(got, "(some findings files were unreadable)") || strings.Contains(got, "corrupt current claim") {
+			t.Fatalf("block = %s", got)
+		}
+	})
+
+	t.Run("own findings fill the cap before other tasks", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		curLens, sibLens := focusedLenses[0], focusedLenses[1]
+		cur := filepath.Join(dir, focusedFindingsFile(curLens))
+		sib := filepath.Join(dir, focusedFindingsFile(sibLens))
+		for i := 1; i <= maxRecordedFindings+1; i++ {
+			appendClaim(t, cur, fmt.Sprintf("c-%02d", i), fmt.Sprintf("current claim %02d", i))
+		}
+		appendClaim(t, sib, "sib-a", "other task claim one")
+		appendClaim(t, sib, "sib-b", "other task claim two")
+		got := recordedFindingsBlock(cur)
+		otherAt := strings.Index(got, "Findings recorded by OTHER tasks")
+		if otherAt < 0 {
+			t.Fatalf("block = %s", got)
+		}
+		other := got[otherAt:]
+		if strings.Contains(other, "other task claim") || !strings.Contains(other, "omitted 2 older findings") || strings.Contains(other, "\n- ") {
+			t.Fatalf("other group = %s", other)
+		}
+	})
+
 	t.Run("unreadable current adds a note", func(t *testing.T) {
 		dir := testStageDir(t, "focused")
 		appendClaim(t, filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), "ok", "readable sibling claim")
