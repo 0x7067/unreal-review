@@ -79,6 +79,14 @@ func focusedHash(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:])
 }
+
+func focusedFindingsFile(stage string) string { return stage + ".jsonl" }
+
+func plannedDiscoveryFile(stage string) string { return focusedHash(stage) + ".jsonl" }
+
+func plannedAttemptFile(stage string, generation int) string {
+	return fmt.Sprintf("%s-%d.jsonl", focusedHash(stage), generation)
+}
 func focusedChild(root, stage string) string {
 	return focusedHash(root + "\x00" + focusedVersion + "\x00" + stage)
 }
@@ -162,7 +170,7 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 	if err := save(); err != nil {
 		return result, err
 	}
-	stagePath := func(stage string) string { return filepath.Join(dir, stage+".jsonl") }
+	stagePath := func(stage string) string { return filepath.Join(dir, focusedFindingsFile(stage)) }
 	for stage, s := range m.Stages {
 		known := stage == "verification"
 		for _, lens := range focusedLenses {

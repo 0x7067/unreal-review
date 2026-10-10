@@ -273,10 +273,10 @@ func (p Planned) Run(ctx context.Context, req review.AgentRequest) (result revie
 	}
 	execute := func(job plannedJob) plannedOutcome {
 		generation := job.generation
-		name := focusedHash(job.stage) + ".jsonl"
+		name := plannedDiscoveryFile(job.stage)
 		childGeneration := 0 // Discovery continuations keep their original session.
 		if !job.discovery {
-			name = fmt.Sprintf("%s-%d.jsonl", focusedHash(job.stage), generation)
+			name = plannedAttemptFile(job.stage, generation)
 			childGeneration = generation
 		}
 		path := filepath.Join(dir, name)

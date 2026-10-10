@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/unreallabsai/unreal-agent/harness/llm"
+	"golang.org/x/sys/unix"
 
 	"github.com/0x7067/unreal-review/findings"
 	"github.com/0x7067/unreal-review/review"
@@ -689,8 +690,8 @@ func TestRunCompactionListsSiblingStageFindings(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	appendClaim(t, filepath.Join(dir, "correctness.jsonl"), "stage-a", "stage A recorded a cancel leak")
-	current := filepath.Join(dir, "verification.jsonl")
+	appendClaim(t, filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), "stage-a", "stage A recorded a cancel leak")
+	current := filepath.Join(dir, focusedFindingsFile(focusedLenses[1]))
 	if err := os.WriteFile(current, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -730,10 +731,10 @@ func TestRunCompactionListsSiblingStageFindings(t *testing.T) {
 }
 
 func TestStageFindingsBlock(t *testing.T) {
-	t.Run("empty current stage lists earlier stage", func(t *testing.T) {
+	t.Run("discovery lists sibling discovery findings", func(t *testing.T) {
 		dir := testStageDir(t, "focused")
-		appendClaim(t, filepath.Join(dir, "correctness.jsonl"), "stage-a", "stage A recorded a cancel leak")
-		current := filepath.Join(dir, "verification.jsonl")
+		appendClaim(t, filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), "stage-a", "stage A recorded a cancel leak")
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[1]))
 		if err := os.WriteFile(current, nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -744,44 +745,49 @@ func TestStageFindingsBlock(t *testing.T) {
 		}
 	})
 
-	t.Run("dedupes and keeps recorded order", func(t *testing.T) {
+	t.Run("current stage wins over a later sibling name", func(t *testing.T) {
 		dir := testStageDir(t, "focused")
-		appendClaim(t, filepath.Join(dir, "contracts-tests.jsonl"), "only-contracts", "contracts lens claim")
-		appendClaim(t, filepath.Join(dir, "contracts-tests.jsonl"), "shared", "stale shared claim")
-		appendClaim(t, filepath.Join(dir, "correctness.jsonl"), "shared", "latest shared claim")
-		appendClaim(t, filepath.Join(dir, "correctness.jsonl"), "only-correctness", "correctness lens claim")
-		got := recordedFindingsBlock(filepath.Join(dir, "correctness.jsonl"))
-		want := strings.Join([]string{
-			"Findings already recorded:",
-			"- agent/planned.go:10-12 contracts lens claim",
-			"- agent/planned.go:10-12 latest shared claim",
-			"- agent/planned.go:10-12 correctness lens claim",
-		}, "\n")
-		if got != want {
-			t.Fatalf("block = %q", got)
+		curLens, sibLens := focusedLenses[0], focusedLenses[1]
+		if focusedFindingsFile(sibLens) < focusedFindingsFile(curLens) {
+			curLens, sibLens = sibLens, curLens
 		}
-	})
-
-	t.Run("newest 20 across files", func(t *testing.T) {
-		dir := testStageDir(t, "focused")
-		for i := 1; i <= 12; i++ {
-			appendClaim(t, filepath.Join(dir, "contracts-tests.jsonl"), fmt.Sprintf("c-%02d", i), fmt.Sprintf("claim c-%02d", i))
-		}
-		for i := 1; i <= 13; i++ {
-			appendClaim(t, filepath.Join(dir, "correctness.jsonl"), fmt.Sprintf("k-%02d", i), fmt.Sprintf("claim k-%02d", i))
-		}
-		got := recordedFindingsBlock(filepath.Join(dir, "correctness.jsonl"))
-		if !strings.Contains(got, "claim c-06") || !strings.Contains(got, "claim k-13") || !strings.Contains(got, "omitted 5 older findings") {
+		appendClaim(t, filepath.Join(dir, focusedFindingsFile(sibLens)), "shared", "sibling copy of the shared finding")
+		appendClaim(t, filepath.Join(dir, focusedFindingsFile(sibLens)), "sib-only", "sibling only claim")
+		current := filepath.Join(dir, focusedFindingsFile(curLens))
+		appendClaim(t, current, "shared", "current copy of the shared finding")
+		got := recordedFindingsBlock(current)
+		if !strings.Contains(got, "current copy of the shared finding") || !strings.Contains(got, "sibling only claim") {
 			t.Fatalf("block = %s", got)
 		}
-		if strings.Contains(got, "claim c-05") || strings.Index(got, "claim c-06") > strings.Index(got, "claim k-01") {
+		if strings.Contains(got, "sibling copy of the shared finding") || strings.Index(got, "sibling only claim") > strings.Index(got, "current copy of the shared finding") {
 			t.Fatalf("block = %s", got)
 		}
 	})
 
-	t.Run("skips torn corrupt and unrelated files", func(t *testing.T) {
+	t.Run("current findings fill the newest slots", func(t *testing.T) {
 		dir := testStageDir(t, "focused")
-		kept := filepath.Join(dir, "failures.jsonl")
+		curLens, sibLens := focusedLenses[0], focusedLenses[1]
+		if focusedFindingsFile(sibLens) < focusedFindingsFile(curLens) {
+			curLens, sibLens = sibLens, curLens
+		}
+		sib := filepath.Join(dir, focusedFindingsFile(sibLens))
+		cur := filepath.Join(dir, focusedFindingsFile(curLens))
+		for i := 1; i <= 15; i++ {
+			appendClaim(t, sib, fmt.Sprintf("s-%02d", i), fmt.Sprintf("sibling claim %02d", i))
+			appendClaim(t, cur, fmt.Sprintf("c-%02d", i), fmt.Sprintf("current claim %02d", i))
+		}
+		got := recordedFindingsBlock(cur)
+		if !strings.Contains(got, "current claim 01") || !strings.Contains(got, "current claim 15") || !strings.Contains(got, "sibling claim 11") || !strings.Contains(got, "omitted 10 older findings") {
+			t.Fatalf("block = %s", got)
+		}
+		if strings.Contains(got, "sibling claim 10") {
+			t.Fatalf("block = %s", got)
+		}
+	})
+
+	t.Run("skips torn corrupt unrelated and symlink files", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		kept := filepath.Join(dir, focusedFindingsFile(focusedLenses[1]))
 		appendClaim(t, kept, "kept", "kept torn-file claim")
 		f, err := os.OpenFile(kept, os.O_APPEND|os.O_WRONLY, 0)
 		if err != nil {
@@ -794,30 +800,26 @@ func TestStageFindingsBlock(t *testing.T) {
 			t.Fatal(err)
 		}
 		corrupt := "{\"v\":1,\"type\":\"finding\",\"id\":\"bad\",\"path\":\"agent/planned.go\",\"start_line\":4,\"end_line\":4,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"corrupt file claim\"}\n{\"v\":1,\"type\":\"finding\",\"path\":\n{\"v\":1,\"type\":\"finding\",\"id\":\"later\",\"path\":\"agent/planned.go\",\"start_line\":5,\"end_line\":5,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"later corrupt claim\"}\n"
-		if err := os.WriteFile(filepath.Join(dir, "security-data.jsonl"), []byte(corrupt), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, focusedFindingsFile(focusedLenses[2])), []byte(corrupt), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		notes := "{\"v\":1,\"type\":\"finding\",\"id\":\"notes\",\"path\":\"agent/planned.go\",\"start_line\":1,\"end_line\":1,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"unrelated notes claim\"}\n"
-		if err := os.WriteFile(filepath.Join(dir, "notes.jsonl"), []byte(notes), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "notes.jsonl"), []byte("{\"v\":1,\"type\":\"finding\",\"id\":\"notes\",\"path\":\"agent/planned.go\",\"start_line\":1,\"end_line\":1,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"unrelated notes claim\"}\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte("{\"secret\":\"manifest claim\"}\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "receipt-abc.json"), []byte("{\"body\":\"receipt claim\"}\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		outside := filepath.Join(filepath.Dir(dir), focusedHash("other-run"), "correctness.jsonl")
+		outside := filepath.Join(filepath.Dir(dir), focusedHash("other-run"), focusedFindingsFile(focusedLenses[0]))
 		if err := os.MkdirAll(filepath.Dir(outside), 0o700); err != nil {
 			t.Fatal(err)
 		}
 		appendClaim(t, outside, "other", "other run claim")
 		escaped := filepath.Join(t.TempDir(), "escaped.jsonl")
 		appendClaim(t, escaped, "escaped", "escaped symlink claim")
-		if err := os.Symlink(escaped, filepath.Join(dir, "contracts-tests.jsonl")); err != nil {
+		if err := os.Symlink(escaped, filepath.Join(dir, focusedFindingsFile(focusedLenses[3]))); err != nil {
 			t.Fatal(err)
 		}
-		current := filepath.Join(dir, "verification.jsonl")
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[0]))
 		if err := os.WriteFile(current, nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -825,30 +827,87 @@ func TestStageFindingsBlock(t *testing.T) {
 		if !strings.Contains(got, "kept torn-file claim") {
 			t.Fatalf("block = %s", got)
 		}
-		for _, absent := range []string{
-			"corrupt file claim",
-			"later corrupt claim",
-			"unrelated notes claim",
-			"manifest claim",
-			"receipt claim",
-			"other run claim",
-			"escaped symlink claim",
-			"Findings already recorded: none.",
-		} {
+		for _, absent := range []string{"corrupt file claim", "later corrupt claim", "unrelated notes claim", "manifest claim", "other run claim", "escaped symlink claim", "Findings already recorded: none."} {
 			if strings.Contains(got, absent) {
 				t.Fatalf("block contains %q\n%s", absent, got)
 			}
 		}
 	})
 
-	t.Run("only corrupt files are unavailable", func(t *testing.T) {
+	t.Run("verifier and verification ignore siblings", func(t *testing.T) {
+		focusedDir := testStageDir(t, "focused")
+		appendClaim(t, filepath.Join(focusedDir, focusedFindingsFile(focusedLenses[0])), "lens", "lens discovery candidate")
+		verification := filepath.Join(focusedDir, focusedFindingsFile("verification"))
+		appendClaim(t, verification, "own", "verification own claim")
+		got := recordedFindingsBlock(verification)
+		if !strings.Contains(got, "verification own claim") || strings.Contains(got, "lens discovery candidate") {
+			t.Fatalf("verification block = %s", got)
+		}
+
+		plannedDir := testStageDir(t, "planned")
+		appendClaim(t, filepath.Join(plannedDir, plannedDiscoveryFile("task:discover")), "disc", "planned discovery candidate")
+		appendClaim(t, filepath.Join(plannedDir, plannedAttemptFile("task:verify", 10)), "old", "earlier attempt claim")
+		attempt := filepath.Join(plannedDir, plannedAttemptFile("task:verify", 2))
+		appendClaim(t, attempt, "own", "verifier own claim")
+		got = recordedFindingsBlock(attempt)
+		if !strings.Contains(got, "verifier own claim") || strings.Contains(got, "planned discovery candidate") || strings.Contains(got, "earlier attempt claim") {
+			t.Fatalf("attempt block = %s", got)
+		}
+	})
+
+	t.Run("planned generation files stay out of discovery", func(t *testing.T) {
+		dir := testStageDir(t, "planned")
+		appendClaim(t, filepath.Join(dir, plannedDiscoveryFile("task:sibling")), "sib", "planned sibling discovery claim")
+		appendClaim(t, filepath.Join(dir, plannedDiscoveryFile("task:sibling")), "shared", "sibling shared claim")
+		appendClaim(t, filepath.Join(dir, plannedAttemptFile("task:sibling", 10)), "gen10", "generation 10 claim")
+		appendClaim(t, filepath.Join(dir, plannedAttemptFile("task:current", 2)), "gen2", "generation 2 claim")
+		current := filepath.Join(dir, plannedDiscoveryFile("task:current"))
+		appendClaim(t, current, "shared", "current shared claim")
+		got := recordedFindingsBlock(current)
+		if !strings.Contains(got, "planned sibling discovery claim") || !strings.Contains(got, "current shared claim") {
+			t.Fatalf("block = %s", got)
+		}
+		for _, absent := range []string{"sibling shared claim", "generation 10 claim", "generation 2 claim"} {
+			if strings.Contains(got, absent) {
+				t.Fatalf("block contains %q\n%s", absent, got)
+			}
+		}
+	})
+
+	t.Run("unrecognized current name keeps its findings", func(t *testing.T) {
 		dir := testStageDir(t, "focused")
-		body := "{\"v\":1,\"type\":\"finding\",\"id\":\"a\",\"path\":\"agent/planned.go\",\"start_line\":1,\"end_line\":1,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"kept claim\"}\n{\"v\":1,\"type\":\"finding\",\"path\":\n{\"v\":1,\"type\":\"finding\",\"id\":\"b\",\"path\":\"agent/planned.go\",\"start_line\":2,\"end_line\":2,\"anchor\":\"new\",\"severity\":\"warning\",\"body\":\"later claim\"}\n"
-		current := filepath.Join(dir, "verification.jsonl")
-		if err := os.WriteFile(current, []byte(body), 0o600); err != nil {
+		appendClaim(t, filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), "sib", "sibling discovery claim")
+		current := filepath.Join(dir, "not-a-stage.jsonl")
+		appendClaim(t, current, "cur", "drifted current claim")
+		got := recordedFindingsBlock(current)
+		if !strings.Contains(got, "drifted current claim") || strings.Contains(got, "sibling discovery claim") {
+			t.Fatalf("block = %s", got)
+		}
+	})
+
+	t.Run("window cut inside a record", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[0]))
+		line := claimLine(t, "kept", "kept after cut")
+		garbage := maxStageFindingBytes - len(line) - 1
+		if garbage < 1 {
+			t.Fatal("finding line fills the window")
+		}
+		window := strings.Repeat("x", garbage) + "\n" + line
+		body := append([]byte(`{"v":1,"type":"finding","body":"cut claim"`), []byte(window)...)
+		if err := os.WriteFile(current, body, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "correctness.jsonl"), []byte(body), 0o600); err != nil {
+		got := recordedFindingsBlock(current)
+		if !strings.Contains(got, "kept after cut") || strings.Contains(got, "cut claim") {
+			t.Fatalf("block = %s", got)
+		}
+	})
+
+	t.Run("record longer than the window is not none", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[0]))
+		if err := os.WriteFile(current, []byte("{"+strings.Repeat("y", maxStageFindingBytes+32)), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		got := recordedFindingsBlock(current)
@@ -857,54 +916,39 @@ func TestStageFindingsBlock(t *testing.T) {
 		}
 	})
 
-	t.Run("empty stage files say none", func(t *testing.T) {
-		dir := testStageDir(t, "focused")
-		current := filepath.Join(dir, "verification.jsonl")
-		if err := os.WriteFile(current, []byte("{\"v\":1,\"type\":\"run\",\"status\":\"running\"}\n"), 0o600); err != nil {
+	t.Run("symlinked stage directory does not list siblings", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		real := filepath.Join(home, "outside")
+		if err := os.MkdirAll(real, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "correctness.jsonl"), nil, 0o600); err != nil {
+		link := filepath.Join(home, sessionDirectoryName, "focused", focusedHash("same-run"))
+		if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.Symlink(real, link); err != nil {
+			t.Fatal(err)
+		}
+		appendClaim(t, filepath.Join(link, focusedFindingsFile(focusedLenses[0])), "sib", "sibling through symlink")
+		current := filepath.Join(link, focusedFindingsFile(focusedLenses[1]))
+		appendClaim(t, current, "own", "own claim through symlink")
 		got := recordedFindingsBlock(current)
-		if got != "Findings already recorded: none." {
-			t.Fatalf("block = %q", got)
+		if !strings.Contains(got, "own claim through symlink") || strings.Contains(got, "sibling through symlink") {
+			t.Fatalf("block = %s", got)
 		}
 	})
 
-	t.Run("planned child names and a long tail", func(t *testing.T) {
-		dir := testStageDir(t, "planned")
-		early := filepath.Join(dir, focusedHash("task:early")+".jsonl")
-		later := filepath.Join(dir, focusedHash("task:later")+"-0.jsonl")
-		appendClaim(t, early, "early", "early planned claim")
-		pad, err := os.OpenFile(early, os.O_APPEND|os.O_WRONLY, 0)
-		if err != nil {
+	t.Run("fifo in the stage directory does not hang", func(t *testing.T) {
+		dir := testStageDir(t, "focused")
+		if err := unix.Mkfifo(filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := pad.Write(bytes.Repeat([]byte{'\n'}, maxStageFindingBytes)); err != nil {
-			t.Fatal(err)
-		}
-		if err := pad.Close(); err != nil {
-			t.Fatal(err)
-		}
-		appendClaim(t, early, "tail", "tail planned claim")
-		appendClaim(t, later, "later", "later planned claim")
-		if err := os.WriteFile(filepath.Join(dir, "agent.jsonl"), []byte("{\"text\":\"agent log claim\"}\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		got := recordedFindingsBlock(later)
-		if strings.Contains(got, "early planned claim") || strings.Contains(got, "agent log claim") || strings.Contains(got, "Findings already recorded: none.") {
-			t.Fatalf("block = %s", got)
-		}
-		if !strings.Contains(got, "tail planned claim") || !strings.Contains(got, "later planned claim") {
-			t.Fatalf("block = %s", got)
-		}
-		earlyName := filepath.Base(early)
-		laterName := filepath.Base(later)
-		tailAt := strings.Index(got, "tail planned claim")
-		laterAt := strings.Index(got, "later planned claim")
-		if (earlyName < laterName && tailAt > laterAt) || (earlyName > laterName && tailAt < laterAt) {
-			t.Fatalf("names %s %s block %s", earlyName, laterName, got)
+		current := filepath.Join(dir, focusedFindingsFile(focusedLenses[1]))
+		appendClaim(t, current, "own", "claim beside a fifo")
+		got := recordedFindingsBlock(current)
+		if got != "Findings already recorded:\n- agent/planned.go:10-12 claim beside a fifo" {
+			t.Fatalf("block = %q", got)
 		}
 	})
 
@@ -912,7 +956,7 @@ func TestStageFindingsBlock(t *testing.T) {
 		dir := t.TempDir()
 		current := filepath.Join(dir, "findings.jsonl")
 		appendClaim(t, current, "current", "current stage claim")
-		appendClaim(t, filepath.Join(dir, "correctness.jsonl"), "neighbor", "neighbor stage claim")
+		appendClaim(t, filepath.Join(dir, focusedFindingsFile(focusedLenses[0])), "neighbor", "neighbor stage claim")
 		got := recordedFindingsBlock(current)
 		want := "Findings already recorded:\n- agent/planned.go:10-12 current stage claim"
 		if got != want {
@@ -940,4 +984,15 @@ func appendClaim(t *testing.T, path, id, body string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func claimLine(t *testing.T, id, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "one.jsonl")
+	appendClaim(t, path, id, body)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }
