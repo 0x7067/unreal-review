@@ -15,9 +15,6 @@ def side(a: F.Anchor) -> Side:
 def cap50() -> Nat:
   50n
 
-def underCap(n: Nat) -> Bool:
-  Nat.is_le(n, cap50())
-
 type Flags is Data:
   Flags{posted: Bool, commentable: Bool}
 

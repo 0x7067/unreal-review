@@ -25,16 +25,6 @@ type Source is Data:
 type Cost is Data:
   Cost{amount: Nat, input: Nat, output: Nat, reasoning: Nat, cached: Nat, requests: Nat}
 
-type Fid is Data:
-  NoId{}
-  Id{n: Nat}
-
-type Finding is Data:
-  Finding{id: Fid, start_pred: Nat, extra: Nat, anchor: Anchor, severity: Severity}
-
-type Report is Data:
-  Report{status: Status, source: Source, cost: Cost, summary: Bool, findings: List<&2, Finding>}
-
 def complete(s: Status) -> Bool:
   match s:
     case StatusNone{}:
@@ -108,27 +98,6 @@ def hashEqRefl(h: Hash) -> {hashEq(h, h) == True{} : Bool}:
   match h:
     case Hash{n}:
       N.eqRefl(n)
-
-def mergePairBoth(a: Finding, b: Finding, eq: Bool) -> List<&2, Finding>:
-  match eq:
-    case True{}:
-      [b]
-    case False{}:
-      [a, b]
-
-def mergePairId(n: Nat, a: Finding, b: Finding) -> List<&2, Finding>:
-  match b:
-    case Finding{NoId{}, sp, ex, an, sv}:
-      [a, Finding{NoId{}, sp, ex, an, sv}]
-    case Finding{Id{+m}, sp, ex, an, sv}:
-      mergePairBoth(a, Finding{Id{m}, sp, ex, an, sv}, Nat.is_eq(n, m))
-
-def mergePair(a: Finding, b: Finding) -> List<&2, Finding>:
-  match a:
-    case Finding{NoId{}, sp, ex, an, sv}:
-      [Finding{NoId{}, sp, ex, an, sv}, b]
-    case Finding{Id{+n}, sp, ex, an, sv}:
-      mergePairId(n, Finding{Id{n}, sp, ex, an, sv}, b)
 
 def sameDiffReflH(+ba: Hash, +ha: Hash, +da: Hash) -> {sameDiff(Source{ba, ha, da}, Source{ba, ha, da}) == True{} : Bool}:
   %Equal.sym(Bool, hashEq(ba, ba), True{}, hashEqRefl(ba)) : {Bool.and(_, Bool.and(hashEq(ha, ha), hashEq(da, da))) == True{} : Bool}
