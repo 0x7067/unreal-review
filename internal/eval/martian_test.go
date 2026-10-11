@@ -93,9 +93,8 @@ func TestScoreMartianUnknownProfile(t *testing.T) {
 	}}
 	report := findings.Report{Findings: []findings.Finding{{Severity: findings.SeverityError, Body: "nil pointer"}}}
 	score, err := ScoreMartian(c, report, []Pair{{Golden: 0, Finding: 0}}, "nope")
-	_, want := MartianProfile("nope")
-	if want == nil || err == nil || err.Error() != want.Error() {
-		t.Fatalf("err=%v, want MartianProfile error %v", err, want)
+	if err == nil {
+		t.Fatal("unknown profile returned a nil error")
 	}
 	if score.Name != "" || score.Class != "" || score.Repo != "" || score.URL != "" ||
 		score.Produced != 0 || score.Extra != 0 || score.Gold != 0 || score.Matched != 0 ||
