@@ -5,6 +5,7 @@ The CLI prints usage on stdout for `help` and on stderr when a command is missin
 ## Sub-features
 
 - `usage-help` prints usage on stdout and exits 0.
+- `run-help` prints `run -h` flag usage once and exits 0.
 - `usage-required` prints usage on stderr and exits 1 when no command is given.
 - `usage-unknown` names the unknown command and exits 1.
 - `run-model` refuses `run` without `--model` or `UNREAL_HARNESS_LLM_MODEL`.
@@ -31,6 +32,7 @@ Preconditions:
 - This recipe unsets `UNREAL_HARNESS_LLM_MODEL` where noted so the model gate is visible.
 
 - **Help.** Run `unreal-review help`. Run `scripts/cli.sh --name usage-help -- help`. Exit code `0`. `stdout.txt` contains `Usage:`, `unreal-review run`, and `unreal-review group`.
+- **Run help.** Run `scripts/cli.sh --name run-help -- run -h`. Exit code `0`. `stderr.txt` contains `Usage of run:` once and lacks `flag: help requested`.
 - **Missing command.** Run `unreal-review` with no args. Run `scripts/cli.sh --name usage-required --`. `exit.txt` is `1`. `stderr.txt` ends with `unreal-review: command required`.
 - **Unknown command.** Run `scripts/cli.sh --name usage-unknown -- frob`. Exit code `1`. `stderr.txt` contains `unreal-review: unknown command "frob"`.
 - **Missing model.** Run `env -u UNREAL_HARNESS_LLM_MODEL scripts/cli.sh --name run-model -- run --workspace "$VERIFY_SCRATCH" --out "$VERIFY_SCRATCH/unused.jsonl"`. Exit code `1`. `stderr.txt` contains `unreal-review: set --model or UNREAL_HARNESS_LLM_MODEL`.
@@ -44,5 +46,5 @@ Preconditions:
 ## Gotchas
 
 - `cli.sh --name usage-required --` invokes the binary with no command. `cli.sh` still exits 0; the CLI status is `exit.txt`.
-- `run -h`, `group -h`, `eval -h`, `render markdown -h`, and `render github -h` print that command's flag usage once and exit 0. There is no `unreal-review: flag: help requested` line. Flag parsing still runs before the model check, so no model error appears even when `UNREAL_HARNESS_LLM_MODEL` is unset. Top-level `help`/`-h`/`--help` and `render help` / `render -h` / `render --help` exit 0; the render aliases print the same usage as top-level `help`.
+- `group -h`, `eval -h`, `render markdown -h`, and `render github -h` print that command's flag usage once and exit 0. There is no `unreal-review: flag: help requested` line. Flag parsing still runs before the model check, so no model error appears even when `UNREAL_HARNESS_LLM_MODEL` is unset. Top-level `help`/`-h`/`--help` and `render help` / `render -h` / `render --help` exit 0; the render aliases print the same usage as top-level `help`.
 - Flag parse errors (empty `--exclude`) print Go `flag` usage on stderr in addition to `unreal-review: …`.
