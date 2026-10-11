@@ -452,7 +452,7 @@ expect eval-corpus.md "set OPENROUTER_API_KEY" "$(stderr_of eval-key)" "eval-key
 
 OPENROUTER_API_KEY=dummy cli --name eval-corpus -- eval --model x --corpus bogus --out "$VERIFY_SCRATCH/e"
 require_exit eval-corpus 1
-expect eval-corpus.md 'unknown corpus "bogus": use planted or martian' "$(stderr_of eval-corpus)" "eval-corpus"
+expect eval-corpus.md 'unknown corpus "bogus": use planted, martian, or pr38' "$(stderr_of eval-corpus)" "eval-corpus"
 
 OPENROUTER_API_KEY=dummy cli --name eval-cases -- eval --model x --cases nosuch --out "$VERIFY_SCRATCH/e"
 require_exit eval-cases 1

@@ -36,7 +36,7 @@ func TestEvalUnknownCorpusLeavesNoDirectory(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "artifacts")
 	before := evalScratchDirs(t)
 	err := cmdEval([]string{"--corpus", "nope", "--out", out})
-	if err == nil || err.Error() != `unknown corpus "nope": use planted or martian` {
+	if err == nil || err.Error() != `unknown corpus "nope": use planted, martian, or pr38` {
 		t.Fatalf("cmdEval(--out) = %v", err)
 	}
 	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
@@ -44,7 +44,7 @@ func TestEvalUnknownCorpusLeavesNoDirectory(t *testing.T) {
 	}
 
 	err = cmdEval([]string{"--corpus", "nope"})
-	if err == nil || err.Error() != `unknown corpus "nope": use planted or martian` {
+	if err == nil || err.Error() != `unknown corpus "nope": use planted, martian, or pr38` {
 		t.Fatalf("cmdEval() = %v", err)
 	}
 	for dir := range evalScratchDirs(t) {
@@ -53,10 +53,10 @@ func TestEvalUnknownCorpusLeavesNoDirectory(t *testing.T) {
 		}
 	}
 
-	for _, corpus := range []string{"planted", "martian"} {
+	for _, corpus := range []string{"planted", "martian", "pr38"} {
 		dir := filepath.Join(t.TempDir(), "artifacts")
 		err = cmdEval([]string{"--corpus", corpus, "--out", dir})
-		if err == nil || err.Error() == `unknown corpus "`+corpus+`": use planted or martian` {
+		if err == nil || err.Error() == `unknown corpus "`+corpus+`": use planted, martian, or pr38` {
 			t.Fatalf("corpus %s: %v", corpus, err)
 		}
 		if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
@@ -110,6 +110,41 @@ func TestEvalBadMartianFlagsLeaveNoDirectory(t *testing.T) {
 				t.Fatalf("--out exists after %s: %v", check.want, statErr)
 			}
 
+			err = cmdEval(check.args)
+			if err == nil || err.Error() != check.want {
+				t.Fatalf("cmdEval() = %v", err)
+			}
+			for dir := range evalScratchDirs(t) {
+				if _, ok := before[dir]; !ok {
+					t.Fatalf("%s left %s", check.want, dir)
+				}
+			}
+		})
+	}
+}
+
+func TestEvalRunsFlagLeavesNoDirectory(t *testing.T) {
+	t.Setenv("UNREAL_HARNESS_LLM_MODEL", "")
+
+	checks := []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"--corpus", "pr38", "--runs", "0"}, want: "--runs must be at least 1"},
+		{args: []string{"--corpus", "planted", "--runs", "3"}, want: "--runs applies to the pr38 corpus"},
+		{args: []string{"--corpus", "martian", "--runs", "2"}, want: "--runs applies to the pr38 corpus"},
+	}
+	for _, check := range checks {
+		t.Run(check.want, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "artifacts")
+			before := evalScratchDirs(t)
+			err := cmdEval(append(append([]string{}, check.args...), "--out", out))
+			if err == nil || err.Error() != check.want {
+				t.Fatalf("cmdEval(--out) = %v", err)
+			}
+			if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
+				t.Fatalf("--out exists after %s: %v", check.want, statErr)
+			}
 			err = cmdEval(check.args)
 			if err == nil || err.Error() != check.want {
 				t.Fatalf("cmdEval() = %v", err)

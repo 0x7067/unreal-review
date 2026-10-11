@@ -200,6 +200,15 @@ and was exported as an empty review. Automatic bounded decomposition now covers
 that size class, but it still requires a new measured benchmark run. Martian
 runner scoring cost is not recorded by the runner.
 
+### PR #38 labeled regression
+
+```sh
+OPENROUTER_API_KEY=... UNREAL_HARNESS_LLM_MODEL=openai/gpt-6-luna-pro unreal-review eval --corpus pr38 --runs 3
+unreal-review eval --corpus pr38 --runs 3 --json --model openai/gpt-6-luna-pro
+```
+
+`--corpus pr38` checks out pull request #38 (`942c78c3`..`107a3230`) with the same shallow fetch and synthetic head as a Martian case, reviews that range, and scores the findings against eight labels taken from paid runs of this repository on that range. Five labels are `real` (recall is how many of those five a run's findings overlap): dropping `Fresh: true`, treating an unborn `.git/HEAD` as initialized, a planned root prompt the verifier uses without PR text or already-reported findings, the findings exclude file growing on retry, and a reused fixture directory resetting back to a stale base. Three are `weak` false-positive sites: workspace revalidation of `HEAD`, receipt or manifest save failure versus the cost ledger, and the `strategy.go` timeout shuffle, which is dead because the planned runner applies the deadline on the direct path too. Precision is real-label hits divided by real-label hits plus findings that overlap a weak label. Findings that match no label are `unlabeled` and are not counted as errors or in that precision. The report also gives the share of findings rated `error`, the finding count, and cost in USD, requests, and wall time. `--runs N` repeats the same review and prints each run, the mean, and the union of real labels hit. On `openai/gpt-6-luna-pro` those runs cost about $0.45 to $0.55 each. The labels are judgments of what those runs reported, not a complete list of defects in the diff.
+
 ## Findings file
 
 The JSONL schema is the product. Renderers turn it into GitHub comments, markdown, or another display. See [schema/findings-v1.md](schema/findings-v1.md).
