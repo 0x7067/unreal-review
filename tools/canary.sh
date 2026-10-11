@@ -115,6 +115,15 @@ require_absent() {
 	fi
 }
 
+require_count() {
+	local file=$1 needle=$2 want=$3 label=$4
+	local got
+	got=$(grep -F -c -e "$needle" "$file" || true)
+	if [ "$got" != "$want" ]; then
+		miss "$label count of [$needle]=$got want=$want"
+	fi
+}
+
 require_exit() {
 	local name=$1 want=$2
 	local got
@@ -385,6 +394,13 @@ expect cli-usage.md "Usage:" "$(stdout_of usage-help)" "usage-help"
 expect cli-usage.md "unreal-review run" "$(stdout_of usage-help)" "usage-help"
 expect cli-usage.md "unreal-review group" "$(stdout_of usage-help)" "usage-help"
 
+cli --name run-help -- run -h
+require_exit run-help 0
+feature_has cli-usage.md "Usage of run:"
+feature_has cli-usage.md "flag: help requested"
+require_count "$(stderr_of run-help)" "Usage of run:" 1 "run-help"
+require_absent "$(stderr_of run-help)" "flag: help requested" "run-help"
+
 cli --name usage-required --
 require_exit usage-required 1
 feature_has cli-usage.md 'unreal-review: command required'
@@ -421,6 +437,26 @@ expect cli-usage.md "empty --exclude" "$(stderr_of run-exclude-empty)" "run-excl
 cli --name render-unknown -- render html
 require_exit render-unknown 1
 expect cli-usage.md 'unreal-review: unknown render target "html"' "$(stderr_of render-unknown)" "render-unknown"
+
+cli --name render-required -- render
+require_exit render-required 1
+expect cli-usage.md "unreal-review: render target required: github or markdown" "$(stderr_of render-required)" "render-required"
+
+env -u UNREAL_HARNESS_LLM_MODEL "$SCRIPTS/cli.sh" --name eval-model -- eval --out "$VERIFY_SCRATCH/e"
+require_exit eval-model 1
+expect eval-corpus.md "set --model or UNREAL_HARNESS_LLM_MODEL" "$(stderr_of eval-model)" "eval-model"
+
+env -u OPENROUTER_API_KEY "$SCRIPTS/cli.sh" --name eval-key -- eval --model x --out "$VERIFY_SCRATCH/e"
+require_exit eval-key 1
+expect eval-corpus.md "set OPENROUTER_API_KEY" "$(stderr_of eval-key)" "eval-key"
+
+OPENROUTER_API_KEY=dummy cli --name eval-corpus -- eval --model x --corpus bogus --out "$VERIFY_SCRATCH/e"
+require_exit eval-corpus 1
+expect eval-corpus.md 'unknown corpus "bogus": use planted or martian' "$(stderr_of eval-corpus)" "eval-corpus"
+
+OPENROUTER_API_KEY=dummy cli --name eval-cases -- eval --model x --cases nosuch --out "$VERIFY_SCRATCH/e"
+require_exit eval-cases 1
+expect eval-corpus.md 'unknown planted case "nosuch"' "$(stderr_of eval-cases)" "eval-cases"
 
 say "review git range"
 OPENROUTER_API_KEY=dummy cli --name range-empty -- run --model x --workspace "$VERIFY_FIXTURE" --from HEAD --to HEAD --out "$VERIFY_SCRATCH/empty.jsonl"
