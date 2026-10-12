@@ -1,132 +1,143 @@
 package eval
 
 import (
+	"bytes"
+	"encoding/json"
 	"math"
 	"testing"
 
 	"github.com/0x7067/unreal-review/findings"
 )
 
+func pr38Finding(path string, start, end int, sev findings.Severity) findings.Finding {
+	return findings.Finding{Path: path, StartLine: start, EndLine: end, Severity: sev}
+}
+
+func pr38Run(status findings.Status, cost float64, requests int, items ...findings.Finding) findings.Report {
+	return findings.Report{Run: &findings.Run{Status: status, Cost: findings.Cost{AmountUSD: cost, Requests: requests}}, Findings: items}
+}
+
 func TestScorePR38CountsHitWeakUnlabeledAndErrorShare(t *testing.T) {
-	report := findings.Report{
-		Run: &findings.Run{Status: findings.StatusComplete, Cost: findings.Cost{AmountUSD: 0.48, Requests: 83}},
-		Findings: []findings.Finding{
-			{Path: "internal/eval/martian.go", StartLine: 335, EndLine: 335, Severity: findings.SeverityNote},
-			{Path: "internal/eval/eval.go", StartLine: 150, EndLine: 152, Severity: findings.SeverityError},
-			{Path: "internal/review/review.go", StartLine: 146, EndLine: 146, Severity: findings.SeverityWarning},
-			{Path: "internal/eval/eval.go", StartLine: 161, EndLine: 165, Severity: findings.SeverityNote},
-			{Path: "internal/review/review.go", StartLine: 162, EndLine: 165, Severity: findings.SeverityError},
-			{Path: "internal/agent/focused.go", StartLine: 260, EndLine: 264, Severity: findings.SeverityError},
-			{Path: "internal/agent/strategy.go", StartLine: 41, EndLine: 42, Severity: findings.SeverityError},
-			{Path: "internal/agent/planned.go", StartLine: 96, EndLine: 100, Severity: findings.SeverityError},
-		},
+	score := ScorePR38(pr38Run(findings.StatusComplete, 0.48, 83,
+		pr38Finding("internal/eval/martian.go", 335, 335, findings.SeverityNote),
+		pr38Finding("internal/eval/eval.go", 150, 152, findings.SeverityError),
+		pr38Finding("internal/review/review.go", 146, 146, findings.SeverityWarning),
+		pr38Finding("internal/eval/eval.go", 161, 165, findings.SeverityNote),
+		pr38Finding("internal/review/review.go", 162, 165, findings.SeverityError),
+		pr38Finding("internal/agent/focused.go", 260, 264, findings.SeverityError),
+		pr38Finding("internal/agent/strategy.go", 41, 42, findings.SeverityError),
+		pr38Finding("internal/agent/planned.go", 96, 100, findings.SeverityError),
+	))
+	if score.Hits != 4 || score.Real != 5 || score.Recall != 0.8 || score.Weak != 3 || score.Unlabeled != 1 || score.Produced != 8 {
+		t.Fatalf("hits=%d/%d recall=%v weak=%d unlabeled=%d produced=%d", score.Hits, score.Real, score.Recall, score.Weak, score.Unlabeled, score.Produced)
 	}
-	score := ScorePR38(report)
-	if score.Hits != 4 || score.Real != 5 || score.Recall != 0.8 {
-		t.Fatalf("hits=%d real=%d recall=%v, want 4/5 = 0.8 (F6 not cited)", score.Hits, score.Real, score.Recall)
+	if len(score.HitIDs) != 4 || score.HitIDs[0] != "F1" || score.HitIDs[1] != "F2" || score.HitIDs[2] != "F3" || score.HitIDs[3] != "F5" {
+		t.Fatalf("hit ids %v", score.HitIDs)
 	}
-	wantHits := []string{"F1", "F2", "F3", "F5"}
-	if len(score.HitIDs) != len(wantHits) {
-		t.Fatalf("hit ids %v, want %v", score.HitIDs, wantHits)
+	if score.Precision == nil || math.Abs(*score.Precision-4.0/7.0) > 1e-12 || math.Abs(score.ErrorShare-5.0/8.0) > 1e-12 {
+		t.Fatalf("precision=%v error=%v", score.Precision, score.ErrorShare)
 	}
-	for i, id := range wantHits {
-		if score.HitIDs[i] != id {
-			t.Fatalf("hit ids %v, want %v", score.HitIDs, wantHits)
-		}
-	}
-	if score.Weak != 3 || score.Unlabeled != 1 || score.Produced != 8 {
-		t.Fatalf("weak=%d unlabeled=%d produced=%d, want 3 1 8", score.Weak, score.Unlabeled, score.Produced)
-	}
-	if math.Abs(score.Precision-4.0/7.0) > 1e-12 {
-		t.Fatalf("precision=%v, want 4/7", score.Precision)
-	}
-	if math.Abs(score.WeakRate-3.0/8.0) > 1e-12 || math.Abs(score.UnlabeledRate-1.0/8.0) > 1e-12 {
-		t.Fatalf("weak rate=%v unlabeled rate=%v, want 3/8 and 1/8", score.WeakRate, score.UnlabeledRate)
-	}
-	if math.Abs(score.ErrorShare-5.0/8.0) > 1e-12 {
-		t.Fatalf("error share=%v, want 5/8", score.ErrorShare)
-	}
-	if score.CostUSD != 0.48 || score.Requests != 83 || score.Status != "complete" {
+	if score.CostUSD != 0.48 || score.Requests != 83 || !score.Completed() {
 		t.Fatalf("cost=%v requests=%d status=%s", score.CostUSD, score.Requests, score.Status)
 	}
-
-	bothSites := ScorePR38(findings.Report{Findings: []findings.Finding{
-		{Path: "internal/eval/eval.go", StartLine: 121, EndLine: 127, Severity: findings.SeverityError},
-		{Path: "internal/eval/martian.go", StartLine: 331, EndLine: 337, Severity: findings.SeverityError},
+	both := ScorePR38(findings.Report{Findings: []findings.Finding{
+		pr38Finding("internal/eval/eval.go", 121, 127, findings.SeverityError),
+		pr38Finding("internal/eval/martian.go", 331, 337, findings.SeverityError),
 	}})
-	if bothSites.Hits != 1 || len(bothSites.HitIDs) != 1 || bothSites.HitIDs[0] != "F1" || bothSites.Weak != 0 || bothSites.Unlabeled != 0 {
-		t.Fatalf("both Fresh sites: %+v, want one F1 hit and no weak or unlabeled", bothSites)
+	if both.Hits != 1 || len(both.HitIDs) != 1 || both.HitIDs[0] != "F1" || both.Weak != 0 {
+		t.Fatalf("both Fresh sites: %v weak=%d", both.HitIDs, both.Weak)
 	}
-
-	resetOnly := ScorePR38(findings.Report{Findings: []findings.Finding{
-		{Path: "internal/eval/eval.go", StartLine: 169, EndLine: 169, Severity: findings.SeverityError},
+	copies := ScorePR38(findings.Report{Findings: []findings.Finding{
+		pr38Finding("internal/agent/planned.go", 490, 492, findings.SeverityError),
+		pr38Finding("internal/agent/focused.go", 373, 375, findings.SeverityError),
 	}})
-	if resetOnly.Hits != 1 || len(resetOnly.HitIDs) != 1 || resetOnly.HitIDs[0] != "F6" {
-		t.Fatalf("reset line: hit ids %v, want only F6", resetOnly.HitIDs)
-	}
-	staleWrite := ScorePR38(findings.Report{Findings: []findings.Finding{
-		{Path: "internal/eval/eval.go", StartLine: 154, EndLine: 156, Severity: findings.SeverityError},
-	}})
-	if staleWrite.Hits != 1 || len(staleWrite.HitIDs) != 1 || staleWrite.HitIDs[0] != "F6" {
-		t.Fatalf("base write: hit ids %v, want only F6", staleWrite.HitIDs)
+	if copies.Hits != 1 || len(copies.HitIDs) != 1 || copies.HitIDs[0] != "F3" {
+		t.Fatalf("verifier copies: %v", copies.HitIDs)
 	}
 }
 
-func TestScorePR38UnlabeledStaysOutOfPrecision(t *testing.T) {
-	onlyUnlabeled := ScorePR38(findings.Report{Findings: []findings.Finding{
-		{Path: "internal/agent/planned.go", StartLine: 632, EndLine: 637, Severity: findings.SeverityError},
-	}})
-	if onlyUnlabeled.Hits != 0 || onlyUnlabeled.Weak != 0 || onlyUnlabeled.Unlabeled != 1 || onlyUnlabeled.Precision != 1 || onlyUnlabeled.Recall != 0 {
-		t.Fatalf("unlabeled only: %+v, want precision 1, weak 0, unlabeled 1, recall 0", onlyUnlabeled)
+func TestScorePR38AssignsOneLabel(t *testing.T) {
+	cases := []struct {
+		path             string
+		start, end       int
+		hits, weak, bare int
+		id               string
+	}{
+		{"internal/eval/eval.go", 157, 170, 1, 0, 0, "F5"},
+		{"internal/review/review.go", 149, 165, 0, 1, 0, ""},
+		{"internal/review/review.go", 146, 165, 1, 0, 0, "F3"},
+		{"internal/eval/eval.go", 169, 169, 1, 0, 0, "F6"},
+		{"internal/eval/eval.go", 154, 156, 1, 0, 0, "F6"},
+		{"internal/agent/planned.go", 488, 489, 0, 0, 1, ""},
+		{"internal/agent/focused.go", 371, 372, 0, 0, 1, ""},
 	}
-	if onlyUnlabeled.ErrorShare != 1 {
-		t.Fatalf("error share=%v, want 1", onlyUnlabeled.ErrorShare)
-	}
-
-	onlyWeak := ScorePR38(findings.Report{Findings: []findings.Finding{
-		{Path: "internal/agent/planned.go", StartLine: 358, EndLine: 364, Severity: findings.SeverityWarning},
-	}})
-	if onlyWeak.Hits != 0 || onlyWeak.Weak != 1 || onlyWeak.Unlabeled != 0 || onlyWeak.Precision != 0 || onlyWeak.ErrorShare != 0 {
-		t.Fatalf("weak only: %+v, want precision 0, weak 1, error share 0", onlyWeak)
+	for _, tc := range cases {
+		score := ScorePR38(findings.Report{Findings: []findings.Finding{pr38Finding(tc.path, tc.start, tc.end, findings.SeverityError)}})
+		got := ""
+		if len(score.HitIDs) == 1 {
+			got = score.HitIDs[0]
+		}
+		if score.Hits != tc.hits || got != tc.id || score.Weak != tc.weak || score.Unlabeled != tc.bare || len(score.HitIDs) != tc.hits {
+			t.Fatalf("%s:%d-%d hits=%v weak=%d unlabeled=%d, want id=%s hits=%d weak=%d unlabeled=%d", tc.path, tc.start, tc.end, score.HitIDs, score.Weak, score.Unlabeled, tc.id, tc.hits, tc.weak, tc.bare)
+		}
 	}
 }
 
-func TestAggregatePR38MeansAndUnionOfHits(t *testing.T) {
-	first := ScorePR38(findings.Report{
-		Run: &findings.Run{Status: findings.StatusComplete, Cost: findings.Cost{AmountUSD: 0.50, Requests: 80}},
-		Findings: []findings.Finding{
-			{Path: "internal/eval/eval.go", StartLine: 124, EndLine: 124, Severity: findings.SeverityError},
-		},
-	})
-	first.Run = 1
-	first.DurationMS = 1000
-	second := ScorePR38(findings.Report{
-		Run: &findings.Run{Status: findings.StatusComplete, Cost: findings.Cost{AmountUSD: 0.40, Requests: 60}},
-		Findings: []findings.Finding{
-			{Path: "internal/eval/eval.go", StartLine: 157, EndLine: 160, Severity: findings.SeverityError},
-			{Path: "internal/review/review.go", StartLine: 163, EndLine: 164, Severity: findings.SeverityError},
-		},
-	})
-	second.Run = 2
-	second.DurationMS = 3000
+func TestScorePR38UnlabeledAndZeroFindings(t *testing.T) {
+	unlabeled := ScorePR38(findings.Report{Findings: []findings.Finding{
+		pr38Finding("internal/agent/planned.go", 632, 637, findings.SeverityError),
+		pr38Finding("internal/review/review.go", 75, 76, findings.SeverityWarning),
+	}})
+	if unlabeled.Hits != 0 || unlabeled.Weak != 0 || unlabeled.Unlabeled != 2 || unlabeled.Precision != nil || unlabeled.ErrorShare != 0.5 {
+		t.Fatalf("unlabeled: hits=%d weak=%d unlabeled=%d precision=%v error=%v", unlabeled.Hits, unlabeled.Weak, unlabeled.Unlabeled, unlabeled.Precision, unlabeled.ErrorShare)
+	}
+	weak := ScorePR38(findings.Report{Findings: []findings.Finding{pr38Finding("internal/agent/planned.go", 358, 364, findings.SeverityWarning)}})
+	if weak.Weak != 1 || weak.Precision == nil || *weak.Precision != 0 || weak.ErrorShare != 0 {
+		t.Fatalf("weak only: weak=%d precision=%v error=%v", weak.Weak, weak.Precision, weak.ErrorShare)
+	}
+	empty := ScorePR38(pr38Run(findings.StatusComplete, 0, 0))
+	raw, err := json.Marshal(empty)
+	if err != nil || empty.Produced != 0 || empty.ErrorShare != 0 || math.IsNaN(empty.ErrorShare) || empty.Precision != nil || !bytes.Contains(raw, []byte(`"precision":null`)) {
+		t.Fatalf("zero findings: produced=%d error=%v precision=%v err=%v json=%s", empty.Produced, empty.ErrorShare, empty.Precision, err, raw)
+	}
+}
 
+func TestAggregatePR38MeansUnionAndFailedRuns(t *testing.T) {
+	first := ScorePR38(pr38Run(findings.StatusComplete, 0.50, 80, pr38Finding("internal/eval/eval.go", 124, 124, findings.SeverityError)))
+	first.Run, first.DurationMS = 1, 1000
+	second := ScorePR38(pr38Run(findings.StatusComplete, 0.40, 60,
+		pr38Finding("internal/eval/eval.go", 157, 160, findings.SeverityError),
+		pr38Finding("internal/review/review.go", 163, 164, findings.SeverityError),
+	))
+	second.Run, second.DurationMS = 2, 3000
 	report := AggregatePR38([]PR38Score{first, second})
-	if report.Union != 2 || len(report.UnionHits) != 2 || report.UnionHits[0] != "F1" || report.UnionHits[1] != "F2" {
-		t.Fatalf("union %v (%d), want F1,F2", report.UnionHits, report.Union)
+	if report.Completed != 2 || report.Failed != 0 || report.Union != 2 || len(report.UnionHits) != 2 || report.UnionHits[0] != "F1" || report.UnionHits[1] != "F2" {
+		t.Fatalf("union %v completed=%d", report.UnionHits, report.Completed)
 	}
-	if report.Real != 5 || report.Corpus != "pr38" || report.Note == "" {
-		t.Fatalf("corpus=%s real=%d note=%q", report.Corpus, report.Real, report.Note)
+	if report.Mean.Precision == nil || math.Abs(report.Mean.Recall-0.2) > 1e-12 || math.Abs(*report.Mean.Precision-0.75) > 1e-12 || math.Abs(report.Mean.ErrorShare-1) > 1e-12 || math.Abs(report.Mean.Produced-1.5) > 1e-12 {
+		t.Fatalf("mean recall=%v precision=%v error=%v findings=%v", report.Mean.Recall, report.Mean.Precision, report.Mean.ErrorShare, report.Mean.Produced)
 	}
-	if math.Abs(report.Mean.Recall-0.2) > 1e-12 || math.Abs(report.Mean.Precision-0.75) > 1e-12 {
-		t.Fatalf("mean recall=%v precision=%v, want 0.2 and 0.75", report.Mean.Recall, report.Mean.Precision)
+	if math.Abs(report.Mean.CostUSD-0.45) > 1e-12 || math.Abs(report.CostUSD-0.90) > 1e-12 || math.Abs(report.Mean.Requests-70) > 1e-12 || math.Abs(report.Mean.DurationMS-2000) > 1e-12 {
+		t.Fatalf("cost mean=%v total=%v requests=%v time=%v", report.Mean.CostUSD, report.CostUSD, report.Mean.Requests, report.Mean.DurationMS)
 	}
-	if math.Abs(report.Mean.ErrorShare-1) > 1e-12 || math.Abs(report.Mean.Weak-0.5) > 1e-12 {
-		t.Fatalf("mean error share=%v weak=%v, want 1 and 0.5", report.Mean.ErrorShare, report.Mean.Weak)
+	failed := ScorePR38(pr38Run(findings.StatusFailed, 9, 400,
+		pr38Finding("internal/eval/eval.go", 121, 127, findings.SeverityError),
+		pr38Finding("internal/eval/eval.go", 150, 153, findings.SeverityError),
+		pr38Finding("internal/review/review.go", 146, 146, findings.SeverityError),
+		pr38Finding("internal/eval/eval.go", 161, 165, findings.SeverityError),
+		pr38Finding("internal/eval/eval.go", 169, 169, findings.SeverityError),
+	))
+	skipped := AggregatePR38([]PR38Score{first, failed})
+	if skipped.Completed != 1 || skipped.Failed != 1 || math.Abs(skipped.Mean.Recall-0.2) > 1e-12 || math.Abs(skipped.CostUSD-0.50) > 1e-12 || skipped.Union != 1 || skipped.UnionHits[0] != "F1" {
+		t.Fatalf("failed run leaked: completed=%d failed=%d recall=%v cost=%v union=%v", skipped.Completed, skipped.Failed, skipped.Mean.Recall, skipped.CostUSD, skipped.UnionHits)
 	}
-	if math.Abs(report.Mean.CostUSD-0.45) > 1e-12 || math.Abs(report.Mean.Requests-70) > 1e-12 || math.Abs(report.Mean.DurationMS-2000) > 1e-12 {
-		t.Fatalf("mean cost=%v requests=%v time=%v, want 0.45, 70, 2000", report.Mean.CostUSD, report.Mean.Requests, report.Mean.DurationMS)
+	onlyFailed := AggregatePR38([]PR38Score{failed})
+	raw, err := json.Marshal(onlyFailed)
+	if err != nil || onlyFailed.Completed != 0 || onlyFailed.Failed != 1 || onlyFailed.Mean.Precision != nil || onlyFailed.CostUSD != 0 || math.IsNaN(onlyFailed.Mean.Recall) || math.IsNaN(onlyFailed.Mean.ErrorShare) || bytes.Contains(raw, []byte("NaN")) || !bytes.Contains(raw, []byte(`"precision":null`)) {
+		t.Fatalf("no completed: err=%v mean=%+v json=%s", err, onlyFailed.Mean, raw)
 	}
-	if math.Abs(report.Mean.Hits-1) > 1e-12 || math.Abs(report.Mean.Produced-1.5) > 1e-12 || math.Abs(report.Mean.Unlabeled) > 1e-12 {
-		t.Fatalf("mean hits=%v produced=%v unlabeled=%v", report.Mean.Hits, report.Mean.Produced, report.Mean.Unlabeled)
+	none := AggregatePR38(nil)
+	if _, err := json.Marshal(none); err != nil || none.Completed != 0 || none.Failed != 0 || math.IsNaN(none.Mean.Recall) || none.Mean.Precision != nil {
+		t.Fatalf("nil aggregate: err=%v mean=%+v", err, none.Mean)
 	}
 }
