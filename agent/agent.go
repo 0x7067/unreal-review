@@ -65,6 +65,9 @@ type Harness struct {
 	// MaxBashCalls limits Bash tool calls within one Run. Zero is unlimited;
 	// negative disables Bash for stages that must operate only on supplied data.
 	MaxBashCalls int
+	// Shell is the Bash interpreter when the request does not set one.
+	// Empty means /bin/sh. Verifier tasks override it per request.
+	Shell string
 }
 
 var _ review.Agent = Harness{}
@@ -154,9 +157,16 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	if err := os.MkdirAll(operationDirectory, 0o700); err != nil {
 		return review.AgentResult{}, fmt.Errorf("create operation directory: %w", err)
 	}
+	shell := h.Shell
+	if strings.TrimSpace(req.Shell) != "" {
+		shell = req.Shell
+	}
+	if strings.TrimSpace(shell) == "" {
+		shell = "/bin/sh"
+	}
 	registry := newRecordRegistry(tool.NewRegistry(tool.StaticTranslators{
 		Bash: newBoundedBash(req.Workspace, h.MaxBashCalls, bash.New(bash.Config{
-			Shell:         "/bin/sh",
+			Shell:         shell,
 			Directory:     req.Workspace,
 			BaseDirectory: operationDirectory,
 		})),

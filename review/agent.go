@@ -17,6 +17,12 @@ type AgentRequest struct {
 	Prompt       string
 	SystemPrompt string
 	Model        string
+	// HeadSHA is the reviewed commit. It is empty for a working-tree review,
+	// which has no single committed tree to copy into a verifier scratch.
+	HeadSHA string
+	// Shell is the Bash interpreter for this session. Empty means /bin/sh.
+	// Verifier tasks set a sandbox or environment-scrubbing wrapper.
+	Shell string
 	// PriorCost is already included in the root checkpoint. Stateful adapters
 	// return only cost not yet included there, including durably staged work
 	// whose caller was interrupted before publishing its checkpoint.

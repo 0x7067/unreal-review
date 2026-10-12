@@ -142,6 +142,13 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		}
 		prompt = fmt.Sprintf("Review every local and boundary task in plan %s. Source base %s head %s full diff SHA %s (%d bytes). Destination: %s. Read old code at the merge-base of those source commits when a base exists; root commits and added files have no old content. Publish only after all task discovery and verification are complete. Never report partial coverage as clean.\n", plan.Digest, source.BaseSHA, source.HeadSHA, source.DiffSHA, len(diff), destination)
 	}
+	// A working-tree review has no committed head (source.Head is empty even
+	// though HeadSHA names the current HEAD). Verifier scratch copies only a
+	// committed tree.
+	headSHA := ""
+	if source.Head != "" {
+		headSHA = source.HeadSHA
+	}
 	agentResult, agentErr := opts.Agent.Run(ctx, AgentRequest{
 		Workspace:    workspace,
 		ReviewID:     runMeta.ID,
@@ -149,6 +156,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Prompt:       prompt,
 		SystemPrompt: systemPrompt,
 		Model:        opts.Model,
+		HeadSHA:      headSHA,
 		PriorCost:    runMeta.Cost,
 		Resuming:     resuming,
 		Plan:         plan,

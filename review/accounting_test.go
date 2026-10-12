@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/0x7067/unreal-review/findings"
@@ -65,6 +67,38 @@ func TestRunPassesRootCostAndResumeStateToAdapter(t *testing.T) {
 	fresh, err := Run(t.Context(), opts)
 	if err != nil || fresh.Report.Run.Cost != secondCost {
 		t.Fatalf("fresh run: %+v err=%v", fresh, err)
+	}
+}
+
+func TestRunPassesHeadSHAOnlyForACommittedRange(t *testing.T) {
+	dir := gitRepo(t)
+	gitRun(t, dir, "commit", "-q", "--allow-empty", "-m", "base")
+	if err := os.WriteFile(filepath.Join(dir, "change.txt"), []byte("change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var head string
+	backend := accountingAgentFunc(func(_ context.Context, req AgentRequest) (AgentResult, error) {
+		head = req.HeadSHA
+		return AgentResult{}, errors.New("stop")
+	})
+	if _, err := Run(t.Context(), Options{Workspace: dir, Out: filepath.Join(t.TempDir(), "work.jsonl"), Model: "test", Agent: backend}); err == nil {
+		t.Fatal("working-tree run returned no error")
+	}
+	if head != "" {
+		t.Fatalf("working-tree HeadSHA = %q", head)
+	}
+	gitRun(t, dir, "add", "change.txt")
+	gitRun(t, dir, "commit", "-q", "-m", "head")
+	shaOut, err := exec.CommandContext(t.Context(), "git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.TrimSpace(string(shaOut))
+	if _, err := Run(t.Context(), Options{Workspace: dir, Spec: Spec{Commit: "HEAD"}, Out: filepath.Join(t.TempDir(), "commit.jsonl"), Model: "test", Agent: backend}); err == nil {
+		t.Fatal("commit run returned no error")
+	}
+	if head != sha {
+		t.Fatalf("commit HeadSHA = %q, want %s", head, sha)
 	}
 }
 
