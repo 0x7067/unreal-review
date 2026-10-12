@@ -150,7 +150,13 @@ func TestCleanupSkipsSymlinksAndDropsAgedDirs(t *testing.T) {
 	must(t, os.WriteFile(filepath.Join(nest, "f"), []byte("x"), 0o600))
 	must(t, os.Chmod(nest, 0))
 	must(t, os.Chmod(filepath.Dir(nest), 0))
+	vdir := filepath.Join(t.TempDir(), "vdir")
+	must(t, os.MkdirAll(vdir, 0o755))
+	vfile := filepath.Join(vdir, "f")
+	must(t, os.WriteFile(vfile, []byte("v"), 0o644))
+	must(t, os.Chmod(vdir, 0o755))
 	must(t, os.Symlink(victim, filepath.Join(aged, "link")))
+	must(t, os.Symlink(vdir, filepath.Join(aged, "dlink")))
 	old := time.Now().Add(-48 * time.Hour)
 	must(t, os.Chtimes(aged, old, old))
 	sweepStaleSandboxes(parent)
@@ -161,6 +167,8 @@ func TestCleanupSkipsSymlinksAndDropsAgedDirs(t *testing.T) {
 		t.Fatalf("fresh dir removed: %v", err)
 	}
 	assertMode(t, victim, 0o644)
+	assertMode(t, vdir, 0o755)
+	assertMode(t, vfile, 0o644)
 	box := filepath.Join(parent, "box")
 	deep := filepath.Join(box, "d", "e")
 	must(t, os.MkdirAll(deep, 0o700))
@@ -168,11 +176,14 @@ func TestCleanupSkipsSymlinksAndDropsAgedDirs(t *testing.T) {
 	must(t, os.Chmod(deep, 0))
 	must(t, os.Chmod(filepath.Dir(deep), 0))
 	must(t, os.Symlink(victim, filepath.Join(box, "link")))
+	must(t, os.Symlink(vdir, filepath.Join(box, "dlink")))
 	(&verifierSandbox{root: box}).close()
 	if _, err := os.Stat(box); !os.IsNotExist(err) {
 		t.Fatalf("close left the dir: %v", err)
 	}
 	assertMode(t, victim, 0o644)
+	assertMode(t, vdir, 0o755)
+	assertMode(t, vfile, 0o644)
 }
 func TestVerifierSandboxFallbackReasons(t *testing.T) {
 	const scrub = "verifier tasks run with Bash unchanged except a scrubbed environment."
@@ -207,6 +218,23 @@ func TestVerifierSandboxFallbackReasons(t *testing.T) {
 			t.Skip(n)
 		}
 		contains(t, n, "toolchain cannot build the reviewed head:")
+	})
+	t.Run("empty-probe", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		root := t.TempDir()
+		must(t, os.MkdirAll(filepath.Join(root, "bin"), 0o700))
+		must(t, os.WriteFile(filepath.Join(root, "bin", "go"), []byte("#!/bin/sh\nexit 1\n"), 0o700))
+		repo, sha := sandboxModuleRepo(t)
+		bin := t.TempDir()
+		must(t, os.WriteFile(filepath.Join(bin, "go"), []byte("#!/bin/sh\nprintf '%s\\n/tmp\\n/tmp\\n' '"+root+"'\n"), 0o700))
+		t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		_, n := prepareNotice(t, repo, sha, t.Name())
+		if sandboxEnvironmental(t, n) {
+			t.Skip(n)
+		}
+		if strings.Contains(n, "toolchain cannot build the reviewed head:") || !strings.Contains(n, "probe produced no output") {
+			t.Fatalf("empty probe:\n%s", n)
+		}
 	})
 	t.Run("unwritable", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
@@ -294,6 +322,7 @@ func TestFallbackVerifierScrubsEnv(t *testing.T) {
 func TestActiveVerifierPromptCarriesSeverityRule(t *testing.T) {
 	repo, sha := sandboxModuleRepo(t)
 	notices := captureNotices(t)
+	t.Setenv("GOMODCACHE", filepath.Join(t.TempDir(), "no-mod-cache"))
 	req := plannedTestRequest(t)
 	req.Workspace, req.HeadSHA, req.ReviewID = repo, sha, "sandbox-"+t.Name()
 	var verifier review.AgentRequest
@@ -307,6 +336,7 @@ func TestActiveVerifierPromptCarriesSeverityRule(t *testing.T) {
 	if !strings.Contains(verifier.SystemPrompt, "applies only to claims about runtime behavior") {
 		skipOrFail(t, notices.String())
 	}
+	contains(t, notices.String(), "module cache not found; dependency builds will fail")
 	for _, phrase := range []string{"re-emitted with severity note, not dropped", "exact quoted lines"} {
 		contains(t, verifier.SystemPrompt, phrase)
 	}

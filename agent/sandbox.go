@@ -156,15 +156,25 @@ func prepareVerifierSandbox(ctx context.Context, workspace, headSHA, reviewID st
 		}
 		line := firstLine(string(probeOut))
 		var exitErr *exec.ExitError
-		if errors.As(probeErr, &exitErr) && exitErr.ExitCode() == 2 {
+		if errors.As(probeErr, &exitErr) && exitErr.ExitCode() == 2 && line != "" {
 			return sb.refuse("toolchain cannot build the reviewed head: " + line)
+		}
+		if line == "" {
+			if errors.As(probeErr, &exitErr) && exitErr.ExitCode() == 124 {
+				return sb.refuse("probe timed out")
+			}
+			return sb.refuse("probe produced no output")
 		}
 		return sb.refuse(line)
 	}
 	sb.tree = tree
 	sb.shell = shell
 	sb.active = true
-	sb.notice = fmt.Sprintf("unreal-review: verifier sandbox active (offline, %d s per command, scratch %s).", int(timeout/time.Second), tree)
+	note := ""
+	if entries, err := os.ReadDir(toolchain.modcache); err != nil || len(entries) == 0 {
+		note = " (module cache not found; dependency builds will fail)"
+	}
+	sb.notice = fmt.Sprintf("unreal-review: verifier sandbox active (offline, %d s per command, scratch %s)%s.", int(timeout/time.Second), tree, note)
 	sb.announce()
 	return sb, nil
 }
@@ -461,9 +471,7 @@ func chmodDirs(path string) {
 		return
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
-			chmodDirs(filepath.Join(path, entry.Name()))
-		}
+		chmodDirs(filepath.Join(path, entry.Name()))
 	}
 }
 func sweepStaleSandboxes(root string) {
