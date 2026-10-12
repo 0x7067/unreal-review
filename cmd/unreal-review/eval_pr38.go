@@ -15,26 +15,38 @@ import (
 )
 
 func evalPR38(ctx context.Context, root, model string, reviewer review.Agent, runs int, decompose, asJSON bool) error {
-	scores := make([]eval.PR38Score, 0, runs)
-	for n := 1; n <= runs; n++ {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
+	return runPR38s(ctx, os.Stdout, os.Stderr, root, runs, asJSON, func(n int) (eval.PR38Score, error) {
 		runRoot := filepath.Join(root, fmt.Sprintf("run-%d", n))
 		if err := os.MkdirAll(runRoot, 0o755); err != nil {
-			return fmt.Errorf("create eval dir: %w", err)
+			return eval.PR38Score{}, fmt.Errorf("create eval dir: %w", err)
 		}
-		score, err := eval.RunPR38(ctx, runRoot, eval.Options{Model: model, Agent: reviewer, Decompose: decompose})
+		return eval.RunPR38(ctx, runRoot, eval.Options{Model: model, Agent: reviewer, Decompose: decompose})
+	})
+}
+
+func runPR38s(ctx context.Context, stdout, stderr io.Writer, root string, runs int, asJSON bool, run func(n int) (eval.PR38Score, error)) error {
+	scores := make([]eval.PR38Score, 0, runs)
+	var stop error
+	for n := 1; n <= runs; n++ {
+		if err := ctx.Err(); err != nil {
+			stop = err
+			break
+		}
+		score, err := run(n)
 		if err != nil {
 			return err
 		}
 		score.Run = n
 		scores = append(scores, score)
 		if score.Completed() {
-			_, _ = fmt.Fprintf(os.Stderr, "pr38 run %d done\n", n)
+			_, _ = fmt.Fprintf(stderr, "pr38 run %d done\n", n)
 		}
 	}
-	return finishPR38(os.Stdout, os.Stderr, eval.AggregatePR38(scores), asJSON, root)
+	err := finishPR38(stdout, stderr, eval.AggregatePR38(scores), asJSON, root)
+	if stop != nil {
+		return stop
+	}
+	return err
 }
 
 func finishPR38(stdout, stderr io.Writer, report eval.PR38Report, asJSON bool, root string) error {
