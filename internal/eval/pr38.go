@@ -15,7 +15,7 @@ const (
 	pr38Repo = "0x7067/unreal-review"
 	pr38Base = "942c78c32f5d45ef05a4db9c284f4e396d31bd95"
 	pr38Head = "107a3230e4cc9cfb21df2c8997298aa64cafd78f"
-	pr38Note = "Each finding is assigned to at most one label, the one with the largest line overlap; ties go to a weak label, then to the earlier label. Recall is distinct real labels hit over the five real labels. Precision is those hits over hits plus findings assigned to a weak label, and is n/a when a run has no real hit and no weak finding. A second finding on a real label already hit does not change the numerator. Unlabeled findings match no label, are not errors, and are outside precision; known-weak F4 and other unlabeled clusters sit there, so unlabeled is not a clean precision signal. Means use completed runs only. F1 is one hit if either Fresh site is chosen. A finding only at eval.go:169 is F6."
+	pr38Note = "Each finding is assigned to at most one label, the one with the largest line overlap; ties go to a weak label, then to the earlier label. Recall is distinct real labels hit over the five real labels. Precision is those hits over hits plus findings assigned to a weak label, and is n/a when a run has no real hit and no weak finding. A second finding on a real label already hit does not change the numerator. Unlabeled findings match no label and are outside precision, neither a hit nor a false positive, but they still count in the finding total and in error share; known-weak F4 and other unlabeled clusters sit there, so unlabeled is not a clean precision signal. Findings anchored to removed lines (anchor=old) use base coordinates and are scored as unlabeled. Means use completed runs only. F1 is one hit if either Fresh site is chosen. A finding only at eval.go:169 is F6."
 )
 
 type pr38Site struct {
@@ -176,6 +176,9 @@ func assignedLabel(finding findings.Finding) (int, bool) {
 }
 
 func labelOverlap(finding findings.Finding, label pr38Label) int {
+	if finding.Anchor == findings.AnchorOld {
+		return 0
+	}
 	best := 0
 	for _, site := range label.Sites {
 		if finding.Path != site.Path {
@@ -254,11 +257,17 @@ func RunPR38(ctx context.Context, root string, opts Options) (PR38Score, error) 
 	}
 	findingsPath := filepath.Join(root, pr38Name+".findings.jsonl")
 	start := time.Now()
-	result, runErr := review.Run(ctx, martianReviewOptions(dir, head, findingsPath, opts))
+	result, runErr := review.Run(ctx, pr38ReviewOptions(dir, head, findingsPath, opts))
 	score := ScorePR38(result.Report)
 	score.DurationMS = time.Since(start).Milliseconds()
 	if runErr != nil {
 		score.Err = runErr.Error()
 	}
 	return score, nil
+}
+
+func pr38ReviewOptions(dir, head, findingsPath string, opts Options) review.Options {
+	optsOut := martianReviewOptions(dir, head, findingsPath, opts)
+	optsOut.Fresh = true
+	return optsOut
 }

@@ -14,6 +14,8 @@ import (
 	"github.com/0x7067/unreal-review/review"
 )
 
+var pr38Eval = evalPR38
+
 func evalPR38(ctx context.Context, root, model string, reviewer review.Agent, runs int, decompose, asJSON bool) error {
 	return runPR38s(ctx, os.Stdout, os.Stderr, root, runs, asJSON, func(n int) (eval.PR38Score, error) {
 		runRoot := filepath.Join(root, fmt.Sprintf("run-%d", n))
@@ -34,7 +36,8 @@ func runPR38s(ctx context.Context, stdout, stderr io.Writer, root string, runs i
 		}
 		score, err := run(n)
 		if err != nil {
-			return err
+			stop = err
+			break
 		}
 		score.Run = n
 		scores = append(scores, score)

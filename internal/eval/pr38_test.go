@@ -2,11 +2,17 @@ package eval
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"math"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/0x7067/unreal-review/findings"
+	"github.com/0x7067/unreal-review/review"
 )
 
 func pr38Finding(path string, start, end int, sev findings.Severity) findings.Finding {
@@ -81,6 +87,64 @@ func TestScorePR38AssignsOneLabel(t *testing.T) {
 		if score.Hits != tc.hits || got != tc.id || score.Weak != tc.weak || score.Unlabeled != tc.bare || len(score.HitIDs) != tc.hits {
 			t.Fatalf("%s:%d-%d hits=%v weak=%d unlabeled=%d, want id=%s hits=%d weak=%d unlabeled=%d", tc.path, tc.start, tc.end, score.HitIDs, score.Weak, score.Unlabeled, tc.id, tc.hits, tc.weak, tc.bare)
 		}
+	}
+	base := pr38Finding("internal/eval/eval.go", 121, 127, findings.SeverityError)
+	base.Anchor = findings.AnchorOld
+	old := ScorePR38(findings.Report{Findings: []findings.Finding{base}})
+	base.Anchor = findings.AnchorNew
+	head := ScorePR38(findings.Report{Findings: []findings.Finding{base}})
+	base.Anchor = ""
+	blank := ScorePR38(findings.Report{Findings: []findings.Finding{base}})
+	if old.Hits != 0 || old.Unlabeled != 1 || old.Produced != 1 || old.ErrorShare != 1 ||
+		head.Hits != 1 || len(head.HitIDs) != 1 || head.HitIDs[0] != "F1" ||
+		blank.Hits != head.Hits || len(blank.HitIDs) != 1 || blank.HitIDs[0] != "F1" {
+		t.Fatalf("anchor old=%v unlabeled=%d new=%v blank=%v", old.HitIDs, old.Unlabeled, head.HitIDs, blank.HitIDs)
+	}
+}
+
+type pr38SummaryAgent struct{}
+
+func (pr38SummaryAgent) Run(_ context.Context, req review.AgentRequest) (review.AgentResult, error) {
+	err := findings.AppendSummary(req.FindingsPath, "No material issues in the changed text.")
+	return review.AgentResult{Cost: findings.Cost{AmountUSD: 0.01, Requests: 1}}, err
+}
+
+func TestPR38ReviewStartsFreshOverCompletedCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", dir, "-c", "user.email=t@t", "-c", "user.name=t"}, args...)...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	git("init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "f.txt")
+	git("commit", "-q", "-m", "base")
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("commit", "-q", "-am", "head")
+	headBytes, err := exec.CommandContext(t.Context(), "git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "pr38.findings.jsonl")
+	if err := findings.WriteFile(out, findings.Report{Run: &findings.Run{Status: findings.StatusComplete}}); err != nil {
+		t.Fatal(err)
+	}
+	headSHA := strings.TrimSpace(string(headBytes))
+	agent := pr38SummaryAgent{}
+	if _, err := review.Run(t.Context(), martianReviewOptions(dir, headSHA, out, Options{Model: "offline", Agent: agent})); err == nil {
+		t.Fatal("completed checkpoint was accepted without a fresh start")
+	}
+	result, err := review.Run(t.Context(), pr38ReviewOptions(dir, headSHA, out, Options{Model: "offline", Agent: agent}))
+	if err != nil || result.Report.Run == nil || result.Report.Run.Status != findings.StatusComplete {
+		t.Fatalf("fresh rerun: %v status=%v", err, result.Report.Run)
 	}
 }
 

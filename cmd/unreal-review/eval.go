@@ -117,7 +117,7 @@ func cmdEval(args []string) error {
 	case "martian":
 		return evalMartian(ctx, root, *model, reviewer, key, ready)
 	case "pr38":
-		return evalPR38(ctx, root, *model, reviewer, *runs, *decompose, *asJSON)
+		return pr38Eval(ctx, root, *model, reviewer, *runs, *decompose, *asJSON)
 	}
 	scores := make([]eval.Score, 0, len(planted))
 	for _, c := range planted {
