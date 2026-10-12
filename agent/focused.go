@@ -47,6 +47,8 @@ type focusedStage struct {
 	Digest     string        `json:"digest"`
 	Cost       findings.Cost `json:"cost"`
 	Dependency string        `json:"dependency,omitempty"`
+	// Wall records a verifier that stopped at its task limit with no usage.
+	Wall bool `json:"wall,omitempty"`
 }
 type focusedAttempt struct {
 	Stage string        `json:"stage"`
@@ -181,7 +183,7 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 		if focusedHash(string(b)) != s.Digest {
 			return result, fmt.Errorf("focused: stage %s digest mismatch", stage)
 		}
-		if _, e := focusedComplete(stagePath(stage), s.Cost); e != nil {
+		if _, e := completeVerifierChild(stagePath(stage), s.Cost, s.Wall); e != nil {
 			return result, fmt.Errorf("focused: saved %s: %w", stage, e)
 		}
 	}
@@ -204,6 +206,7 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 		cost       findings.Cost
 		digest     string
 		dependency string
+		wall       bool
 		err        error
 	}
 	run := func(stage, prompt string, keep []findings.Finding) outcome {
@@ -263,6 +266,9 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 			o.err = readErr
 			o.digest = focusedHash(string(b))
 		}
+		if o.err == nil && stopped && !o.cost.Recorded() {
+			o.wall = true
+		}
 		return o
 	}
 	record := func(o outcome) error {
@@ -274,7 +280,7 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 		if o.err != nil {
 			return errors.Join(fmt.Errorf("focused: %s: %w", o.stage, o.err), save())
 		}
-		m.Stages[o.stage] = focusedStage{Digest: o.digest, Cost: o.cost, Dependency: o.dependency}
+		m.Stages[o.stage] = focusedStage{Digest: o.digest, Cost: o.cost, Dependency: o.dependency, Wall: o.wall}
 		return save()
 	}
 	outcomes := make(chan outcome, len(focusedLenses))

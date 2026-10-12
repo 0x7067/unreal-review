@@ -3,7 +3,10 @@ package agent
 import (
 	"context"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/0x7067/unreal-review/findings"
 	"github.com/0x7067/unreal-review/review"
@@ -48,6 +51,49 @@ func focusedTestEmit(req review.AgentRequest, items []findings.Finding) (review.
 	}
 	err := focusedWriteReport(req.FindingsPath, findings.Report{Findings: items, Summary: summary})
 	return review.AgentResult{Cost: findings.Cost{AmountUSD: 1, Requests: 1, InputTokens: 10, OutputTokens: 2}}, err
+}
+
+func TestFocusedVerifierWallStopResumes(t *testing.T) {
+	req := focusedTestRequest(t)
+	issue := focusedTestIssue("kept")
+	var calls atomic.Int32
+	fake := focusedTestRunner(func(ctx context.Context, child review.AgentRequest) (review.AgentResult, error) {
+		calls.Add(1)
+		if strings.Contains(child.SystemPrompt, "final verification") {
+			<-ctx.Done()
+			return review.AgentResult{}, ctx.Err()
+		}
+		return focusedTestEmit(child, []findings.Finding{issue})
+	})
+	adapter := Focused{Agent: fake, verifierWall: 200 * time.Millisecond}
+	first, err := adapter.Run(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Findings) != 1 || report.Findings[0].ID != "kept" || report.Findings[0].Severity != findings.SeverityNote || report.Findings[0].Body != issue.Body {
+		t.Fatalf("published findings = %+v", report.Findings)
+	}
+	after := calls.Load()
+	req.Resuming = true
+	req.PriorCost = first.Cost
+	again, err := adapter.Run(t.Context(), req)
+	if err != nil {
+		t.Fatalf("resume result=%+v err=%v", again, err)
+	}
+	if calls.Load() != after {
+		t.Fatalf("resume reran children: calls %d -> %d", after, calls.Load())
+	}
+	resumed, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resumed.Findings) != 1 || resumed.Findings[0].ID != "kept" || resumed.Findings[0].Severity != findings.SeverityNote || resumed.Findings[0].Body != issue.Body {
+		t.Fatalf("resumed findings = %+v", resumed.Findings)
+	}
 }
 
 func TestFocusedDiscoveryOnlyModeIsImmutableOnResume(t *testing.T) {

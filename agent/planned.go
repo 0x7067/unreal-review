@@ -54,6 +54,9 @@ type plannedReceipt struct {
 	Path       string        `json:"path"`
 	Digest     string        `json:"digest,omitempty"`
 	Dependency string        `json:"dependency"`
+	// Wall records a verifier that stopped at its task limit with no usage.
+	// Resume accepts that receipt; every other zero-cost completion stays invalid.
+	Wall bool `json:"wall,omitempty"`
 }
 type plannedManifest struct {
 	Config   string                    `json:"config"`
@@ -427,6 +430,9 @@ func (p Planned) Run(ctx context.Context, req review.AgentRequest) (result revie
 			r.Digest = focusedHash(string(raw))
 			r.Success = e == nil
 		}
+		if r.Success && stopped && !r.Cost.Recorded() {
+			r.Wall = true
+		}
 		return plannedOutcome{receipt: r, err: e}
 	}
 	record := func(o plannedOutcome) error {
@@ -704,7 +710,7 @@ func plannedCheckReceipt(dir string, r plannedReceipt) error {
 	if focusedHash(string(b)) != r.Digest {
 		return fmt.Errorf("planned: artifact digest mismatch for %s", r.Stage)
 	}
-	_, err = focusedComplete(path, r.Cost)
+	_, err = completeVerifierChild(path, r.Cost, r.Wall)
 	return err
 }
 func plannedValidateOutput(r findings.Report, candidates map[string]findings.Finding, preserve map[string]bool) error {

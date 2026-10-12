@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -190,6 +191,57 @@ func TestVerifierWallCapPublishesCandidates(t *testing.T) {
 			t.Fatalf("published findings = %+v", report.Findings)
 		}
 	})
+}
+
+func TestVerifierWallStopResumes(t *testing.T) {
+	req := plannedTestRequest(t)
+	issue := plannedTestIssue("kept")
+	var calls atomic.Int32
+	discovery := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		calls.Add(1)
+		if strings.Contains(r.Prompt, "local a") {
+			return plannedTestEmit(r, []findings.Finding{issue})
+		}
+		return plannedTestEmit(r, nil)
+	})
+	verifier := plannedTestAgent(func(ctx context.Context, _ review.AgentRequest) (review.AgentResult, error) {
+		calls.Add(1)
+		<-ctx.Done()
+		return review.AgentResult{}, ctx.Err()
+	})
+	consolidator := plannedTestAgent(func(_ context.Context, _ review.AgentRequest) (review.AgentResult, error) {
+		t.Errorf("consolidator ran for a single finding")
+		return review.AgentResult{}, fmt.Errorf("consolidator ran")
+	})
+	p := Planned{Agent: discovery, Verifier: verifier, Consolidator: consolidator, verifierWall: 200 * time.Millisecond}
+	first, err := p.Run(t.Context(), req)
+	if err != nil || first.Coverage == nil {
+		t.Fatalf("wall result=%+v err=%v", first, err)
+	}
+	report, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Findings) != 1 || report.Findings[0].ID != "kept" || report.Findings[0].Severity != findings.SeverityNote || report.Findings[0].Body != issue.Body {
+		t.Fatalf("published findings = %+v", report.Findings)
+	}
+	after := calls.Load()
+	req.Resuming = true
+	req.PriorCost = first.Cost
+	again, err := p.Run(t.Context(), req)
+	if err != nil || again.Coverage == nil {
+		t.Fatalf("resume result=%+v err=%v", again, err)
+	}
+	if calls.Load() != after {
+		t.Fatalf("resume reran children: calls %d -> %d", after, calls.Load())
+	}
+	resumed, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resumed.Findings) != 1 || resumed.Findings[0].ID != "kept" || resumed.Findings[0].Severity != findings.SeverityNote || resumed.Findings[0].Body != issue.Body {
+		t.Fatalf("resumed findings = %+v", resumed.Findings)
+	}
 }
 
 func TestPlannedForwardsUnplannedReview(t *testing.T) {
