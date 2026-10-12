@@ -231,7 +231,7 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 		}
 		agent := f.Agent
 		if stage == "verification" {
-			agent = applyVerifierSandbox(&child, agent, sb, stage)
+			agent = applyVerifierSandbox(&child, agent, sb)
 		}
 		r, e := agent.Run(ctx, child)
 		if e == nil {

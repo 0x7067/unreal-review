@@ -20,15 +20,13 @@ import (
 )
 
 const (
-	sandboxCommandTimeout = 60 * time.Second
-	sandboxTaskBudget     = 5 * time.Minute
-	sandboxStaleAge       = 24 * time.Hour
-	// sandboxAddressSpace is the RLIMIT_AS cap the design ran Go under.
-	sandboxAddressSpace int64 = 4 << 30
-	// sandboxFileSize caps one write. The design confirmed RLIMIT_FSIZE and
-	// did not name the byte cap.
-	sandboxFileSize  int64 = 1 << 30
-	sandboxTmpfsSize int64 = 1 << 30
+	sandboxCommandTimeout       = 60 * time.Second
+	sandboxStaleAge             = 24 * time.Hour
+	sandboxAddressSpace   int64 = 4 << 30
+	sandboxFileSize       int64 = 1 << 30
+	sandboxScratchLimit   int64 = 2 << 30
+	sandboxTmpfsSize      int64 = 256 << 20
+	sandboxFallbackSuffix       = "verifier tasks run with Bash unchanged except a scrubbed environment."
 )
 
 // sandboxNotices receives the one-line sandbox status. Tests replace it.
@@ -37,7 +35,7 @@ var sandboxNotices io.Writer = os.Stderr
 // sandboxConfig overrides limits. Zero values use the production defaults.
 type sandboxConfig struct {
 	commandTimeout time.Duration
-	taskBudget     time.Duration
+	scratchLimit   int64
 }
 
 func (c sandboxConfig) timeout() time.Duration {
@@ -47,11 +45,11 @@ func (c sandboxConfig) timeout() time.Duration {
 	return sandboxCommandTimeout
 }
 
-func (c sandboxConfig) budget() time.Duration {
-	if c.taskBudget > 0 {
-		return c.taskBudget
+func (c sandboxConfig) limitBytes() int64 {
+	if c.scratchLimit > 0 {
+		return c.scratchLimit
 	}
-	return sandboxTaskBudget
+	return sandboxScratchLimit
 }
 
 // verifierSandbox is the scratch copy and Bash wrapper for one review's
@@ -69,7 +67,7 @@ func (s *verifierSandbox) close() {
 	if s == nil || s.root == "" {
 		return
 	}
-	_ = os.RemoveAll(s.root)
+	removeSandboxTree(s.root)
 	s.root = ""
 }
 
@@ -97,8 +95,8 @@ func verifierSandboxDir(reviewID string) (string, error) {
 }
 
 // prepareVerifierSandbox builds a scratch copy and an offline bubblewrap
-// wrapper for verifier tasks. Provisioning failures fall back to verification
-// without code execution and announce one stderr line.
+// wrapper for verifier tasks. Provisioning failures fall back to a scrubbed
+// Bash and announce one stderr line. Cancellation still aborts the review.
 func prepareVerifierSandbox(ctx context.Context, workspace, headSHA, reviewID string, cfg sandboxConfig) (*verifierSandbox, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -108,16 +106,17 @@ func prepareVerifierSandbox(ctx context.Context, workspace, headSHA, reviewID st
 		return nil, err
 	}
 	sweepStaleSandboxes(filepath.Dir(root))
+	sb := &verifierSandbox{commandTimeout: cfg.timeout()}
 	if err := os.MkdirAll(root, 0o700); err != nil {
-		return nil, err
+		return sb.fallback(sandboxUnavailable(err.Error()))
 	}
+	sb.root = root
 	if err := os.Chmod(root, 0o700); err != nil {
-		return nil, err
+		return sb.fallback(sandboxUnavailable(err.Error()))
 	}
 	if err := os.WriteFile(filepath.Join(root, "pid"), []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
-		return nil, err
+		return sb.fallback(sandboxUnavailable(err.Error()))
 	}
-	sb := &verifierSandbox{root: root, commandTimeout: cfg.timeout()}
 	if strings.TrimSpace(headSHA) == "" {
 		return sb.fallback(sandboxUnavailable("no head SHA"))
 	}
@@ -139,58 +138,72 @@ func prepareVerifierSandbox(ctx context.Context, workspace, headSHA, reviewID st
 	}
 	toolchain, err := readGoToolchain(ctx, workspace)
 	if err != nil {
-		if ctx.Err() != nil {
-			return sb.abandon(ctx.Err())
-		}
-		return sb.fallback(sandboxUnavailable(err.Error()))
+		return sb.fail(ctx, err)
 	}
 	tree := filepath.Join(root, "tree")
 	if err := extractGitArchive(ctx, workspace, headSHA, tree); err != nil {
-		if ctx.Err() != nil {
-			return sb.abandon(ctx.Err())
-		}
-		return sb.fallback(sandboxUnavailable(err.Error()))
+		return sb.fail(ctx, err)
 	}
 	gitBinds, err := gitReadonlyBinds(ctx, workspace, tree)
 	if err != nil {
-		if ctx.Err() != nil {
-			return sb.abandon(ctx.Err())
-		}
-		return sb.fallback(sandboxUnavailable(err.Error()))
+		return sb.fail(ctx, err)
 	}
-	version, overlay := bwrapInfo(ctx, tool.bwrap)
-	args, envPairs, err := sandboxMounts(root, tree, toolchain, gitBinds, overlay)
+	args, envPairs, err := sandboxMounts(root, tree, toolchain, gitBinds)
 	if err != nil {
 		return sb.fallback(sandboxUnavailable(err.Error()))
 	}
+	limitKB := cfg.limitBytes() / 1024
+	if limitKB < 1 {
+		limitKB = 1
+	}
 	shell := filepath.Join(root, "shell")
 	body := renderSandboxScript(sandboxScript{
-		root: root, budget: int(cfg.budget() / time.Second), timeout: int(cfg.timeout() / time.Second),
-		envBin: tool.env, prlimit: tool.prlimit, timeoutBin: tool.timeout, bwrap: tool.bwrap, wc: tool.wc,
-		envPairs: envPairs, bwrapArgs: joinQuoted(args),
+		root: root, timeout: int(cfg.timeout() / time.Second), limitKB: limitKB,
+		envBin: tool.env, prlimit: tool.prlimit, timeoutBin: tool.timeout, bwrap: tool.bwrap,
+		wc: tool.wc, du: tool.du, envPairs: envPairs, bwrapArgs: joinQuoted(args),
 		as: sandboxAddressSpace, fsize: sandboxFileSize,
 	})
 	if err := writeExecutable(shell, body); err != nil {
+		return sb.fallback(sandboxUnavailable(err.Error()))
+	}
+	if err := ctx.Err(); err != nil {
 		return sb.abandon(err)
 	}
-	probe := exec.CommandContext(ctx, shell, "--probe")
-	out, probeErr := probe.CombinedOutput()
+	probeOut, probeErr := exec.CommandContext(ctx, shell, "--probe").CombinedOutput()
 	if probeErr != nil {
 		if ctx.Err() != nil {
 			return sb.abandon(ctx.Err())
 		}
-		reason := firstLine(string(out))
+		reason := firstLine(string(probeOut))
 		if reason == "" {
 			reason = "probe failed"
 		}
 		return sb.fallback(sandboxUnavailable(reason))
 	}
+	listOut, listErr := exec.CommandContext(ctx, shell, "-c", "go list -m").CombinedOutput()
+	if listErr != nil {
+		if ctx.Err() != nil {
+			return sb.abandon(ctx.Err())
+		}
+		line := firstLine(string(listOut))
+		if line == "" {
+			line = "go list -m failed"
+		}
+		return sb.fallback(sandboxUnavailable("toolchain cannot build the reviewed head: " + line))
+	}
 	sb.tree = tree
 	sb.shell = shell
 	sb.active = true
-	sb.notice = fmt.Sprintf("unreal-review: verifier sandbox active (bwrap %s, offline, %d s per command, scratch %s).", version, int(cfg.timeout()/time.Second), tree)
+	sb.notice = fmt.Sprintf("unreal-review: verifier sandbox active (bwrap %s, offline, %d s per command, scratch %s).", bwrapVersion(ctx, tool.bwrap), int(cfg.timeout()/time.Second), tree)
 	sb.announce()
 	return sb, nil
+}
+
+func (s *verifierSandbox) fail(ctx context.Context, err error) (*verifierSandbox, error) {
+	if ctx.Err() != nil {
+		return s.abandon(ctx.Err())
+	}
+	return s.fallback(sandboxUnavailable(err.Error()))
 }
 
 func (s *verifierSandbox) fallback(notice string) (*verifierSandbox, error) {
@@ -199,21 +212,31 @@ func (s *verifierSandbox) fallback(notice string) (*verifierSandbox, error) {
 	s.notice = notice
 	shell, err := installScrubShell(s.root)
 	if err != nil {
-		return s.abandon(err)
+		dir, mkErr := os.MkdirTemp("", "unreal-review-verifier-")
+		if mkErr == nil {
+			old := s.root
+			s.root = dir
+			shell, err = installScrubShell(dir)
+			if err == nil && old != "" && old != dir {
+				removeSandboxTree(old)
+			}
+		}
 	}
-	s.shell = shell
+	if err == nil {
+		s.shell = shell
+	}
 	s.announce()
 	return s, nil
 }
 
-const sandboxSkippedNoGoMod = "unreal-review: verifier sandbox skipped (no go.mod at reviewed head); verifier tasks run without code execution."
+const sandboxSkippedNoGoMod = "unreal-review: verifier sandbox skipped (no go.mod at reviewed head); " + sandboxFallbackSuffix
 
 func sandboxUnavailable(reason string) string {
 	reason = firstLine(reason)
 	if reason == "" {
 		reason = "unknown"
 	}
-	return fmt.Sprintf("unreal-review: verifier sandbox unavailable (%s); verifier tasks run without code execution.", reason)
+	return fmt.Sprintf("unreal-review: verifier sandbox unavailable (%s); %s", reason, sandboxFallbackSuffix)
 }
 
 func firstLine(s string) string {
@@ -225,7 +248,7 @@ func firstLine(s string) string {
 }
 
 type sandboxBins struct {
-	bwrap, prlimit, timeout, env, wc string
+	bwrap, prlimit, timeout, env, wc, du string
 }
 
 func sandboxTools() (sandboxBins, error) {
@@ -239,6 +262,7 @@ func sandboxTools() (sandboxBins, error) {
 		{"timeout", &bins.timeout},
 		{"env", &bins.env},
 		{"wc", &bins.wc},
+		{"du", &bins.du},
 	} {
 		path, err := exec.LookPath(item.name)
 		if err != nil {
@@ -250,27 +274,23 @@ func sandboxTools() (sandboxBins, error) {
 }
 
 type goToolchain struct {
-	goroot    string
-	modcache  string
-	gopath    string
-	cacheHost string
+	goroot, modcache, gopath string
 }
 
 func readGoToolchain(ctx context.Context, workspace string) (goToolchain, error) {
-	out, err := commandOutput(ctx, workspace, "go", "env", "GOROOT", "GOMODCACHE", "GOPATH", "GOCACHE")
+	out, err := commandOutput(ctx, workspace, "go", "env", "GOROOT", "GOMODCACHE", "GOPATH")
 	if err != nil {
 		return goToolchain{}, err
 	}
 	lines := strings.Split(out, "\n")
-	if len(lines) < 4 || lines[0] == "" {
+	if len(lines) < 3 || lines[0] == "" {
 		return goToolchain{}, fmt.Errorf("go env GOROOT returned nothing")
 	}
-	tc := goToolchain{goroot: lines[0], modcache: lines[1], gopath: lines[2], cacheHost: lines[3]}
-	info, err := os.Stat(tc.goroot)
+	info, err := os.Stat(lines[0])
 	if err != nil || !info.IsDir() {
-		return goToolchain{}, fmt.Errorf("GOROOT %s is not a directory", tc.goroot)
+		return goToolchain{}, fmt.Errorf("GOROOT %s is not a directory", lines[0])
 	}
-	return tc, nil
+	return goToolchain{goroot: lines[0], modcache: lines[1], gopath: lines[2]}, nil
 }
 
 func headHasGoMod(ctx context.Context, workspace, sha string) bool {
@@ -282,31 +302,10 @@ func extractGitArchive(ctx context.Context, workspace, sha, dest string) error {
 	if err := os.MkdirAll(dest, 0o700); err != nil {
 		return err
 	}
-	archive := exec.CommandContext(ctx, "git", "-C", workspace, "archive", "--format=tar", sha)
-	tarCmd := exec.CommandContext(ctx, "tar", "-x", "-C", dest)
-	var archiveErr, tarErr bytes.Buffer
-	reader, writer := io.Pipe()
-	archive.Stdout = writer
-	archive.Stderr = &archiveErr
-	tarCmd.Stdin = reader
-	tarCmd.Stderr = &tarErr
-	if err := archive.Start(); err != nil {
-		return err
-	}
-	if err := tarCmd.Start(); err != nil {
-		_ = archive.Process.Kill()
-		_ = writer.Close()
-		_ = archive.Wait()
-		return err
-	}
-	errArchive := archive.Wait()
-	_ = writer.Close()
-	errTar := tarCmd.Wait()
-	if errArchive != nil {
-		return fmt.Errorf("git archive: %s", firstLine(strings.TrimSpace(archiveErr.String()+" "+errArchive.Error())))
-	}
-	if errTar != nil {
-		return fmt.Errorf("tar: %s", firstLine(strings.TrimSpace(tarErr.String()+" "+errTar.Error())))
+	cmd := exec.CommandContext(ctx, "sh", "-c", `git -C "$1" archive --format=tar "$2" | tar -x -C "$3"`, "extract", workspace, sha, dest)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git archive: %s", firstLine(string(out)+" "+err.Error()))
 	}
 	return nil
 }
@@ -315,17 +314,15 @@ func extractGitArchive(ctx context.Context, workspace, sha, dest string) error {
 // inside the scratch tree without the host config or hooks.
 func gitReadonlyBinds(ctx context.Context, workspace, tree string) ([]string, error) {
 	gitDir := filepath.Join(tree, ".git")
-	if err := os.MkdirAll(filepath.Join(gitDir, "objects"), 0o700); err != nil {
-		return nil, err
+	for _, dir := range []string{filepath.Join(gitDir, "objects"), filepath.Join(gitDir, "refs")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, err
+		}
 	}
-	if err := os.MkdirAll(filepath.Join(gitDir, "refs"), 0o700); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte(""), 0o600); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(filepath.Join(gitDir, "config"), nil, 0o600); err != nil {
-		return nil, err
+	for _, name := range []string{"HEAD", "config"} {
+		if err := os.WriteFile(filepath.Join(gitDir, name), nil, 0o600); err != nil {
+			return nil, err
+		}
 	}
 	var args []string
 	for _, name := range []string{"objects", "refs", "HEAD"} {
@@ -340,7 +337,7 @@ func gitReadonlyBinds(ctx context.Context, workspace, tree string) ([]string, er
 		return nil, err
 	}
 	if info, statErr := os.Stat(shallow); statErr == nil && !info.IsDir() {
-		if err := os.WriteFile(filepath.Join(gitDir, "shallow"), []byte(""), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(gitDir, "shallow"), nil, 0o600); err != nil {
 			return nil, err
 		}
 		args = append(args, "--ro-bind", shallow, filepath.Join(gitDir, "shallow"))
@@ -359,7 +356,7 @@ func absoluteGitPath(ctx context.Context, workspace, name string) (string, error
 	return filepath.Clean(filepath.Join(workspace, out)), nil
 }
 
-func sandboxMounts(root, tree string, tc goToolchain, gitBinds []string, overlay bool) ([]string, string, error) {
+func sandboxMounts(root, tree string, tc goToolchain, gitBinds []string) ([]string, string, error) {
 	home := filepath.Join(root, "home")
 	tmp := filepath.Join(root, "tmp")
 	gopath := filepath.Join(root, "gopath")
@@ -374,12 +371,7 @@ func sandboxMounts(root, tree string, tc goToolchain, gitBinds []string, overlay
 	if info, err := os.Stat(modSrc); err != nil || !info.IsDir() {
 		modSrc = mod
 	}
-	// tmpfs /tmp before binds. A later tmpfs would hide a scratch path under /tmp.
-	args := []string{
-		"--unshare-all", "--die-with-parent",
-		"--proc", "/proc", "--dev", "/dev",
-		"--size", strconv.FormatInt(sandboxTmpfsSize, 10), "--tmpfs", "/tmp",
-	}
+	args := []string{"--unshare-all", "--die-with-parent", "--new-session", "--proc", "/proc", "--dev", "/dev"}
 	for _, path := range []string{"/usr", "/bin", "/lib", "/lib64"} {
 		info, err := os.Stat(path)
 		if err != nil || !info.IsDir() {
@@ -387,28 +379,17 @@ func sandboxMounts(root, tree string, tc goToolchain, gitBinds []string, overlay
 		}
 		args = append(args, "--ro-bind", path, path)
 	}
-	args = append(args,
-		"--ro-bind", tc.goroot, tc.goroot,
-		"--ro-bind", modSrc, mod,
-		"--bind", tree, tree,
-	)
+	args = append(args, "--ro-bind", tc.goroot, tc.goroot, "--ro-bind", modSrc, mod, "--bind", tree, tree)
 	args = append(args, gitBinds...)
-	args = append(args, "--bind", tmp, tmp, "--bind", home, home, "--bind", gopath, gopath)
-	if overlay && tc.cacheHost != "" {
-		if err := os.MkdirAll(tc.cacheHost, 0o700); err != nil {
-			return nil, "", err
-		}
-		args = append(args, "--overlay-src", tc.cacheHost, "--tmp-overlay", cache)
-	} else {
-		args = append(args, "--size", strconv.FormatInt(sandboxTmpfsSize, 10), "--tmpfs", cache)
-	}
-	args = append(args, "--chdir", tree)
+	args = append(args, "--bind", gopath, gopath, "--bind", cache, cache)
+	size := strconv.FormatInt(sandboxTmpfsSize, 10)
+	args = append(args, "--size", size, "--tmpfs", home, "--size", size, "--tmpfs", tmp, "--chdir", tree)
 	pairs := shellAssignments([][2]string{
 		{"PATH", filepath.Join(tc.goroot, "bin") + ":/usr/bin:/bin"},
 		{"GOROOT", tc.goroot},
 		{"GOTOOLCHAIN", "local"},
 		{"GOPROXY", "off"},
-		{"GOFLAGS", "-mod=readonly -buildvcs=false"},
+		{"GOFLAGS", "-buildvcs=false"},
 		{"GOMODCACHE", mod},
 		{"GOCACHE", cache},
 		{"GOPATH", gopath},
@@ -419,23 +400,24 @@ func sandboxMounts(root, tree string, tc goToolchain, gitBinds []string, overlay
 }
 
 type sandboxScript struct {
-	root, envBin, prlimit, timeoutBin, bwrap, wc string
-	envPairs, bwrapArgs                          string
-	budget, timeout                              int
-	as, fsize                                    int64
+	root, envBin, prlimit, timeoutBin, bwrap, wc, du string
+	envPairs, bwrapArgs                              string
+	timeout                                          int
+	limitKB, as, fsize                               int64
 }
 
 func renderSandboxScript(s sandboxScript) string {
 	return strings.NewReplacer(
 		"@@ROOT@@", shQuote(s.root),
-		"@@BUDGET@@", strconv.Itoa(s.budget),
 		"@@TIMEOUT@@", strconv.Itoa(s.timeout),
+		"@@LIMIT@@", strconv.FormatInt(s.limitKB, 10),
 		"@@ENV@@", shQuote(s.envBin),
 		"@@ENV_RAW@@", s.envBin,
 		"@@PRLIMIT@@", shQuote(s.prlimit),
 		"@@TIMEOUTBIN@@", shQuote(s.timeoutBin),
 		"@@BWRAP@@", shQuote(s.bwrap),
 		"@@WC_RAW@@", s.wc,
+		"@@DU@@", shQuote(s.du),
 		"@@AS@@", strconv.FormatInt(s.as, 10),
 		"@@FSIZE@@", strconv.FormatInt(s.fsize, 10),
 		"@@ENV_PAIRS@@", s.envPairs,
@@ -446,8 +428,8 @@ func renderSandboxScript(s sandboxScript) string {
 const sandboxScriptSource = `#!/bin/sh
 set -eu
 root=@@ROOT@@
-budget=@@BUDGET@@
 timeout_secs=@@TIMEOUT@@
+cap_kb=@@LIMIT@@
 run() {
   @@ENV@@ -i @@ENV_PAIRS@@ \
     @@PRLIMIT@@ --as=@@AS@@ --fsize=@@FSIZE@@ \
@@ -456,46 +438,31 @@ run() {
     /bin/sh -c "$1"
 }
 if [ "${1:-}" = "--probe" ]; then
-  # dash sets PWD; unset it so the empty-environment assertion sees only leaks.
   exec @@ENV@@ -i @@PRLIMIT@@ --as=@@AS@@ --fsize=@@FSIZE@@ @@TIMEOUTBIN@@ -k 2 "$timeout_secs" @@BWRAP@@ @@BWRAP_ARGS@@ /bin/sh -c 'unset PWD; test "$(@@WC_RAW@@ -l </proc/net/dev)" -eq 3 && test -z "$(@@ENV_RAW@@)"'
 fi
 if [ "${1:-}" != "-c" ]; then
   echo "unreal-review: verifier shell expects -c" >&2
   exit 2
 fi
-task=$(cat "$root/active-task" 2>/dev/null || echo task)
-case "$task" in
-  *[!A-Za-z0-9._-]*) task=task ;;
-esac
-mkdir -p "$root/budgets"
-ledger="$root/budgets/$task"
-secs=0
-if [ -f "$ledger" ]; then
-  secs=$(tr -cd '0-9' < "$ledger" || true)
-  secs=${secs:-0}
-fi
-if [ "$secs" -ge "$budget" ]; then
-  echo "unreal-review: verifier command time budget exhausted" >&2
+used=0
+while IFS= read -r line; do
+  kb=${line%%[!0-9]*}
+  [ -n "$kb" ] || continue
+  used=$((used + kb))
+done <<EOF
+$(@@DU@@ -skx "$root/tree" "$root/gocache" "$root/gopath")
+EOF
+if [ "$used" -ge "$cap_kb" ]; then
+  echo "unreal-review: verifier scratch exceeds ${cap_kb} KiB; refusing further commands" >&2
   exit 1
 fi
-start=$(date +%s)
-set +e
 run "${2-}"
-code=$?
-set -e
-end=$(date +%s)
-elapsed=$((end - start))
-if [ "$elapsed" -lt 0 ]; then elapsed=0; fi
-cur=0
-if [ -f "$ledger" ]; then
-  cur=$(tr -cd '0-9' < "$ledger" || true)
-  cur=${cur:-0}
-fi
-echo $((cur + elapsed)) > "$ledger"
-exit "$code"
 `
 
 func installScrubShell(root string) (string, error) {
+	if root == "" {
+		return "", fmt.Errorf("sandbox directory is missing")
+	}
 	home := filepath.Join(root, "home")
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return "", err
@@ -517,14 +484,7 @@ func installScrubShell(root string) (string, error) {
 		"@@PATH@@", shQuote(path),
 		"@@HOME@@", shQuote(home),
 		"@@LANG@@", shQuote(lang),
-	).Replace(`#!/bin/sh
-set -eu
-if [ "${1:-}" != "-c" ]; then
-  echo "unreal-review: verifier shell expects -c" >&2
-  exit 2
-fi
-exec @@ENV@@ -i PATH=@@PATH@@ HOME=@@HOME@@ LANG=@@LANG@@ /bin/sh -c "${2-}"
-`)
+	).Replace("#!/bin/sh\nset -eu\nif [ \"${1:-}\" != \"-c\" ]; then\n  echo \"unreal-review: verifier shell expects -c\" >&2\n  exit 2\nfi\nexec @@ENV@@ -i PATH=@@PATH@@ HOME=@@HOME@@ LANG=@@LANG@@ /bin/sh -c \"${2-}\"\n")
 	shell := filepath.Join(root, "shell")
 	if err := writeExecutable(shell, body); err != nil {
 		return "", err
@@ -532,33 +492,16 @@ exec @@ENV@@ -i PATH=@@PATH@@ HOME=@@HOME@@ LANG=@@LANG@@ /bin/sh -c "${2-}"
 	return shell, nil
 }
 
-func bwrapInfo(ctx context.Context, path string) (string, bool) {
+func bwrapVersion(ctx context.Context, path string) string {
 	out, err := commandOutput(ctx, "", path, "--version")
 	if err != nil {
-		return "unknown", false
+		return "unknown"
 	}
 	fields := strings.Fields(out)
 	if len(fields) == 0 {
-		return "unknown", false
+		return "unknown"
 	}
-	ver := fields[len(fields)-1]
-	return ver, versionAtLeast(ver, 0, 11)
-}
-
-func versionAtLeast(ver string, major, minor int) bool {
-	parts := strings.Split(ver, ".")
-	if len(parts) < 2 {
-		return false
-	}
-	maj, err1 := strconv.Atoi(parts[0])
-	min, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
-		return false
-	}
-	if maj != major {
-		return maj > major
-	}
-	return min >= minor
+	return fields[len(fields)-1]
 }
 
 func commandOutput(ctx context.Context, dir, name string, args ...string) (string, error) {
@@ -574,7 +517,7 @@ func commandOutput(ctx context.Context, dir, name string, args ...string) (strin
 		if msg == "" {
 			msg = err.Error()
 		}
-		return "", fmt.Errorf("%s", msg)
+		return "", errors.New(msg)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -606,6 +549,18 @@ func shellAssignments(pairs [][2]string) string {
 	return strings.Join(parts, " ")
 }
 
+func removeSandboxTree(root string) {
+	if root == "" {
+		return
+	}
+	_ = os.Chmod(root, 0o700)
+	_ = filepath.Walk(root, func(path string, _ os.FileInfo, _ error) error {
+		_ = os.Chmod(path, 0o700)
+		return nil
+	})
+	_ = os.RemoveAll(root)
+}
+
 func sweepStaleSandboxes(root string) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -617,7 +572,7 @@ func sweepStaleSandboxes(root string) {
 		}
 		dir := filepath.Join(root, entry.Name())
 		if sandboxStale(dir) {
-			_ = os.RemoveAll(dir)
+			removeSandboxTree(dir)
 		}
 	}
 }
@@ -653,22 +608,6 @@ func processAlive(pid int) bool {
 	return err == nil || errors.Is(err, unix.EPERM)
 }
 
-func sandboxTaskName(stage string) string {
-	var b strings.Builder
-	for _, r := range stage {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('_')
-		}
-	}
-	if b.Len() == 0 {
-		return "task"
-	}
-	return b.String()
-}
-
 func verifierSandboxAddendum(active bool, perCommand time.Duration) string {
 	if !active {
 		return ""
@@ -677,10 +616,10 @@ func verifierSandboxAddendum(active bool, perCommand time.Duration) string {
 		perCommand = sandboxCommandTimeout
 	}
 	seconds := int(perCommand / time.Second)
-	return fmt.Sprintf("\nVerifier sandbox: the workspace is a scratch copy of the reviewed commit and code may be run offline here (go build, go vet, go test of the changed packages, or a repro written in this scratch copy). Each command is killed after %d s; the network is off. A finding that claims runtime behavior and is demonstrated by a command you ran in this session keeps its severity; cite that command and a short output excerpt in the body. A runtime-behavior claim you could not demonstrate is re-emitted with severity note, not dropped. A finding settled by reading the code alone (exact quoted lines at the cited range, such as a compile error or an always-false condition) may keep its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change.", seconds)
+	return fmt.Sprintf("\nVerifier sandbox: the workspace is a scratch copy of the reviewed commit and code may be run offline here (go build, go vet, go test of the changed packages, or a repro written in this scratch copy). Each command is killed after %d s; the network is off. This severity rule applies only to claims about runtime behavior. A finding that claims runtime behavior and is demonstrated by a command you ran in this session keeps its severity; cite that command and a short output excerpt in the body. A runtime-behavior claim you could not demonstrate is re-emitted with severity note, not dropped. A finding settled by reading the code alone (exact quoted lines at the cited range, such as a compile error or an always-false condition) may keep its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change.", seconds)
 }
 
-func applyVerifierSandbox(child *review.AgentRequest, agent review.Agent, sb *verifierSandbox, stage string) review.Agent {
+func applyVerifierSandbox(child *review.AgentRequest, agent review.Agent, sb *verifierSandbox) review.Agent {
 	if sb == nil {
 		return agent
 	}
@@ -691,7 +630,6 @@ func applyVerifierSandbox(child *review.AgentRequest, agent review.Agent, sb *ve
 	if sb.shell == "" {
 		return agent
 	}
-	_ = os.WriteFile(filepath.Join(sb.root, "active-task"), []byte(sandboxTaskName(stage)), 0o600)
 	child.Shell = sb.shell
 	return withShell(agent, sb.shell)
 }
