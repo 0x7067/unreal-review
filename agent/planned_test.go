@@ -124,10 +124,11 @@ func TestVerifierWallCapPublishesCandidates(t *testing.T) {
 	also := plannedTestIssue("also")
 	also.StartLine, also.EndLine = 8, 8
 	also.Body = "Second defect"
-	third := plannedTestIssue("third")
-	third.StartLine, third.EndLine = 12, 12
-	third.Body = "Third defect"
-	candidates := []findings.Finding{kept, also, third}
+	weak := plannedTestIssue("weak")
+	weak.StartLine, weak.EndLine = 12, 12
+	weak.Severity = findings.SeverityWarning
+	weak.Body = "Weak candidate"
+	candidates := []findings.Finding{kept, also, weak}
 	consolidator := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
 		items, err := plannedTestCandidates(r.Prompt)
 		if err != nil {
@@ -171,9 +172,16 @@ func TestVerifierWallCapPublishesCandidates(t *testing.T) {
 		for _, item := range report.Findings {
 			got[item.ID] = item
 		}
-		if len(report.Findings) != 3 || got["kept"].Body != "verified kept" || got["kept"].Severity != findings.SeverityError || got["also"].Severity != findings.SeverityNote || got["also"].Body != "Second defect" || got["third"].Severity != findings.SeverityNote || got["third"].Body != "Third defect" {
+		if len(report.Findings) != 1 || got["kept"].Body != "verified kept" || got["kept"].Severity != findings.SeverityError || got["also"].ID != "" || got["weak"].ID != "" {
 			t.Fatalf("published findings = %+v", report.Findings)
 		}
+	})
+	t.Run("none", func(t *testing.T) {
+		report := run(t, func(ctx context.Context, _ review.AgentRequest) (review.AgentResult, error) {
+			<-ctx.Done()
+			return review.AgentResult{}, ctx.Err()
+		})
+		assertWallNotes(t, report)
 	})
 	t.Run("corrupt", func(t *testing.T) {
 		report := run(t, func(ctx context.Context, r review.AgentRequest) (review.AgentResult, error) {
@@ -183,14 +191,19 @@ func TestVerifierWallCapPublishesCandidates(t *testing.T) {
 			<-ctx.Done()
 			return review.AgentResult{}, ctx.Err()
 		})
-		got := map[string]findings.Finding{}
-		for _, item := range report.Findings {
-			got[item.ID] = item
-		}
-		if len(report.Findings) != 3 || got["kept"].Severity != findings.SeverityNote || got["kept"].Body != "Confirmed defect kept" || got["also"].Severity != findings.SeverityNote || got["third"].Severity != findings.SeverityNote {
-			t.Fatalf("published findings = %+v", report.Findings)
-		}
+		assertWallNotes(t, report)
 	})
+}
+
+func assertWallNotes(t *testing.T, report findings.Report) {
+	t.Helper()
+	got := map[string]findings.Finding{}
+	for _, item := range report.Findings {
+		got[item.ID] = item
+	}
+	if len(report.Findings) != 2 || got["kept"].Severity != findings.SeverityNote || got["kept"].Body != "Confirmed defect kept" || got["also"].Severity != findings.SeverityNote || got["also"].Body != "Second defect" || got["weak"].ID != "" {
+		t.Fatalf("published findings = %+v", report.Findings)
+	}
 }
 
 func TestVerifierWallStopResumes(t *testing.T) {
