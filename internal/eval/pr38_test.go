@@ -28,8 +28,8 @@ func TestScorePR38CountsHitWeakUnlabeledAndErrorShare(t *testing.T) {
 		pr38Finding("internal/agent/strategy.go", 41, 42, findings.SeverityError),
 		pr38Finding("internal/agent/planned.go", 96, 100, findings.SeverityError),
 	))
-	if score.Hits != 4 || score.Real != 5 || score.Recall != 0.8 || score.Weak != 3 || score.Unlabeled != 1 || score.Produced != 8 {
-		t.Fatalf("hits=%d/%d recall=%v weak=%d unlabeled=%d produced=%d", score.Hits, score.Real, score.Recall, score.Weak, score.Unlabeled, score.Produced)
+	if score.Hits != 4 || score.Recall != 0.8 || score.Weak != 3 || score.Unlabeled != 1 || score.Produced != 8 {
+		t.Fatalf("hits=%d recall=%v weak=%d unlabeled=%d produced=%d", score.Hits, score.Recall, score.Weak, score.Unlabeled, score.Produced)
 	}
 	if len(score.HitIDs) != 4 || score.HitIDs[0] != "F1" || score.HitIDs[1] != "F2" || score.HitIDs[2] != "F3" || score.HitIDs[3] != "F5" {
 		t.Fatalf("hit ids %v", score.HitIDs)
@@ -64,6 +64,7 @@ func TestScorePR38AssignsOneLabel(t *testing.T) {
 		id               string
 	}{
 		{"internal/eval/eval.go", 157, 170, 1, 0, 0, "F5"},
+		{"internal/eval/eval.go", 153, 154, 1, 0, 0, "F2"},
 		{"internal/review/review.go", 149, 165, 0, 1, 0, ""},
 		{"internal/review/review.go", 146, 165, 1, 0, 0, "F3"},
 		{"internal/eval/eval.go", 169, 169, 1, 0, 0, "F6"},
@@ -119,6 +120,11 @@ func TestAggregatePR38MeansUnionAndFailedRuns(t *testing.T) {
 	}
 	if math.Abs(report.Mean.CostUSD-0.45) > 1e-12 || math.Abs(report.CostUSD-0.90) > 1e-12 || math.Abs(report.Mean.Requests-70) > 1e-12 || math.Abs(report.Mean.DurationMS-2000) > 1e-12 {
 		t.Fatalf("cost mean=%v total=%v requests=%v time=%v", report.Mean.CostUSD, report.CostUSD, report.Mean.Requests, report.Mean.DurationMS)
+	}
+	blank := ScorePR38(pr38Run(findings.StatusComplete, 0.10, 4, pr38Finding("internal/review/review.go", 75, 76, findings.SeverityNote)))
+	withBlank := AggregatePR38([]PR38Score{first, blank})
+	if blank.Precision != nil || withBlank.Completed != 2 || withBlank.Mean.Precision == nil || math.Abs(*withBlank.Mean.Precision-1) > 1e-12 || math.Abs(withBlank.Mean.Recall-0.1) > 1e-12 {
+		t.Fatalf("nil precision changed the mean: precision=%v mean=%v recall=%v completed=%d", blank.Precision, withBlank.Mean.Precision, withBlank.Mean.Recall, withBlank.Completed)
 	}
 	failed := ScorePR38(pr38Run(findings.StatusFailed, 9, 400,
 		pr38Finding("internal/eval/eval.go", 121, 127, findings.SeverityError),

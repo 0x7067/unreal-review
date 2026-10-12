@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/0x7067/unreal-review/findings"
@@ -62,32 +61,24 @@ func pr38RealCount() int {
 
 func PR38CaseNames() []string { return []string{pr38Name} }
 
-func PR38Rule() string {
-	if i := strings.Index(pr38Note, ". "); i >= 0 {
-		return pr38Note[:i+1]
-	}
-	return pr38Note
-}
+func PR38Rule() string { return pr38Note }
 
 // Precision is nil when the run has no real hit and no weak finding.
 type PR38Score struct {
-	Name         string   `json:"name"`
-	Run          int      `json:"run,omitempty"`
-	Status       string   `json:"status"`
-	Hits         int      `json:"hits"`
-	Real         int      `json:"real"`
-	Recall       float64  `json:"recall"`
-	Weak         int      `json:"weak"`
-	Unlabeled    int      `json:"unlabeled"`
-	Precision    *float64 `json:"precision"`
-	ErrorShare   float64  `json:"error_share"`
-	Produced     int      `json:"produced"`
-	CostUSD      float64  `json:"cost_usd"`
-	Requests     int      `json:"requests"`
-	DurationMS   int64    `json:"duration_ms"`
-	HitIDs       []string `json:"hit_ids"`
-	Err          string   `json:"err,omitempty"`
-	FindingsPath string   `json:"findings_path,omitempty"`
+	Run        int      `json:"run,omitempty"`
+	Status     string   `json:"status"`
+	Hits       int      `json:"hits"`
+	Recall     float64  `json:"recall"`
+	Weak       int      `json:"weak"`
+	Unlabeled  int      `json:"unlabeled"`
+	Precision  *float64 `json:"precision"`
+	ErrorShare float64  `json:"error_share"`
+	Produced   int      `json:"produced"`
+	CostUSD    float64  `json:"cost_usd"`
+	Requests   int      `json:"requests"`
+	DurationMS int64    `json:"duration_ms"`
+	HitIDs     []string `json:"hit_ids"`
+	Err        string   `json:"err,omitempty"`
 }
 
 func (s PR38Score) Completed() bool { return s.Status == string(findings.StatusComplete) }
@@ -116,7 +107,7 @@ type PR38Report struct {
 }
 
 func ScorePR38(report findings.Report) PR38Score {
-	score := PR38Score{Name: pr38Name, Real: pr38RealCount(), HitIDs: []string{}}
+	score := PR38Score{HitIDs: []string{}}
 	if report.Run != nil {
 		score.Status = string(report.Run.Status)
 		score.CostUSD = report.Run.Cost.AmountUSD
@@ -147,7 +138,7 @@ func ScorePR38(report findings.Report) PR38Score {
 			score.HitIDs = append(score.HitIDs, label.ID)
 		}
 	}
-	score.Recall = Agreement(score.Hits, score.Real)
+	score.Recall = Agreement(score.Hits, pr38RealCount())
 	score.Precision = pr38Precision(score.Hits, score.Weak)
 	score.ErrorShare = pr38Rate(errors, score.Produced)
 	return score
@@ -255,14 +246,13 @@ func RunPR38(ctx context.Context, root string, opts Options) (PR38Score, error) 
 		Name: pr38Name, Repo: pr38Repo, Base: pr38Base, Head: pr38Head, Title: "PR #38",
 	}, dir)
 	if err != nil {
-		return PR38Score{Name: pr38Name, HitIDs: []string{}}, fmt.Errorf("set up %s: %w", pr38Name, err)
+		return PR38Score{}, fmt.Errorf("set up %s: %w", pr38Name, err)
 	}
 	findingsPath := filepath.Join(root, pr38Name+".findings.jsonl")
 	start := time.Now()
 	result, runErr := review.Run(ctx, martianReviewOptions(dir, head, findingsPath, opts))
 	score := ScorePR38(result.Report)
 	score.DurationMS = time.Since(start).Milliseconds()
-	score.FindingsPath = findingsPath
 	if runErr != nil {
 		score.Err = runErr.Error()
 	}

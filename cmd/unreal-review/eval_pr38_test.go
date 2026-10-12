@@ -11,12 +11,12 @@ import (
 func TestFinishPR38PrintsReportAndFailsTheCommand(t *testing.T) {
 	prec := 1.0
 	report := eval.AggregatePR38([]eval.PR38Score{
-		{Run: 1, Status: "failed", Err: "boom", Real: 5, HitIDs: []string{}},
-		{Run: 2, Status: "complete", Hits: 1, Real: 5, Recall: 0.2, Precision: &prec, Produced: 1, CostUSD: 0.5, HitIDs: []string{"F1"}},
+		{Run: 1, Status: "failed", Err: "boom", HitIDs: []string{}},
+		{Run: 2, Status: "complete", Hits: 1, Recall: 0.2, Precision: &prec, Produced: 1, CostUSD: 0.5, HitIDs: []string{"F1"}},
 	})
 	var out, errOut bytes.Buffer
 	err := finishPR38(&out, &errOut, report, true, "/tmp/pr38")
-	if err == nil || !bytes.Contains(errOut.Bytes(), []byte("pr38 run 1 failed: boom")) {
+	if err == nil || !bytes.Contains(errOut.Bytes(), []byte("pr38 run 1 failed: boom")) || bytes.Contains(errOut.Bytes(), []byte("pr38 run 2 failed")) {
 		t.Fatalf("err=%v stderr=%s", err, errOut.String())
 	}
 	var got eval.PR38Report

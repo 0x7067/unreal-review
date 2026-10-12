@@ -79,7 +79,7 @@ func printPR38(w io.Writer, report eval.PR38Report) {
 			note = " " + shortErr(score.Err)
 		}
 		_, _ = fmt.Fprintf(writer, "%d\t%s%s\t%.2f\t%s\t%d/%d\t%d\t%d\t%.2f\t%d\t$%.4f\t%d\t%ds\n",
-			score.Run, score.Status, note, score.Recall, formatPrecision(score.Precision), score.Hits, score.Real,
+			score.Run, score.Status, note, score.Recall, formatPrecision(score.Precision), score.Hits, report.Real,
 			score.Weak, score.Unlabeled, score.ErrorShare, score.Produced, score.CostUSD, score.Requests, score.DurationMS/1000)
 	}
 	mean := report.Mean
