@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/unreallabsai/unreal-agent/harness/llm"
 
 	"github.com/0x7067/unreal-review/findings"
 	"github.com/0x7067/unreal-review/review"
@@ -245,10 +248,22 @@ func TestSweepRemovesDeadSandboxDirs(t *testing.T) {
 	}
 }
 
-func TestFallbackVerifierHasNoSandbox(t *testing.T) {
+func TestFallbackVerifierHasNoSandboxAndScrubsEnv(t *testing.T) {
 	notices := captureNotices(t)
 	repo, sha := sandboxModuleRepo(t)
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for key, value := range map[string]string{
+		"CANARY_SANDBOX":     sandboxSecrets[0],
+		"OPENROUTER_API_KEY": sandboxSecrets[1],
+		"GH_TOKEN":           sandboxSecrets[2],
+	} {
+		t.Setenv(key, value)
+	}
+	secret := filepath.Join(home, "secret-file")
+	if err := os.WriteFile(secret, []byte("home-visible"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "bwrap"), []byte("#!/bin/sh\necho 'simulated sandbox probe failure' >&2\nexit 1\n"), 0o700); err != nil {
 		t.Fatal(err)
@@ -257,6 +272,7 @@ func TestFallbackVerifierHasNoSandbox(t *testing.T) {
 	req := sandboxPlannedRequest(t, repo, sha)
 	req.ReviewID = "fallback-probe"
 	var sawVerifier bool
+	var shellCopy string
 	fake := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
 		if strings.Contains(r.Prompt, "Planned discovery") {
 			if r.Shell != "" || strings.Contains(r.SystemPrompt, "Verifier sandbox") {
@@ -275,9 +291,15 @@ func TestFallbackVerifierHasNoSandbox(t *testing.T) {
 			if strings.Contains(r.SystemPrompt, "re-emitted with severity note") {
 				t.Fatal("inactive verifier prompt contains the sandbox severity rule")
 			}
-			if r.Shell != "" {
-				t.Fatalf("fallback verifier shell = %q", r.Shell)
+			script := mustRead(t, r.Shell)
+			if strings.Contains(script, "bwrap") {
+				t.Fatalf("fallback shell is a sandbox wrapper:\n%s", script)
 			}
+			copyPath := filepath.Join(t.TempDir(), "scrub-shell")
+			if err := os.WriteFile(copyPath, []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			shellCopy = copyPath
 			return plannedTestEmit(r, []findings.Finding{plannedTestIssue("kept")})
 		}
 		return plannedTestEmit(r, nil)
@@ -285,12 +307,51 @@ func TestFallbackVerifierHasNoSandbox(t *testing.T) {
 	if _, err := (Planned{Agent: fake, Verifier: fake, Consolidator: fake, Config: "single/high"}).Run(t.Context(), req); err != nil {
 		t.Fatal(err)
 	}
-	if !sawVerifier {
+	if !sawVerifier || shellCopy == "" {
 		t.Fatal("verifier did not run")
 	}
 	wantNotice := "unreal-review: verifier sandbox unavailable (simulated sandbox probe failure); verifier tasks run without code execution."
 	if !strings.Contains(notices.String(), wantNotice) {
 		t.Fatalf("notice:\n%s", notices.String())
+	}
+	out, code := runShell(t, shellCopy, fmt.Sprintf("test -e '%s' && echo HOME_VISIBLE || echo HOME_HIDDEN; printf 'KEY=%%s\\nCANARY=%%s\\nGH=%%s\\nHOME=%%s\\n' \"$OPENROUTER_API_KEY\" \"$CANARY_SANDBOX\" \"$GH_TOKEN\" \"$HOME\"", secret))
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "HOME_VISIBLE") {
+		t.Fatalf("fallback shell hid the host filesystem:\n%s", out)
+	}
+	for _, secretValue := range sandboxSecrets {
+		if strings.Contains(out, secretValue) {
+			t.Fatalf("fallback shell leaked %q:\n%s", secretValue, out)
+		}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if line == "HOME="+home {
+			t.Fatalf("fallback HOME is the user home:\n%s", out)
+		}
+	}
+	ws := t.TempDir()
+	envFile := filepath.Join(ws, "env.out")
+	adapter := &scriptedAdapter{responses: []llm.Response{
+		bashResponse(fmt.Sprintf("printf '%%s\\n' \"$OPENROUTER_API_KEY\" \"$CANARY_SANDBOX\" \"$GH_TOKEN\" > '%s'", envFile)),
+		messageResponse("sum", "No material issues in the verifier shell environment."),
+	}}
+	_, err := (Harness{ThinkingLevel: "high", Shell: shellCopy}).run(t.Context(), adapter, review.AgentRequest{
+		Workspace: ws, ReviewID: "fallback-harness", FindingsPath: filepath.Join(ws, "findings.jsonl"),
+		Prompt: "Review.", SystemPrompt: "You review a git unified diff.", Model: "test-model", Shell: shellCopy,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secretValue := range sandboxSecrets {
+		if strings.Contains(string(got), secretValue) {
+			t.Fatalf("harness Bash leaked %q:\n%s", secretValue, got)
+		}
 	}
 }
 
@@ -420,7 +481,7 @@ func TestInactiveFocusedVerifierPromptIsUnchanged(t *testing.T) {
 	runner := focusedTestRunner(func(_ context.Context, child review.AgentRequest) (review.AgentResult, error) {
 		if strings.Contains(child.SystemPrompt, "final verification") {
 			prompt = child.SystemPrompt
-			if child.Shell != "" {
+			if child.Shell == "" || strings.Contains(mustRead(t, child.Shell), "bwrap") {
 				t.Fatalf("focused fallback shell: %q", child.Shell)
 			}
 			return focusedTestEmit(child, nil)
@@ -588,5 +649,31 @@ func writePID(t *testing.T, dir string, pid int) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "pid"), []byte(fmt.Sprintf("%d\n", pid)), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func mustRead(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func bashResponse(command string) llm.Response {
+	args, err := json.Marshal(map[string]string{"command": command})
+	if err != nil {
+		panic(err)
+	}
+	return llm.Response{
+		ID:   "bash-1",
+		Stop: llm.StopComplete,
+		Output: []llm.Item{{
+			ProviderID: "bash-1-call",
+			Type:       llm.ItemToolCall,
+			Data:       llm.ToolCall{CallID: "call-bash", Name: "Bash", Arguments: string(args)},
+		}},
+		Usage: llm.Usage{TokenUsage: llm.TokenUsage{InputTokens: 10, OutputTokens: 5}},
 	}
 }

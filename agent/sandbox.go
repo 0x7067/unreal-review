@@ -196,8 +196,12 @@ func prepareVerifierSandbox(ctx context.Context, workspace, headSHA, reviewID st
 func (s *verifierSandbox) fallback(notice string) (*verifierSandbox, error) {
 	s.active = false
 	s.tree = ""
-	s.shell = ""
 	s.notice = notice
+	shell, err := installScrubShell(s.root)
+	if err != nil {
+		return s.abandon(err)
+	}
+	s.shell = shell
 	s.announce()
 	return s, nil
 }
@@ -490,6 +494,43 @@ fi
 echo $((cur + elapsed)) > "$ledger"
 exit "$code"
 `
+
+func installScrubShell(root string) (string, error) {
+	home := filepath.Join(root, "home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return "", err
+	}
+	envBin, err := exec.LookPath("env")
+	if err != nil {
+		return "", err
+	}
+	path := os.Getenv("PATH")
+	if strings.TrimSpace(path) == "" {
+		path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	}
+	lang := os.Getenv("LANG")
+	if strings.TrimSpace(lang) == "" || strings.ContainsAny(lang, "\n\r") {
+		lang = "C.UTF-8"
+	}
+	body := strings.NewReplacer(
+		"@@ENV@@", shQuote(envBin),
+		"@@PATH@@", shQuote(path),
+		"@@HOME@@", shQuote(home),
+		"@@LANG@@", shQuote(lang),
+	).Replace(`#!/bin/sh
+set -eu
+if [ "${1:-}" != "-c" ]; then
+  echo "unreal-review: verifier shell expects -c" >&2
+  exit 2
+fi
+exec @@ENV@@ -i PATH=@@PATH@@ HOME=@@HOME@@ LANG=@@LANG@@ /bin/sh -c "${2-}"
+`)
+	shell := filepath.Join(root, "shell")
+	if err := writeExecutable(shell, body); err != nil {
+		return "", err
+	}
+	return shell, nil
+}
 
 func bwrapInfo(ctx context.Context, path string) (string, bool) {
 	out, err := commandOutput(ctx, "", path, "--version")
