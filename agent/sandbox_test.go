@@ -343,6 +343,44 @@ func TestBudgetInstallFailureAnnouncesFallback(t *testing.T) {
 		t.Fatalf("scrub shell: exit %d\n%s", code, out)
 	}
 }
+func TestVerifierBatchesKeepSeparateBudgets(t *testing.T) {
+	dir := t.TempDir()
+	inner := filepath.Join(dir, "inner")
+	must(t, os.WriteFile(inner, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o700))
+	sb := &verifierSandbox{active: true, shell: inner, tree: dir, commandTimeout: time.Second}
+	wrap := func(id string) string {
+		child := review.AgentRequest{ReviewID: id, SystemPrompt: "base"}
+		return applyVerifierSandbox(&child, Harness{}, sb).(Harness).Shell
+	}
+	first := wrap("batch-1")
+	second := wrap("batch-2")
+	if sb.shell != inner || !sb.active {
+		t.Fatalf("shared sandbox changed: active=%v shell=%s", sb.active, sb.shell)
+	}
+	quoted := shQuote(inner)
+	for _, shell := range []string{first, second} {
+		script := mustRead(t, shell)
+		if !strings.Contains(script, quoted) || strings.Contains(script, first) && shell == second {
+			t.Fatalf("wrapper %s nests another budget shell:\n%s", shell, script)
+		}
+	}
+	out, code := runShell(t, first, "sleep 2")
+	if code != 0 || strings.TrimSpace(out) == sandboxBudgetSpent {
+		t.Fatalf("batch 1: exit %d\n%s", code, out)
+	}
+	state1 := filepath.Join(dir, "budget", focusedHash("batch-1"), "state")
+	spent1 := budgetSpent(t, state1)
+	out, code = runShell(t, second, "sleep 2")
+	if code != 0 || strings.TrimSpace(out) == sandboxBudgetSpent {
+		t.Fatalf("batch 2: exit %d\n%s", code, out)
+	}
+	if budgetSpent(t, state1) != spent1 {
+		t.Fatalf("batch 2 charged batch 1, spent %d then %d", spent1, budgetSpent(t, state1))
+	}
+	if budgetSpent(t, filepath.Join(dir, "budget", focusedHash("batch-2"), "state")) < 1 {
+		t.Fatal("batch 2 did not record its own budget")
+	}
+}
 func TestVerifierCommandBudget(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "note")
@@ -390,8 +428,16 @@ func TestVerifierCommandBudget(t *testing.T) {
 		"sort --compress-program id " + qfile,
 		"git grep -O cat -- kept",
 		"git diff -c",
+		"git diff --output=" + qmarker,
 		"GIT_EXTERNAL_DIFF=x git diff",
 		"sleep 2; touch " + qmarker,
+		"./cat " + qfile,
+		"bin/ls " + shQuote(dir),
+		"/tmp/x/git show HEAD",
+		"tail -f " + qfile,
+		"tail --follow " + qfile,
+		"rg -z line " + qfile,
+		"rg --search-zip line " + qfile,
 	}
 	for _, command := range charged {
 		out, code := runShell(t, shell, command)

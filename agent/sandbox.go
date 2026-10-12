@@ -554,15 +554,21 @@ charges() {
   set +f
   [ $# -gt 0 ] || return 0
   case $1 in
-    *=*) return 0 ;;
+    *=*|*/*) return 0 ;;
   esac
-  name=${1##*/}
-  case $name in
-    cat|ls|head|tail|nl|wc) return 1 ;;
+  case $1 in
+    cat|ls|head|nl|wc) return 1 ;;
+    tail)
+      for arg do
+        case $arg in
+          -f|--follow|--follow=*) return 0 ;;
+        esac
+      done
+      return 1 ;;
     rg)
       for arg do
         case $arg in
-          --pre|--pre=*|--pre-glob|--pre-glob=*) return 0 ;;
+          --pre|--pre=*|--pre-glob|--pre-glob=*|-z|--search-zip|--search-zip=*) return 0 ;;
         esac
       done
       return 1 ;;
@@ -573,7 +579,7 @@ charges() {
       esac
       for arg do
         case $arg in
-          -c*|-O*|--ext-diff*|--open-files-in-pager*) return 0 ;;
+          -c*|-O*|--ext-diff*|--open-files-in-pager*|--output*) return 0 ;;
         esac
       done
       return 1 ;;
@@ -625,6 +631,8 @@ func applyVerifierSandbox(child *review.AgentRequest, agent review.Agent, sb *ve
 	if sb == nil {
 		return agent
 	}
+	c := *sb
+	sb = &c
 	if sb.active && sb.shell != "" {
 		budget, err := installCommandBudget(filepath.Join(filepath.Dir(sb.shell), "budget", focusedHash(child.ReviewID)), sb.shell, sandboxTaskWall)
 		if err != nil {
