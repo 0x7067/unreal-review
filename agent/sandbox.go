@@ -24,8 +24,8 @@ const (
 	sandboxFileSize       int64 = 1 << 30
 	sandboxScratchLimit   int64 = 2 << 30
 	sandboxTmpfsSize      int64 = 256 << 20
-	sandboxTaskCommands         = 4
 	sandboxTaskWall             = 3 * time.Minute
+	verifierTaskWall            = 4 * time.Minute
 	sandboxScrubbed             = "verifier tasks run with Bash unchanged except a scrubbed environment."
 	sandboxBashOff              = "verifier Bash disabled because a scrubbed shell could not be installed."
 	sandboxBudgetSpent          = "unreal-review: verifier sandbox budget spent; decide from the evidence you have"
@@ -221,6 +221,11 @@ func sandboxBins() ([]string, error) {
 			return nil, fmt.Errorf("%s not found", name)
 		}
 		bin[i] = path
+	}
+	for _, name := range []string{"flock", "date"} {
+		if _, err := exec.LookPath(name); err != nil {
+			return nil, fmt.Errorf("%s not found", name)
+		}
 	}
 	return bin, nil
 }
@@ -498,22 +503,135 @@ func verifierSandboxAddendum(active bool, perCommand time.Duration) string {
 		perCommand = sandboxCommandTimeout
 	}
 	seconds := int(perCommand / time.Second)
-	return fmt.Sprintf("\nVerifier sandbox: the workspace is a scratch copy of the reviewed commit and code may be run offline here (go build, go vet, go test of the changed packages, or a repro written in this scratch copy). Each command is killed after %d s; the network is off. This task may run at most %d commands and %d minutes of command time; after that, decide from the evidence you have and do not call Bash again. This severity rule applies only to claims about runtime behavior. A finding that claims runtime behavior and is demonstrated by a command you ran in this session keeps its severity; cite that command and a short output excerpt in the body. A runtime-behavior claim you could not demonstrate is re-emitted with severity note, not dropped. A finding settled by reading the code alone (exact quoted lines at the cited range, such as a compile error or an always-false condition) may keep its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change.", seconds, sandboxTaskCommands, int(sandboxTaskWall/time.Minute))
+	minutes := int(sandboxTaskWall / time.Minute)
+	return fmt.Sprintf("\nVerifier sandbox: the workspace is a scratch copy of the reviewed commit and code may be run offline here (go build, go vet, go test of the changed packages, or a repro written in this scratch copy). Each command is killed after %d s; the network is off. Code-running commands (go build, go vet, go test, go run, and scripts or binaries) share %d minutes; read-only commands such as git show, git grep, git log, git diff, cat, sed, rg, and ls do not. After that budget, decide from the evidence you have and do not run more code. This severity rule applies only to claims about runtime behavior. A finding that claims runtime behavior and is demonstrated by a command you ran in this session keeps its severity; cite that command and a short output excerpt in the body. A runtime-behavior claim you could not demonstrate is re-emitted with severity note, not dropped. A finding settled by reading the code alone (exact quoted lines at the cited range, such as a compile error or an always-false condition) may keep its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change.", seconds, minutes)
 }
-func installCommandBudget(dir, inner string, commands int, wall time.Duration) (string, error) {
+func installCommandBudget(dir, inner string, wall time.Duration) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	secs := int(wall / time.Second)
-	if commands < 1 {
-		commands = 1
-	}
 	if secs < 1 {
 		secs = 1
 	}
 	state := filepath.Join(dir, "state")
-	body := fmt.Sprintf("#!/bin/sh\nset -eu\nif [ \"${1:-}\" != \"-c\" ]; then\n  echo \"unreal-review: verifier shell expects -c\" >&2\n  exit 2\nfi\nstate=%s\nexec 9>\"$state.lock\"\nflock 9\ncount=0\nspent=0\nif [ -f \"$state\" ]; then\n  read -r count spent < \"$state\" || true\nfi\nif [ \"$count\" -ge %d ] || [ \"$spent\" -ge %d ]; then\n  echo %s\n  exit 0\nfi\nstart=$(date +%%s)\nset +e\n%s -c \"$2\"\ncode=$?\nset -e\nnow=$(date +%%s)\nelapsed=$((now - start))\nif [ \"$elapsed\" -lt 0 ]; then elapsed=0; fi\nprintf '%%s %%s\\n' \"$((count + 1))\" \"$((spent + elapsed))\" > \"$state\"\nexit \"$code\"\n",
-		shQuote(state), commands, secs, shQuote(sandboxBudgetSpent), shQuote(inner))
+	body := fmt.Sprintf(`#!/bin/sh
+set -eu
+if [ "${1:-}" != "-c" ]; then
+  echo "unreal-review: verifier shell expects -c" >&2
+  exit 2
+fi
+state=%s
+limit=%d
+inner=%s
+msg=%s
+lock_open() { exec 9>"$state.lock"; flock 9; }
+lock_close() { flock -u 9 2>/dev/null || true; exec 9>&-; }
+load_spent() {
+  SPENT=0
+  CORRUPT=0
+  if [ ! -f "$state" ]; then
+    return 0
+  fi
+  IFS= read -r line < "$state" || line=x
+  case $line in
+    ''|*[!0-9]*) CORRUPT=1 ;;
+    *) SPENT=$line ;;
+  esac
+}
+free_words() {
+  set -f
+  set -- $1
+  set +f
+  while [ $# -gt 0 ]; do
+    case $1 in
+      [A-Za-z_][A-Za-z0-9_]*=*) shift ;;
+      *) break ;;
+    esac
+  done
+  [ $# -gt 0 ] || return 0
+  name=${1##*/}
+  if [ "$name" = "[" ]; then
+    return 0
+  fi
+  case $name in
+    cat|sed|rg|ls|head|tail|wc|grep|egrep|fgrep|find|pwd|stat|cut|awk|echo|printf|true|false|basename|dirname|sort|uniq|tr|diff|comm|cmp|od|hexdump|file|readlink|realpath|which|nl|fold|column|rev|tac|less|more|git|test) ;;
+    *) return 1 ;;
+  esac
+  if [ "$name" = git ]; then
+    case ${2-} in
+      show|grep|log|diff) return 0 ;;
+      *) return 1 ;;
+    esac
+  fi
+  return 0
+}
+charges() {
+  cmd=$1
+  case $cmd in
+    *'$(*'*) return 0 ;;
+  esac
+  tick=$(printf '\140')
+  if printf '%%s' "$cmd" | grep -F -q "$tick"; then
+    return 0
+  fi
+  flat=$(printf '%%s\n' "$cmd" | sed -e 's/&&/\n/g' -e 's/||/\n/g' -e 's/[|&;]/\n/g') || return 0
+  save=$IFS
+  IFS='
+'
+  set -f
+  for seg in $flat; do
+    set +f
+    IFS=$save
+    seg=${seg#"${seg%%%%[![:space:]]*}"}
+    seg=${seg%%%%"${seg##*[![:space:]]}"}
+    [ -n "$seg" ] || continue
+    if ! free_words "$seg"; then
+      return 0
+    fi
+    set -f
+    IFS='
+'
+  done
+  set +f
+  IFS=$save
+  return 1
+}
+run=$2
+if charges "$run"; then
+  lock_open
+  load_spent
+  over=0
+  if [ "$CORRUPT" -eq 1 ] || [ "$SPENT" -ge "$limit" ]; then
+    over=1
+  fi
+  lock_close
+  if [ "$over" -eq 1 ]; then
+    printf '%%s\n' "$msg"
+    exit 0
+  fi
+fi
+start=$(date +%%s)
+set +e
+"$inner" -c "$run" 9>&-
+code=$?
+set -e
+if charges "$run"; then
+  now=$(date +%%s)
+  elapsed=$((now - start))
+  if [ "$elapsed" -lt 0 ]; then elapsed=0; fi
+  lock_open
+  load_spent
+  if [ "$CORRUPT" -eq 1 ]; then
+    lock_close
+    printf '%%s\n' "$msg"
+    exit 0
+  fi
+  printf '%%s\n' "$((SPENT + elapsed))" > "$state"
+  lock_close
+fi
+exit "$code"
+`, shQuote(state), secs, shQuote(inner), shQuote(sandboxBudgetSpent))
 	path := filepath.Join(dir, "shell")
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
 		return "", err
@@ -524,10 +642,16 @@ func applyVerifierSandbox(child *review.AgentRequest, agent review.Agent, sb *ve
 	if sb == nil {
 		return agent
 	}
-	child.SystemPrompt += verifierSandboxAddendum(sb.active, sb.commandTimeout)
-	if sb.active {
-		child.Workspace = sb.tree
+	if sb.active && sb.shell != "" {
+		budget, err := installCommandBudget(filepath.Join(filepath.Dir(sb.shell), "budget", focusedHash(child.ReviewID)), sb.shell, sandboxTaskWall)
+		if err != nil {
+			sb, _ = sb.fallback("verifier sandbox unavailable (" + firstLine(err.Error()) + ")")
+		} else {
+			sb.shell = budget
+			child.Workspace = sb.tree
+		}
 	}
+	child.SystemPrompt += verifierSandboxAddendum(sb.active, sb.commandTimeout)
 	h, ok := agent.(Harness)
 	if sb.disableBash {
 		child.Shell = ""
@@ -540,25 +664,9 @@ func applyVerifierSandbox(child *review.AgentRequest, agent review.Agent, sb *ve
 	if sb.shell == "" {
 		return agent
 	}
-	shell := sb.shell
-	if sb.active {
-		budget, err := installCommandBudget(filepath.Join(filepath.Dir(sb.shell), "budget", focusedHash(child.ReviewID)), sb.shell, sandboxTaskCommands, sandboxTaskWall)
-		if err != nil {
-			child.Shell = ""
-			if ok {
-				h.MaxBashCalls, h.Shell = -1, ""
-				return h
-			}
-			return agent
-		}
-		shell = budget
-		if ok {
-			h.MaxBashCalls = sandboxTaskCommands
-		}
-	}
-	child.Shell = shell
+	child.Shell = sb.shell
 	if ok {
-		h.Shell = shell
+		h.Shell = sb.shell
 		return h
 	}
 	return agent

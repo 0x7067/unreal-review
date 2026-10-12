@@ -34,6 +34,9 @@ type Planned struct {
 	Timeout      time.Duration
 	Config       string
 	Parallel     int
+	// verifierWall is the verifier task limit. Zero uses verifierTaskWall.
+	// A verifier that hits it stops; the review continues with candidates as they stand.
+	verifierWall time.Duration
 }
 
 var _ review.Agent = Planned{}
@@ -76,6 +79,38 @@ type plannedOutcome struct {
 	err     error
 }
 
+func verifierStage(stage string, discovery bool) bool {
+	return !discovery && !strings.HasPrefix(stage, "consolidate:")
+}
+func verifierLimit(parent context.Context, wall time.Duration) (context.Context, context.CancelFunc) {
+	if wall <= 0 {
+		wall = verifierTaskWall
+	}
+	return context.WithTimeout(parent, wall)
+}
+func verifierStopped(parent, limited context.Context, err error) bool {
+	return err != nil && parent.Err() == nil && limited.Err() != nil
+}
+func finishVerifierOnWall(path string, candidates []findings.Finding, cost findings.Cost) (findings.Report, findings.Cost, error) {
+	if !cost.Recorded() {
+		cost = findings.Cost{Currency: "USD", Requests: 1}
+	}
+	report, err := findings.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return findings.Report{}, cost, err
+	}
+	if len(report.Findings) == 0 {
+		report.Findings = append([]findings.Finding(nil), candidates...)
+	}
+	if _, err := findings.CheckSummary(report.Summary, len(report.Findings)); err != nil {
+		if len(report.Findings) == 0 {
+			report.Summary = findings.CleanVerdict + ": verifier stopped at its time limit."
+		} else {
+			report.Summary = "verifier stopped at its time limit; candidates stand"
+		}
+	}
+	return report, cost, nil
+}
 func plannedChild(root, stage string, generation int) string {
 	return focusedHash(fmt.Sprintf("%s\x00%s\x00%s\x00%d", root, plannedVersion, stage, generation))
 }
@@ -318,8 +353,25 @@ func (p Planned) Run(ctx context.Context, req review.AgentRequest) (result revie
 			agent = applyVerifierSandbox(&child, agent, sb)
 		}
 		r.Started = true
-		childResult, e := agent.Run(ctx, child)
+		runCtx := ctx
+		var stop context.CancelFunc
+		if verifierStage(job.stage, job.discovery) {
+			runCtx, stop = verifierLimit(ctx, p.verifierWall)
+			defer stop()
+		}
+		childResult, e := agent.Run(runCtx, child)
 		r.Cost = childResult.Cost
+		if verifierStage(job.stage, job.discovery) && verifierStopped(ctx, runCtx, e) {
+			report, cost, ferr := finishVerifierOnWall(path, job.candidates, childResult.Cost)
+			if ferr != nil {
+				return plannedOutcome{receipt: r, err: ferr}
+			}
+			if ferr = focusedWriteReport(path, report); ferr != nil {
+				return plannedOutcome{receipt: r, err: ferr}
+			}
+			r.Cost = cost
+			e = nil
+		}
 		if e == nil {
 			e = ctx.Err()
 		}

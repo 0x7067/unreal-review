@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -320,60 +322,129 @@ func TestFallbackVerifierScrubsEnv(t *testing.T) {
 		}
 	}
 }
-func TestVerifierSandboxBudgetStopsAfterFourCommands(t *testing.T) {
-	dir := t.TempDir()
-	inner := filepath.Join(dir, "inner")
-	must(t, os.WriteFile(inner, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o700))
-	sb := &verifierSandbox{active: true, shell: inner, tree: dir, commandTimeout: time.Second}
-	wrap := func(id string) string {
-		child := review.AgentRequest{ReviewID: id}
-		got := applyVerifierSandbox(&child, Harness{}, sb).(Harness)
-		return got.Shell
+func TestBudgetInstallFailureAnnouncesFallback(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "secret-budget-fallback")
+	notices := captureNotices(t)
+	root := t.TempDir()
+	blocked := filepath.Join(root, "not-a-directory")
+	must(t, os.WriteFile(blocked, []byte("x"), 0o600))
+	sb := &verifierSandbox{active: true, root: root, shell: filepath.Join(blocked, "shell"), tree: root, commandTimeout: time.Second}
+	child := review.AgentRequest{ReviewID: "budget-install-failed", SystemPrompt: "base"}
+	got := applyVerifierSandbox(&child, Harness{Shell: "/bin/sh"}, sb).(Harness)
+	note := notices.String()
+	if !strings.Contains(note, "unreal-review: verifier sandbox unavailable (") || !strings.Contains(note, sandboxScrubbed) {
+		t.Fatalf("fallback notice:\n%s", note)
 	}
-	shell := wrap("task-a")
-	for i := 1; i <= 4; i++ {
-		marker := filepath.Join(dir, fmt.Sprintf("ok-%d", i))
-		out, code := runShell(t, shell, "touch "+shQuote(marker))
-		if code != 0 || strings.Contains(out, sandboxBudgetSpent) {
-			t.Fatalf("command %d: exit %d\n%s", i, code, out)
-		}
-		if _, err := os.Stat(marker); err != nil {
-			t.Fatalf("command %d did not run: %v", i, err)
-		}
+	if child.SystemPrompt != "base" || got.Shell == "" {
+		t.Fatalf("prompt=%q shell=%q", child.SystemPrompt, got.Shell)
 	}
-	blocked := filepath.Join(dir, "blocked")
-	out, code := runShell(t, shell, "touch "+shQuote(blocked))
-	if code != 0 || !strings.Contains(out, sandboxBudgetSpent) {
-		t.Fatalf("exhausted count: exit %d\n%s", code, out)
-	}
-	if _, err := os.Stat(blocked); !os.IsNotExist(err) {
-		t.Fatalf("command after the budget ran: %v", err)
-	}
-	other := filepath.Join(dir, "other-task")
-	out, code = runShell(t, wrap("task-b"), "touch "+shQuote(other))
-	if code != 0 || strings.Contains(out, sandboxBudgetSpent) {
-		t.Fatalf("other task: exit %d\n%s", code, out)
-	}
-	if _, err := os.Stat(other); err != nil {
-		t.Fatalf("other task did not run: %v", err)
+	out, code := runShell(t, got.Shell, "printf 'KEY=%s\\n' \"$OPENROUTER_API_KEY\"")
+	if code != 0 || out != "KEY=\n" {
+		t.Fatalf("scrub shell: exit %d\n%s", code, out)
 	}
 }
-func TestVerifierSandboxBudgetStopsAfterWallTime(t *testing.T) {
+func TestVerifierBudgetReadsAreFree(t *testing.T) {
 	dir := t.TempDir()
-	shell, err := installCommandBudget(dir, "/bin/sh", 8, time.Second)
+	file := filepath.Join(dir, "note")
+	must(t, os.WriteFile(file, []byte("line\n"), 0o644))
+	shell, err := installCommandBudget(dir, "/bin/sh", time.Second)
+	must(t, err)
+	for _, command := range []string{
+		"echo hi",
+		"ls " + shQuote(dir),
+		"cat " + shQuote(file),
+		"sed -n 1p " + shQuote(file),
+		"git show HEAD",
+		"git diff",
+		"git log -1",
+		"git grep kept",
+	} {
+		out, _ := runShell(t, shell, command)
+		if strings.TrimSpace(out) == sandboxBudgetSpent {
+			t.Fatalf("read %q counted:\n%s", command, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "state")); !os.IsNotExist(err) {
+		t.Fatalf("read-only commands wrote a budget: %v", err)
+	}
+}
+func TestVerifierBudgetCountsCodeCommands(t *testing.T) {
+	dir := t.TempDir()
+	shell, err := installCommandBudget(dir, "/bin/sh", time.Second)
 	must(t, err)
 	out, code := runShell(t, shell, "sleep 2")
 	if code != 0 || strings.Contains(out, sandboxBudgetSpent) {
-		t.Fatalf("first command: exit %d\n%s", code, out)
+		t.Fatalf("first code command: exit %d\n%s", code, out)
+	}
+	spent := budgetSpent(t, filepath.Join(dir, "state"))
+	if spent < 1 {
+		t.Fatalf("code command spent=%d", spent)
 	}
 	marker := filepath.Join(dir, "late")
-	out, code = runShell(t, shell, "touch "+shQuote(marker))
+	out, code = runShell(t, shell, "sleep 2; touch "+shQuote(marker))
 	if code != 0 || !strings.Contains(out, sandboxBudgetSpent) {
-		t.Fatalf("exhausted time: exit %d\n%s", code, out)
+		t.Fatalf("second code command: exit %d\n%s", code, out)
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatalf("command after the time budget ran: %v", err)
+		t.Fatalf("code command ran after the budget: %v", err)
 	}
+	out, code = runShell(t, shell, "echo still-readable")
+	if code != 0 || strings.Contains(out, sandboxBudgetSpent) || !strings.Contains(out, "still-readable") {
+		t.Fatalf("read after the budget: exit %d\n%s", code, out)
+	}
+	must(t, os.WriteFile(filepath.Join(dir, "state"), []byte("bogus\n"), 0o600))
+	start := time.Now()
+	out, code = runShell(t, shell, "sleep 5")
+	if code != 0 || !strings.Contains(out, sandboxBudgetSpent) || time.Since(start) > 2*time.Second {
+		t.Fatalf("corrupt state: exit %d after %s\n%s", code, time.Since(start), out)
+	}
+}
+func TestVerifierBudgetParallelDoesNotHoldTheLock(t *testing.T) {
+	dir := t.TempDir()
+	shell, err := installCommandBudget(dir, "/bin/sh", time.Minute)
+	must(t, err)
+	stamps := filepath.Join(dir, "stamps")
+	var wg sync.WaitGroup
+	wg.Add(2)
+	for range 2 {
+		go func() {
+			defer wg.Done()
+			out, code := runShell(t, shell, "date +%s >> "+shQuote(stamps)+"; sleep 2")
+			if code != 0 || strings.Contains(out, sandboxBudgetSpent) {
+				t.Errorf("parallel command: exit %d\n%s", code, out)
+			}
+		}()
+	}
+	wg.Wait()
+	body, err := os.ReadFile(stamps)
+	must(t, err)
+	lines := strings.Fields(string(body))
+	if len(lines) != 2 {
+		t.Fatalf("stamps:\n%s", body)
+	}
+	a, errA := strconv.Atoi(lines[0])
+	b, errB := strconv.Atoi(lines[1])
+	must(t, errA)
+	must(t, errB)
+	gap := a - b
+	if gap < 0 {
+		gap = -gap
+	}
+	if gap >= 2 {
+		t.Fatalf("commands were serialized, start gap %d s", gap)
+	}
+	out, code := runShell(t, shell, "if (true <&9) 2>/dev/null; then echo INHERITED; else echo CLOSED; fi")
+	if code != 0 || strings.Contains(out, "INHERITED") || !strings.Contains(out, "CLOSED") {
+		t.Fatalf("fd 9 inherited: exit %d\n%s", code, out)
+	}
+}
+func budgetSpent(t *testing.T, path string) int {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	must(t, err)
+	n, err := strconv.Atoi(strings.TrimSpace(string(body)))
+	must(t, err)
+	return n
 }
 func TestActiveVerifierPromptCarriesSeverityRule(t *testing.T) {
 	repo, sha := sandboxModuleRepo(t)

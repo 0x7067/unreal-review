@@ -118,6 +118,53 @@ func TestPlannedWholeCallTimeout(t *testing.T) {
 	}
 }
 
+func TestVerifierWallCapPublishesCandidates(t *testing.T) {
+	req := plannedTestRequest(t)
+	kept := plannedTestIssue("kept")
+	also := plannedTestIssue("also")
+	also.StartLine, also.EndLine = 8, 8
+	also.Body = "Second defect"
+	discovery := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		if strings.Contains(r.Prompt, "local a") {
+			return plannedTestEmit(r, []findings.Finding{kept, also})
+		}
+		return plannedTestEmit(r, nil)
+	})
+	verifier := plannedTestAgent(func(ctx context.Context, _ review.AgentRequest) (review.AgentResult, error) {
+		<-ctx.Done()
+		return review.AgentResult{Cost: findings.Cost{Currency: "USD", Requests: 1}}, ctx.Err()
+	})
+	consolidator := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		items, err := plannedTestCandidates(r.Prompt)
+		if err != nil {
+			return review.AgentResult{}, err
+		}
+		for i := range items {
+			items[i].Body = "consolidated " + items[i].ID
+		}
+		return plannedTestEmit(r, items)
+	})
+
+	result, err := (Planned{
+		Agent: discovery, Verifier: verifier, Consolidator: consolidator,
+		verifierWall: 200 * time.Millisecond,
+	}).Run(t.Context(), req)
+	if err != nil || result.Coverage == nil {
+		t.Fatalf("wall result=%+v err=%v", result, err)
+	}
+	report, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, item := range report.Findings {
+		got[item.ID] = item.Body
+	}
+	if len(report.Findings) != 2 || got["kept"] != "consolidated kept" || got["also"] != "consolidated also" {
+		t.Fatalf("published findings = %+v summary=%q", report.Findings, report.Summary)
+	}
+}
+
 func TestPlannedForwardsUnplannedReview(t *testing.T) {
 	req := plannedTestRequest(t)
 	req.Plan = nil
