@@ -24,8 +24,11 @@ const (
 	sandboxFileSize       int64 = 1 << 30
 	sandboxScratchLimit   int64 = 2 << 30
 	sandboxTmpfsSize      int64 = 256 << 20
+	sandboxTaskCommands         = 4
+	sandboxTaskWall             = 3 * time.Minute
 	sandboxScrubbed             = "verifier tasks run with Bash unchanged except a scrubbed environment."
 	sandboxBashOff              = "verifier Bash disabled because a scrubbed shell could not be installed."
+	sandboxBudgetSpent          = "unreal-review: verifier sandbox budget spent; decide from the evidence you have"
 )
 
 var sandboxNotices io.Writer = os.Stderr
@@ -495,7 +498,27 @@ func verifierSandboxAddendum(active bool, perCommand time.Duration) string {
 		perCommand = sandboxCommandTimeout
 	}
 	seconds := int(perCommand / time.Second)
-	return fmt.Sprintf("\nVerifier sandbox: the workspace is a scratch copy of the reviewed commit and code may be run offline here (go build, go vet, go test of the changed packages, or a repro written in this scratch copy). Each command is killed after %d s; the network is off. This severity rule applies only to claims about runtime behavior. A finding that claims runtime behavior and is demonstrated by a command you ran in this session keeps its severity; cite that command and a short output excerpt in the body. A runtime-behavior claim you could not demonstrate is re-emitted with severity note, not dropped. A finding settled by reading the code alone (exact quoted lines at the cited range, such as a compile error or an always-false condition) may keep its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change.", seconds)
+	return fmt.Sprintf("\nVerifier sandbox: the workspace is a scratch copy of the reviewed commit and code may be run offline here (go build, go vet, go test of the changed packages, or a repro written in this scratch copy). Each command is killed after %d s; the network is off. This task may run at most %d commands and %d minutes of command time; after that, decide from the evidence you have and do not call Bash again. This severity rule applies only to claims about runtime behavior. A finding that claims runtime behavior and is demonstrated by a command you ran in this session keeps its severity; cite that command and a short output excerpt in the body. A runtime-behavior claim you could not demonstrate is re-emitted with severity note, not dropped. A finding settled by reading the code alone (exact quoted lines at the cited range, such as a compile error or an always-false condition) may keep its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change.", seconds, sandboxTaskCommands, int(sandboxTaskWall/time.Minute))
+}
+func installCommandBudget(dir, inner string, commands int, wall time.Duration) (string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	secs := int(wall / time.Second)
+	if commands < 1 {
+		commands = 1
+	}
+	if secs < 1 {
+		secs = 1
+	}
+	state := filepath.Join(dir, "state")
+	body := fmt.Sprintf("#!/bin/sh\nset -eu\nif [ \"${1:-}\" != \"-c\" ]; then\n  echo \"unreal-review: verifier shell expects -c\" >&2\n  exit 2\nfi\nstate=%s\nexec 9>\"$state.lock\"\nflock 9\ncount=0\nspent=0\nif [ -f \"$state\" ]; then\n  read -r count spent < \"$state\" || true\nfi\nif [ \"$count\" -ge %d ] || [ \"$spent\" -ge %d ]; then\n  echo %s\n  exit 0\nfi\nstart=$(date +%%s)\nset +e\n%s -c \"$2\"\ncode=$?\nset -e\nnow=$(date +%%s)\nelapsed=$((now - start))\nif [ \"$elapsed\" -lt 0 ]; then elapsed=0; fi\nprintf '%%s %%s\\n' \"$((count + 1))\" \"$((spent + elapsed))\" > \"$state\"\nexit \"$code\"\n",
+		shQuote(state), commands, secs, shQuote(sandboxBudgetSpent), shQuote(inner))
+	path := filepath.Join(dir, "shell")
+	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 func applyVerifierSandbox(child *review.AgentRequest, agent review.Agent, sb *verifierSandbox) review.Agent {
 	if sb == nil {
@@ -517,9 +540,25 @@ func applyVerifierSandbox(child *review.AgentRequest, agent review.Agent, sb *ve
 	if sb.shell == "" {
 		return agent
 	}
-	child.Shell = sb.shell
+	shell := sb.shell
+	if sb.active {
+		budget, err := installCommandBudget(filepath.Join(filepath.Dir(sb.shell), "budget", focusedHash(child.ReviewID)), sb.shell, sandboxTaskCommands, sandboxTaskWall)
+		if err != nil {
+			child.Shell = ""
+			if ok {
+				h.MaxBashCalls, h.Shell = -1, ""
+				return h
+			}
+			return agent
+		}
+		shell = budget
+		if ok {
+			h.MaxBashCalls = sandboxTaskCommands
+		}
+	}
+	child.Shell = shell
 	if ok {
-		h.Shell = sb.shell
+		h.Shell = shell
 		return h
 	}
 	return agent

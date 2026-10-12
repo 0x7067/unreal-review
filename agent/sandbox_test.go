@@ -320,6 +320,61 @@ func TestFallbackVerifierScrubsEnv(t *testing.T) {
 		}
 	}
 }
+func TestVerifierSandboxBudgetStopsAfterFourCommands(t *testing.T) {
+	dir := t.TempDir()
+	inner := filepath.Join(dir, "inner")
+	must(t, os.WriteFile(inner, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o700))
+	sb := &verifierSandbox{active: true, shell: inner, tree: dir, commandTimeout: time.Second}
+	wrap := func(id string) string {
+		child := review.AgentRequest{ReviewID: id}
+		got := applyVerifierSandbox(&child, Harness{}, sb).(Harness)
+		return got.Shell
+	}
+	shell := wrap("task-a")
+	for i := 1; i <= 4; i++ {
+		marker := filepath.Join(dir, fmt.Sprintf("ok-%d", i))
+		out, code := runShell(t, shell, "touch "+shQuote(marker))
+		if code != 0 || strings.Contains(out, sandboxBudgetSpent) {
+			t.Fatalf("command %d: exit %d\n%s", i, code, out)
+		}
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatalf("command %d did not run: %v", i, err)
+		}
+	}
+	blocked := filepath.Join(dir, "blocked")
+	out, code := runShell(t, shell, "touch "+shQuote(blocked))
+	if code != 0 || !strings.Contains(out, sandboxBudgetSpent) {
+		t.Fatalf("exhausted count: exit %d\n%s", code, out)
+	}
+	if _, err := os.Stat(blocked); !os.IsNotExist(err) {
+		t.Fatalf("command after the budget ran: %v", err)
+	}
+	other := filepath.Join(dir, "other-task")
+	out, code = runShell(t, wrap("task-b"), "touch "+shQuote(other))
+	if code != 0 || strings.Contains(out, sandboxBudgetSpent) {
+		t.Fatalf("other task: exit %d\n%s", code, out)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatalf("other task did not run: %v", err)
+	}
+}
+func TestVerifierSandboxBudgetStopsAfterWallTime(t *testing.T) {
+	dir := t.TempDir()
+	shell, err := installCommandBudget(dir, "/bin/sh", 8, time.Second)
+	must(t, err)
+	out, code := runShell(t, shell, "sleep 2")
+	if code != 0 || strings.Contains(out, sandboxBudgetSpent) {
+		t.Fatalf("first command: exit %d\n%s", code, out)
+	}
+	marker := filepath.Join(dir, "late")
+	out, code = runShell(t, shell, "touch "+shQuote(marker))
+	if code != 0 || !strings.Contains(out, sandboxBudgetSpent) {
+		t.Fatalf("exhausted time: exit %d\n%s", code, out)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("command after the time budget ran: %v", err)
+	}
+}
 func TestActiveVerifierPromptCarriesSeverityRule(t *testing.T) {
 	repo, sha := sandboxModuleRepo(t)
 	notices := captureNotices(t)
