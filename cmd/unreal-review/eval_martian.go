@@ -85,12 +85,10 @@ func evalMartian(ctx context.Context, root, model string, reviewer review.Agent,
 		}
 	}
 	summary := martianSummary{Corpus: "martian", Profile: flags.profile, JudgeModel: flags.judgeModel, Cases: scores, BySeverity: eval.SumBySeverity(scores), ByProfile: eval.SumProfiles(scores)}
-	plain := make([]eval.Score, len(scores))
-	for i, score := range scores {
-		plain[i] = score.Score
+	for _, score := range scores {
 		summary.JudgeCost += score.JudgeCostUSD
 	}
-	summary.Total = totals(plain)
+	summary.Total = martianTotals(scores)
 	if flags.asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetEscapeHTML(false)

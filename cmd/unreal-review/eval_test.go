@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/0x7067/unreal-review/internal/eval"
 )
 
 func TestEvalBlankOpenRouterKeyIsRejected(t *testing.T) {
@@ -155,6 +157,25 @@ func TestEvalRunsFlagLeavesNoDirectory(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPersistErrorIsNotCountedCompleted(t *testing.T) {
+	saved := eval.Score{Name: "saved", Status: "complete", Err: "write findings: disk full", Gold: 1, Matched: 1, CostUSD: 9}
+	ok := eval.Score{Name: "ok", Status: "complete", Gold: 1, Matched: 1, CostUSD: 0.5}
+	again := eval.Score{Name: "again", Status: "complete", Gold: 1, Matched: 1, CostUSD: 0.25}
+
+	if got := totals([]eval.Score{saved, ok}); got.Completed != 1 || got.Cases != 2 {
+		t.Fatalf("planted total.completed=%d cases=%d", got.Completed, got.Cases)
+	}
+	if got := totals([]eval.Score{saved, ok, again}); got.Completed != 2 || got.Cases != 3 {
+		t.Fatalf("planted total.completed=%d cases=%d", got.Completed, got.Cases)
+	}
+	if got := martianTotals([]eval.MartianScore{{Score: saved}, {Score: ok}}); got.Completed != 1 || got.Cases != 2 {
+		t.Fatalf("martian total.completed=%d cases=%d", got.Completed, got.Cases)
+	}
+	if got := martianTotals([]eval.MartianScore{{Score: saved}, {Score: ok}, {Score: again}}); got.Completed != 2 || got.Cases != 3 {
+		t.Fatalf("martian total.completed=%d cases=%d", got.Completed, got.Cases)
 	}
 }
 

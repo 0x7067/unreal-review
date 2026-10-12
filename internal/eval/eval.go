@@ -61,7 +61,13 @@ func (s Score) SeverityAgreement() float64 {
 }
 
 func (s Score) Completed() bool {
-	return s.Status == string(findings.StatusComplete)
+	return completedReview(s.Status, s.Err)
+}
+
+// completedReview is a finished review whose findings were saved. review.Run
+// can return a complete report together with a persistence error.
+func completedReview(status, err string) bool {
+	return status == string(findings.StatusComplete) && err == ""
 }
 
 func Agreement(hits, total int) float64 {
