@@ -27,7 +27,7 @@ func TestVerifierSandboxIsolation(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "pwned")
 	sb, sha := provisionSandbox(t, sandboxConfig{})
 	script := mustRead(t, sb.shell)
-	for _, flag := range []string{"--new-session", "--die-with-parent", "--unshare-all", "--as=", "--fsize=", "proc/net/dev"} {
+	for _, flag := range []string{"--new-session", "--die-with-parent", "--unshare-all", "--remount-ro", "--as=", "--fsize=", "proc/net/dev"} {
 		if !strings.Contains(script, flag) {
 			t.Fatalf("wrapper missing %q", flag)
 		}
@@ -37,6 +37,8 @@ func TestVerifierSandboxIsolation(t *testing.T) {
 	}
 	out, code := runShell(t, sb.shell, fmt.Sprintf(`env; for f in /proc/[0-9]*/environ; do tr '\0' '\n' <"$f"; done
 touch /usr/unreal-review-sandbox-pwned 2>usr.err || true; echo USR_ERR; cat usr.err
+touch /rootfill >/dev/null 2>&1 && echo ROOT_OK || echo ROOT_FAIL
+touch ./scratch-ok && echo SCRATCH_OK || echo SCRATCH_FAIL; touch "$HOME/h" && echo HOME_OK || echo HOME_FAIL; touch "$TMPDIR/t" && echo TMP_OK || echo TMP_FAIL
 test -e %s && echo HOME_VISIBLE || echo HOME_HIDDEN; touch %s && echo OUTSIDE_OK || echo OUTSIDE_FAIL
 python3 -c 'import socket;s=socket.socket();s.settimeout(2);s.connect(("1.1.1.1",443))' && echo CONNECTED || echo DIAL_FAIL
 go test ./...; git show %s:add.go; go env GOFLAGS`, shQuote(secret), shQuote(outside), sha))
@@ -48,12 +50,12 @@ go test ./...; git show %s:add.go; go env GOFLAGS`, shQuote(secret), shQuote(out
 			t.Fatalf("secret %q visible:\n%s", secretValue, out)
 		}
 	}
-	for _, want := range []string{"GOPROXY=off", "GOTOOLCHAIN=local", "Read-only file system", "HOME_HIDDEN", "OUTSIDE_FAIL", "DIAL_FAIL", "ok  \texample.com/tiny", "func Add", "-buildvcs=false"} {
+	for _, want := range []string{"GOPROXY=off", "GOTOOLCHAIN=local", "Read-only file system", "ROOT_FAIL", "SCRATCH_OK", "HOME_OK", "TMP_OK", "HOME_HIDDEN", "OUTSIDE_FAIL", "DIAL_FAIL", "ok  \texample.com/tiny", "func Add", "-buildvcs=false"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %s:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "CONNECTED") || strings.Contains(out, "secret-file") {
+	if strings.Contains(out, "CONNECTED") || strings.Contains(out, "ROOT_OK") || strings.Contains(out, "secret-file") {
 		t.Fatalf("sandbox leaked:\n%s", out)
 	}
 	for _, path := range []string{"/usr/unreal-review-sandbox-pwned", outside} {
@@ -90,12 +92,17 @@ func TestVerifierSandboxRefusesOversizedScratch(t *testing.T) {
 	}
 }
 func TestVerifierSandboxCapsFileAndTmpfs(t *testing.T) {
-	sb, _ := provisionSandbox(t, sandboxConfig{fileSize: 4096})
-	if !strings.Contains(mustRead(t, sb.shell), "--as=") {
-		t.Fatal("wrapper missing --as")
+	sb, _ := provisionSandbox(t, sandboxConfig{fileSize: 4096, addressSpace: 1 << 30})
+	runFn := mustRead(t, sb.shell)
+	runFn = runFn[strings.Index(runFn, "run() {"):strings.Index(runFn, "--probe")]
+	if !strings.Contains(runFn, "--as=") {
+		t.Fatal("run path missing --as")
 	}
 	if _, code := runShell(t, sb.shell, "dd if=/dev/zero of=big bs=1024 count=8 status=none"); code == 0 {
 		t.Fatal("write over --fsize succeeded")
+	}
+	if _, code := runShell(t, sb.shell, "python3 -c 'b=bytearray(1100*1024*1024)'"); code == 0 {
+		t.Fatal("allocation over --as succeeded")
 	}
 	home, _ := provisionSandbox(t, sandboxConfig{tmpfsSize: 1 << 20})
 	for _, dest := range []string{`"$HOME/big"`, `"$TMPDIR/big"`} {
@@ -137,11 +144,12 @@ func TestCleanupSkipsSymlinksAndDropsAgedDirs(t *testing.T) {
 	parent, victim := filepath.Dir(root), filepath.Join(t.TempDir(), "victim")
 	must(t, os.WriteFile(victim, []byte("v"), 0o644))
 	aged, fresh := filepath.Join(parent, "aged"), filepath.Join(parent, "fresh")
-	nest := filepath.Join(aged, "nested")
+	nest := filepath.Join(aged, "d", "e")
 	must(t, os.MkdirAll(nest, 0o700))
 	must(t, os.MkdirAll(fresh, 0o700))
 	must(t, os.WriteFile(filepath.Join(nest, "f"), []byte("x"), 0o600))
 	must(t, os.Chmod(nest, 0))
+	must(t, os.Chmod(filepath.Dir(nest), 0))
 	must(t, os.Symlink(victim, filepath.Join(aged, "link")))
 	old := time.Now().Add(-48 * time.Hour)
 	must(t, os.Chtimes(aged, old, old))
@@ -154,9 +162,12 @@ func TestCleanupSkipsSymlinksAndDropsAgedDirs(t *testing.T) {
 	}
 	assertMode(t, victim, 0o644)
 	box := filepath.Join(parent, "box")
-	must(t, os.MkdirAll(filepath.Join(box, "nested"), 0o700))
+	deep := filepath.Join(box, "d", "e")
+	must(t, os.MkdirAll(deep, 0o700))
+	must(t, os.WriteFile(filepath.Join(deep, "f"), []byte("x"), 0o600))
+	must(t, os.Chmod(deep, 0))
+	must(t, os.Chmod(filepath.Dir(deep), 0))
 	must(t, os.Symlink(victim, filepath.Join(box, "link")))
-	must(t, os.Chmod(filepath.Join(box, "nested"), 0))
 	(&verifierSandbox{root: box}).close()
 	if _, err := os.Stat(box); !os.IsNotExist(err) {
 		t.Fatalf("close left the dir: %v", err)
@@ -226,10 +237,13 @@ func TestVerifierSandboxFallbackReasons(t *testing.T) {
 		}
 	})
 	t.Run("mount", func(t *testing.T) {
+		link := filepath.Join(t.TempDir(), "to-root")
+		must(t, os.Symlink("/", link))
 		for _, tc := range []struct{ out, want string }{
 			{"/\n/tmp\n/tmp", `refusing to mount GOROOT "/"`},
 			{"/usr\n\n/tmp", `refusing to mount GOMODCACHE ""`},
 			{"go\n/usr\n/tmp", `refusing to mount GOROOT "go"`},
+			{link + "\n/tmp\n/tmp", `refusing to mount GOROOT "/"`},
 		} {
 			t.Setenv("HOME", t.TempDir())
 			repo, sha := sandboxModuleRepo(t)
@@ -258,7 +272,8 @@ func TestFallbackVerifierScrubsEnv(t *testing.T) {
 	var shellCopy string
 	must(t, runPlanned(t, t.Context(), req, func(r review.AgentRequest) error {
 		script := mustRead(t, r.Shell)
-		if strings.Contains(script, "bwrap") || !strings.Contains(script, " -i ") {
+		fields := strings.Fields(script[strings.Index(script, "\nexec "):])
+		if len(fields) < 3 || filepath.Base(strings.Trim(fields[1], "'")) == "bwrap" || fields[2] != "-i" {
 			t.Fatalf("fallback shell:\n%s", script)
 		}
 		shellCopy = filepath.Join(t.TempDir(), "scrub-shell")
@@ -365,9 +380,28 @@ func sandboxEnvironmental(t *testing.T, notice string) bool {
 	if lookErr == nil {
 		out, runErr = exec.CommandContext(t.Context(), path, "--version").CombinedOutput()
 	}
-	real := lookErr == nil && runErr == nil && strings.Contains(strings.ToLower(string(out)), "bubblewrap")
+	if lookErr != nil || runErr != nil || !strings.Contains(strings.ToLower(string(out)), "bubblewrap") {
+		return true
+	}
 	n := strings.ToLower(notice)
-	return !real || strings.Contains(n, "namespace") || strings.Contains(n, "operation not permitted") || strings.Contains(n, "bwrap:")
+	return strings.Contains(n, "creating new namespace failed") ||
+		strings.Contains(n, "no permissions to create new namespace") ||
+		strings.Contains(n, "setting up uid map") ||
+		strings.Contains(n, "bwrap not found")
+}
+func TestSandboxSkipIsOnlyNamespaceFailure(t *testing.T) {
+	out, err := exec.CommandContext(t.Context(), "bwrap", "--version").CombinedOutput()
+	if err != nil || !strings.Contains(strings.ToLower(string(out)), "bubblewrap") {
+		t.Skip("bwrap not found")
+	}
+	if sandboxEnvironmental(t, "operation not permitted") || sandboxEnvironmental(t, "bwrap: probe failed") {
+		t.Fatal("unrelated sandbox error skipped")
+	}
+	for _, notice := range []string{"Creating new namespace failed", "No permissions to create new namespace", "setting up uid map"} {
+		if !sandboxEnvironmental(t, notice) {
+			t.Fatalf("namespace failure did not skip: %s", notice)
+		}
+	}
 }
 func sandboxModuleRepo(t *testing.T) (string, string) {
 	t.Helper()

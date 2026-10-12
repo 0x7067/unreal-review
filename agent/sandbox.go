@@ -35,6 +35,7 @@ type sandboxConfig struct {
 	scratchLimit   int64
 	fileSize       int64
 	tmpfsSize      int64
+	addressSpace   int64
 }
 type verifierSandbox struct {
 	root           string
@@ -119,7 +120,7 @@ func prepareVerifierSandbox(ctx context.Context, workspace, headSHA, reviewID st
 	if err != nil {
 		return sb.fail(ctx, err)
 	}
-	limit, fsize, tmpfs := cfg.scratchLimit, cfg.fileSize, cfg.tmpfsSize
+	limit, fsize, tmpfs, as := cfg.scratchLimit, cfg.fileSize, cfg.tmpfsSize, cfg.addressSpace
 	if limit <= 0 {
 		limit = sandboxScratchLimit
 	}
@@ -128,6 +129,9 @@ func prepareVerifierSandbox(ctx context.Context, workspace, headSHA, reviewID st
 	}
 	if tmpfs <= 0 {
 		tmpfs = sandboxTmpfsSize
+	}
+	if as <= 0 {
+		as = sandboxAddressSpace
 	}
 	args, envPairs, err := sandboxMounts(root, tree, toolchain, gitBinds, tmpfs)
 	if err != nil {
@@ -138,7 +142,7 @@ func prepareVerifierSandbox(ctx context.Context, workspace, headSHA, reviewID st
 		limitKB = 1
 	}
 	shell := filepath.Join(root, "shell")
-	body := sandboxScript(root, int(timeout/time.Second), limitKB, bin, envPairs, joinQuoted(args), fsize)
+	body := sandboxScript(root, int(timeout/time.Second), limitKB, bin, envPairs, joinQuoted(args), fsize, as)
 	if err := os.WriteFile(shell, []byte(body), 0o700); err != nil {
 		return sb.fail(ctx, err)
 	}
@@ -153,13 +157,7 @@ func prepareVerifierSandbox(ctx context.Context, workspace, headSHA, reviewID st
 		line := firstLine(string(probeOut))
 		var exitErr *exec.ExitError
 		if errors.As(probeErr, &exitErr) && exitErr.ExitCode() == 2 {
-			if line == "" {
-				line = "go list -m failed"
-			}
 			return sb.refuse("toolchain cannot build the reviewed head: " + line)
-		}
-		if line == "" {
-			line = "probe failed"
 		}
 		return sb.refuse(line)
 	}
@@ -243,7 +241,37 @@ func safeMount(name, path string) (string, error) {
 	if clean == "." || clean == "/" || !filepath.IsAbs(clean) {
 		return "", fmt.Errorf("refusing to mount %s %q", name, path)
 	}
-	return clean, nil
+	resolved, err := resolveMount(clean)
+	if err != nil || resolved == "/" || !filepath.IsAbs(resolved) {
+		shown := path
+		if err == nil {
+			shown = resolved
+		}
+		return "", fmt.Errorf("refusing to mount %s %q", name, shown)
+	}
+	return resolved, nil
+}
+func resolveMount(path string) (string, error) {
+	var missing []string
+	cur := path
+	for {
+		resolved, err := filepath.EvalSymlinks(cur)
+		if err == nil {
+			for i := len(missing) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, missing[i])
+			}
+			return filepath.Clean(resolved), nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return "", err
+		}
+		missing = append(missing, filepath.Base(cur))
+		cur = parent
+	}
 }
 func headHasGoMod(ctx context.Context, workspace, sha string) bool {
 	cmd := exec.CommandContext(ctx, "git", "-C", workspace, "cat-file", "-e", sha+":go.mod")
@@ -326,7 +354,7 @@ func sandboxMounts(root, tree string, tc goToolchain, gitBinds []string, tmpfs i
 	args = append(args, gitBinds...)
 	args = append(args, "--bind", gopath, gopath, "--bind", cache, cache)
 	size := strconv.FormatInt(tmpfs, 10)
-	args = append(args, "--size", size, "--tmpfs", home, "--size", size, "--tmpfs", tmp, "--chdir", tree)
+	args = append(args, "--size", size, "--tmpfs", home, "--size", size, "--tmpfs", tmp, "--chdir", tree, "--remount-ro", "/")
 	pairs := shellAssignments([][2]string{
 		{"PATH", filepath.Join(tc.goroot, "bin") + ":/usr/bin:/bin"},
 		{"GOROOT", tc.goroot},
@@ -341,11 +369,11 @@ func sandboxMounts(root, tree string, tc goToolchain, gitBinds []string, tmpfs i
 	})
 	return args, pairs, nil
 }
-func sandboxScript(root string, timeoutSec int, limitKB int64, bin []string, envPairs, bwrapArgs string, fsize int64) string {
+func sandboxScript(root string, timeoutSec int, limitKB int64, bin []string, envPairs, bwrapArgs string, fsize, as int64) string {
 	run := fmt.Sprintf("%s -i %s %s --as=%d --fsize=%d %s -k 2 \"$timeout_secs\" %s %s /bin/sh -c \"$1\"",
-		shQuote(bin[0]), envPairs, shQuote(bin[1]), sandboxAddressSpace, fsize, shQuote(bin[2]), shQuote(bin[3]), bwrapArgs)
+		shQuote(bin[0]), envPairs, shQuote(bin[1]), as, fsize, shQuote(bin[2]), shQuote(bin[3]), bwrapArgs)
 	probe := fmt.Sprintf("%s -i %s --as=%d --fsize=%d %s -k 2 \"$timeout_secs\" %s %s /bin/sh -c 'unset PWD; test \"$(%s -l </proc/net/dev)\" -eq 3 && test -z \"$(%s)\"'",
-		shQuote(bin[0]), shQuote(bin[1]), sandboxAddressSpace, fsize, shQuote(bin[2]), shQuote(bin[3]), bwrapArgs, bin[4], bin[0])
+		shQuote(bin[0]), shQuote(bin[1]), as, fsize, shQuote(bin[2]), shQuote(bin[3]), bwrapArgs, bin[4], bin[0])
 	return fmt.Sprintf("#!/bin/sh\nset -eu\nroot=%s\ntimeout_secs=%d\ncap_kb=%d\nrun() {\n  %s\n}\nif [ \"${1:-}\" = \"--probe\" ]; then\n  %s || exit 1\n  run \"go list -m\" || exit 2\n  exit 0\nfi\nif [ \"${1:-}\" != \"-c\" ]; then\n  echo \"unreal-review: verifier shell expects -c\" >&2\n  exit 2\nfi\n", shQuote(root), timeoutSec, limitKB, run, probe) +
 		"used=0\nwhile IFS= read -r line; do\n  kb=${line%%[!0-9]*}\n  [ -n \"$kb\" ] || continue\n  used=$((used + kb))\ndone <<EOF\n$(" + shQuote(bin[5]) + " -sk \"$root/tree\" \"$root/gocache\" \"$root/gopath\")\nEOF\nif [ \"$used\" -ge \"$cap_kb\" ]; then\n  echo \"unreal-review: verifier scratch exceeds ${cap_kb} KiB; refusing further commands\" >&2\n  exit 1\nfi\nrun \"${2-}\"\n"
 }
@@ -366,7 +394,7 @@ func installScrubShell(root string) (string, error) {
 		path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 	}
 	lang := os.Getenv("LANG")
-	if strings.TrimSpace(lang) == "" || strings.ContainsAny(lang, "\n\r") {
+	if strings.TrimSpace(lang) == "" {
 		lang = "C.UTF-8"
 	}
 	body := fmt.Sprintf("#!/bin/sh\nset -eu\nif [ \"${1:-}\" != \"-c\" ]; then\n  echo \"unreal-review: verifier shell expects -c\" >&2\n  exit 2\nfi\nexec %s -i PATH=%s HOME=%s LANG=%s /bin/sh -c \"${2-}\"\n",
@@ -419,14 +447,24 @@ func removeSandboxTree(root string) {
 	if root == "" {
 		return
 	}
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, _ error) error {
-		if info == nil || info.Mode()&os.ModeSymlink != 0 {
-			return nil
-		}
-		_ = os.Chmod(path, 0o700)
-		return nil
-	})
+	chmodDirs(root)
 	_ = os.RemoveAll(root)
+}
+func chmodDirs(path string) {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return
+	}
+	_ = os.Chmod(path, 0o700)
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			chmodDirs(filepath.Join(path, entry.Name()))
+		}
+	}
 }
 func sweepStaleSandboxes(root string) {
 	entries, err := os.ReadDir(root)
