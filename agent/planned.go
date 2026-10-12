@@ -79,29 +79,34 @@ type plannedOutcome struct {
 	err     error
 }
 
-func verifierStage(stage string, discovery bool) bool {
-	return !discovery && !strings.HasPrefix(stage, "consolidate:")
-}
 func verifierLimit(parent context.Context, wall time.Duration) (context.Context, context.CancelFunc) {
 	if wall <= 0 {
 		wall = verifierTaskWall
 	}
 	return context.WithTimeout(parent, wall)
 }
-func verifierStopped(parent, limited context.Context, err error) bool {
-	return err != nil && parent.Err() == nil && limited.Err() != nil
-}
-func finishVerifierOnWall(path string, candidates []findings.Finding, cost findings.Cost) (findings.Report, findings.Cost, error) {
-	if !cost.Recorded() {
-		cost = findings.Cost{Currency: "USD", Requests: 1}
-	}
+func finishVerifierOnWall(path string, candidates []findings.Finding) findings.Report {
 	report, err := findings.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return findings.Report{}, cost, err
+	written := map[string]findings.Finding{}
+	if err == nil {
+		for _, item := range report.Findings {
+			if item.ID != "" {
+				written[item.ID] = item
+			}
+		}
+	} else {
+		report = findings.Report{}
 	}
-	if len(report.Findings) == 0 {
-		report.Findings = append([]findings.Finding(nil), candidates...)
+	merged := make([]findings.Finding, 0, len(candidates))
+	for _, item := range candidates {
+		if got, ok := written[item.ID]; ok {
+			merged = append(merged, got)
+			continue
+		}
+		item.Severity = findings.SeverityNote
+		merged = append(merged, item)
 	}
+	report.Findings = merged
 	if _, err := findings.CheckSummary(report.Summary, len(report.Findings)); err != nil {
 		if len(report.Findings) == 0 {
 			report.Summary = findings.CleanVerdict + ": verifier stopped at its time limit."
@@ -109,7 +114,32 @@ func finishVerifierOnWall(path string, candidates []findings.Finding, cost findi
 			report.Summary = "verifier stopped at its time limit; candidates stand"
 		}
 	}
-	return report, cost, nil
+	return report
+}
+func runVerifier(parent context.Context, wall time.Duration, path string, candidates []findings.Finding, run func(context.Context) (review.AgentResult, error)) (review.AgentResult, bool, error) {
+	limited, stop := verifierLimit(parent, wall)
+	defer stop()
+	result, err := run(limited)
+	if err == nil || parent.Err() != nil || limited.Err() == nil {
+		return result, false, err
+	}
+	if ferr := focusedWriteReport(path, finishVerifierOnWall(path, candidates)); ferr != nil {
+		return result, false, ferr
+	}
+	return result, true, nil
+}
+func completeVerifierChild(path string, cost findings.Cost, stopped bool) (findings.Report, error) {
+	if stopped && !cost.Recorded() {
+		report, err := findings.ReadFile(path)
+		if err != nil {
+			return report, err
+		}
+		if _, err = findings.CheckSummary(report.Summary, len(report.Findings)); err != nil {
+			return report, err
+		}
+		return report, nil
+	}
+	return focusedComplete(path, cost)
 }
 func plannedChild(root, stage string, generation int) string {
 	return focusedHash(fmt.Sprintf("%s\x00%s\x00%s\x00%d", root, plannedVersion, stage, generation))
@@ -353,31 +383,23 @@ func (p Planned) Run(ctx context.Context, req review.AgentRequest) (result revie
 			agent = applyVerifierSandbox(&child, agent, sb)
 		}
 		r.Started = true
-		runCtx := ctx
-		var stop context.CancelFunc
-		if verifierStage(job.stage, job.discovery) {
-			runCtx, stop = verifierLimit(ctx, p.verifierWall)
-			defer stop()
+		var childResult review.AgentResult
+		var stopped bool
+		var e error
+		if !job.discovery && !strings.HasPrefix(job.stage, "consolidate:") {
+			childResult, stopped, e = runVerifier(ctx, p.verifierWall, path, job.candidates, func(runCtx context.Context) (review.AgentResult, error) {
+				return agent.Run(runCtx, child)
+			})
+		} else {
+			childResult, e = agent.Run(ctx, child)
 		}
-		childResult, e := agent.Run(runCtx, child)
 		r.Cost = childResult.Cost
-		if verifierStage(job.stage, job.discovery) && verifierStopped(ctx, runCtx, e) {
-			report, cost, ferr := finishVerifierOnWall(path, job.candidates, childResult.Cost)
-			if ferr != nil {
-				return plannedOutcome{receipt: r, err: ferr}
-			}
-			if ferr = focusedWriteReport(path, report); ferr != nil {
-				return plannedOutcome{receipt: r, err: ferr}
-			}
-			r.Cost = cost
-			e = nil
-		}
 		if e == nil {
 			e = ctx.Err()
 		}
 		var report findings.Report
 		if e == nil {
-			report, e = focusedComplete(path, r.Cost)
+			report, e = completeVerifierChild(path, r.Cost, stopped)
 		}
 		var candidateSet map[string]findings.Finding
 		if e == nil && !job.discovery {

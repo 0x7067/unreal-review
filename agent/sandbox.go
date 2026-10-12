@@ -504,7 +504,7 @@ func verifierSandboxAddendum(active bool, perCommand time.Duration) string {
 	}
 	seconds := int(perCommand / time.Second)
 	minutes := int(sandboxTaskWall / time.Minute)
-	return fmt.Sprintf("\nVerifier sandbox: the workspace is a scratch copy of the reviewed commit and code may be run offline here (go build, go vet, go test of the changed packages, or a repro written in this scratch copy). Each command is killed after %d s; the network is off. Code-running commands (go build, go vet, go test, go run, and scripts or binaries) share %d minutes; read-only commands such as git show, git grep, git log, git diff, cat, sed, rg, and ls do not. After that budget, decide from the evidence you have and do not run more code. This severity rule applies only to claims about runtime behavior. A finding that claims runtime behavior and is demonstrated by a command you ran in this session keeps its severity; cite that command and a short output excerpt in the body. A runtime-behavior claim you could not demonstrate is re-emitted with severity note, not dropped. A finding settled by reading the code alone (exact quoted lines at the cited range, such as a compile error or an always-false condition) may keep its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change.", seconds, minutes)
+	return fmt.Sprintf("\nVerifier sandbox: the workspace is a scratch copy of the reviewed commit and code may be run offline here (go build, go vet, go test of the changed packages, or a repro written in this scratch copy). Each command is killed after %d s; the network is off. Reads are free; anything that runs code counts against the %d-minute budget. After that budget, decide from the evidence you have and do not run more code. This severity rule applies only to claims about runtime behavior. A finding that claims runtime behavior and is demonstrated by a command you ran in this session keeps its severity; cite that command and a short output excerpt in the body. A runtime-behavior claim you could not demonstrate is re-emitted with severity note, not dropped. A finding settled by reading the code alone (exact quoted lines at the cited range, such as a compile error or an always-false condition) may keep its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change.", seconds, minutes)
 }
 func installCommandBudget(dir, inner string, wall time.Duration) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -526,7 +526,7 @@ limit=%d
 inner=%s
 msg=%s
 lock_open() { exec 9>"$state.lock"; flock 9; }
-lock_close() { flock -u 9 2>/dev/null || true; exec 9>&-; }
+lock_close() { exec 9>&-; }
 load_spent() {
   SPENT=0
   CORRUPT=0
@@ -539,63 +539,46 @@ load_spent() {
     *) SPENT=$line ;;
   esac
 }
-free_words() {
-  set -f
-  set -- $1
-  set +f
-  while [ $# -gt 0 ]; do
-    case $1 in
-      [A-Za-z_][A-Za-z0-9_]*=*) shift ;;
-      *) break ;;
-    esac
-  done
-  [ $# -gt 0 ] || return 0
-  name=${1##*/}
-  if [ "$name" = "[" ]; then
-    return 0
-  fi
-  case $name in
-    cat|sed|rg|ls|head|tail|wc|grep|egrep|fgrep|find|pwd|stat|cut|awk|echo|printf|true|false|basename|dirname|sort|uniq|tr|diff|comm|cmp|od|hexdump|file|readlink|realpath|which|nl|fold|column|rev|tac|less|more|git|test) ;;
-    *) return 1 ;;
-  esac
-  if [ "$name" = git ]; then
-    case ${2-} in
-      show|grep|log|diff) return 0 ;;
-      *) return 1 ;;
-    esac
-  fi
-  return 0
-}
 charges() {
   cmd=$1
   case $cmd in
-    *'$(*'*) return 0 ;;
+    *'$'*|*'|'*|*';'*|*'&'*|*'>'*|*'<'*|*'('*|*')'*|*'
+'*) return 0 ;;
   esac
   tick=$(printf '\140')
-  if printf '%%s' "$cmd" | grep -F -q "$tick"; then
-    return 0
-  fi
-  flat=$(printf '%%s\n' "$cmd" | sed -e 's/&&/\n/g' -e 's/||/\n/g' -e 's/[|&;]/\n/g') || return 0
-  save=$IFS
-  IFS='
-'
+  case $cmd in
+    *$tick*) return 0 ;;
+  esac
   set -f
-  for seg in $flat; do
-    set +f
-    IFS=$save
-    seg=${seg#"${seg%%%%[![:space:]]*}"}
-    seg=${seg%%%%"${seg##*[![:space:]]}"}
-    [ -n "$seg" ] || continue
-    if ! free_words "$seg"; then
-      return 0
-    fi
-    set -f
-    IFS='
-'
-  done
+  set -- $cmd
   set +f
-  IFS=$save
-  return 1
+  [ $# -gt 0 ] || return 0
+  case $1 in
+    *=*) return 0 ;;
+  esac
+  name=${1##*/}
+  case $name in
+    cat|ls|head|tail|nl|wc) return 1 ;;
+    rg)
+      for arg do
+        case $arg in
+          --pre|--pre=*|--pre-glob|--pre-glob=*) return 0 ;;
+        esac
+      done
+      return 1 ;;
+    git)
+      case ${2-} in
+        show|grep|log|diff) ;;
+        *) return 0 ;;
+      esac
+      for arg do
+        case $arg in
+          -c*|-O*|--ext-diff*|--open-files-in-pager*) return 0 ;;
+        esac
+      done
+      return 1 ;;
+  esac
+  return 0
 }
 run=$2
 if charges "$run"; then

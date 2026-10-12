@@ -343,74 +343,87 @@ func TestBudgetInstallFailureAnnouncesFallback(t *testing.T) {
 		t.Fatalf("scrub shell: exit %d\n%s", code, out)
 	}
 }
-func TestVerifierBudgetReadsAreFree(t *testing.T) {
+func TestVerifierCommandBudget(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "note")
 	must(t, os.WriteFile(file, []byte("line\n"), 0o644))
+	qfile := shQuote(file)
 	shell, err := installCommandBudget(dir, "/bin/sh", time.Second)
 	must(t, err)
-	for _, command := range []string{
-		"echo hi",
+	free := []string{
+		"cat " + qfile,
 		"ls " + shQuote(dir),
-		"cat " + shQuote(file),
-		"sed -n 1p " + shQuote(file),
+		"head -1 " + qfile,
+		"tail -1 " + qfile,
+		"nl " + qfile,
+		"wc -l " + qfile,
+		"rg line " + qfile,
 		"git show HEAD",
 		"git diff",
 		"git log -1",
 		"git grep kept",
-	} {
+	}
+	for _, command := range free {
 		out, _ := runShell(t, shell, command)
 		if strings.TrimSpace(out) == sandboxBudgetSpent {
 			t.Fatalf("read %q counted:\n%s", command, out)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(dir, "state")); !os.IsNotExist(err) {
-		t.Fatalf("read-only commands wrote a budget: %v", err)
+		t.Fatalf("reads wrote a budget: %v", err)
 	}
-}
-func TestVerifierBudgetCountsCodeCommands(t *testing.T) {
-	dir := t.TempDir()
-	shell, err := installCommandBudget(dir, "/bin/sh", time.Second)
-	must(t, err)
 	out, code := runShell(t, shell, "sleep 2")
-	if code != 0 || strings.Contains(out, sandboxBudgetSpent) {
+	if code != 0 || strings.TrimSpace(out) == sandboxBudgetSpent {
 		t.Fatalf("first code command: exit %d\n%s", code, out)
 	}
-	spent := budgetSpent(t, filepath.Join(dir, "state"))
-	if spent < 1 {
-		t.Fatalf("code command spent=%d", spent)
+	if budgetSpent(t, filepath.Join(dir, "state")) < 1 {
+		t.Fatal("code command did not spend the budget")
 	}
-	marker := filepath.Join(dir, "late")
-	out, code = runShell(t, shell, "sleep 2; touch "+shQuote(marker))
-	if code != 0 || !strings.Contains(out, sandboxBudgetSpent) {
-		t.Fatalf("second code command: exit %d\n%s", code, out)
+	marker := filepath.Join(dir, "ran")
+	qmarker := shQuote(marker)
+	charged := []string{
+		"echo $(go version)",
+		"find " + shQuote(dir) + " -exec touch " + qmarker + " \\;",
+		"awk 'BEGIN{system(\"touch " + marker + "\")}'",
+		"sed e " + qfile,
+		"rg --pre id " + qfile,
+		"sort --compress-program id " + qfile,
+		"git grep -O cat -- kept",
+		"git diff -c",
+		"GIT_EXTERNAL_DIFF=x git diff",
+		"sleep 2; touch " + qmarker,
 	}
-	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatalf("code command ran after the budget: %v", err)
+	for _, command := range charged {
+		out, code := runShell(t, shell, command)
+		if code != 0 || strings.TrimSpace(out) != sandboxBudgetSpent {
+			t.Fatalf("charged %q: exit %d\n%s", command, code, out)
+		}
+		if _, err := os.Stat(marker); !os.IsNotExist(err) {
+			t.Fatalf("charged %q ran: %v", command, err)
+		}
 	}
-	out, code = runShell(t, shell, "echo still-readable")
-	if code != 0 || strings.Contains(out, sandboxBudgetSpent) || !strings.Contains(out, "still-readable") {
+	out, code = runShell(t, shell, "cat "+qfile)
+	if code != 0 || out != "line\n" {
 		t.Fatalf("read after the budget: exit %d\n%s", code, out)
 	}
 	must(t, os.WriteFile(filepath.Join(dir, "state"), []byte("bogus\n"), 0o600))
 	start := time.Now()
 	out, code = runShell(t, shell, "sleep 5")
-	if code != 0 || !strings.Contains(out, sandboxBudgetSpent) || time.Since(start) > 2*time.Second {
+	if code != 0 || strings.TrimSpace(out) != sandboxBudgetSpent || time.Since(start) > 2*time.Second {
 		t.Fatalf("corrupt state: exit %d after %s\n%s", code, time.Since(start), out)
 	}
-}
-func TestVerifierBudgetParallelDoesNotHoldTheLock(t *testing.T) {
-	dir := t.TempDir()
-	shell, err := installCommandBudget(dir, "/bin/sh", time.Minute)
+
+	parallel := t.TempDir()
+	shell, err = installCommandBudget(parallel, "/bin/sh", time.Minute)
 	must(t, err)
-	stamps := filepath.Join(dir, "stamps")
+	stamps := filepath.Join(parallel, "stamps")
 	var wg sync.WaitGroup
 	wg.Add(2)
 	for range 2 {
 		go func() {
 			defer wg.Done()
 			out, code := runShell(t, shell, "date +%s >> "+shQuote(stamps)+"; sleep 2")
-			if code != 0 || strings.Contains(out, sandboxBudgetSpent) {
+			if code != 0 || strings.TrimSpace(out) == sandboxBudgetSpent {
 				t.Errorf("parallel command: exit %d\n%s", code, out)
 			}
 		}()
@@ -433,7 +446,7 @@ func TestVerifierBudgetParallelDoesNotHoldTheLock(t *testing.T) {
 	if gap >= 2 {
 		t.Fatalf("commands were serialized, start gap %d s", gap)
 	}
-	out, code := runShell(t, shell, "if (true <&9) 2>/dev/null; then echo INHERITED; else echo CLOSED; fi")
+	out, code = runShell(t, shell, "if (true <&9) 2>/dev/null; then echo INHERITED; else echo CLOSED; fi")
 	if code != 0 || strings.Contains(out, "INHERITED") || !strings.Contains(out, "CLOSED") {
 		t.Fatalf("fd 9 inherited: exit %d\n%s", code, out)
 	}

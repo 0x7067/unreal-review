@@ -119,50 +119,77 @@ func TestPlannedWholeCallTimeout(t *testing.T) {
 }
 
 func TestVerifierWallCapPublishesCandidates(t *testing.T) {
-	req := plannedTestRequest(t)
 	kept := plannedTestIssue("kept")
 	also := plannedTestIssue("also")
 	also.StartLine, also.EndLine = 8, 8
 	also.Body = "Second defect"
-	discovery := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
-		if strings.Contains(r.Prompt, "local a") {
-			return plannedTestEmit(r, []findings.Finding{kept, also})
-		}
-		return plannedTestEmit(r, nil)
-	})
-	verifier := plannedTestAgent(func(ctx context.Context, _ review.AgentRequest) (review.AgentResult, error) {
-		<-ctx.Done()
-		return review.AgentResult{Cost: findings.Cost{Currency: "USD", Requests: 1}}, ctx.Err()
-	})
+	third := plannedTestIssue("third")
+	third.StartLine, third.EndLine = 12, 12
+	third.Body = "Third defect"
+	candidates := []findings.Finding{kept, also, third}
 	consolidator := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
 		items, err := plannedTestCandidates(r.Prompt)
 		if err != nil {
 			return review.AgentResult{}, err
 		}
-		for i := range items {
-			items[i].Body = "consolidated " + items[i].ID
-		}
 		return plannedTestEmit(r, items)
 	})
-
-	result, err := (Planned{
-		Agent: discovery, Verifier: verifier, Consolidator: consolidator,
-		verifierWall: 200 * time.Millisecond,
-	}).Run(t.Context(), req)
-	if err != nil || result.Coverage == nil {
-		t.Fatalf("wall result=%+v err=%v", result, err)
+	run := func(t *testing.T, verifier plannedTestAgent) findings.Report {
+		t.Helper()
+		req := plannedTestRequest(t)
+		discovery := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+			if strings.Contains(r.Prompt, "local a") {
+				return plannedTestEmit(r, candidates)
+			}
+			return plannedTestEmit(r, nil)
+		})
+		result, err := (Planned{
+			Agent: discovery, Verifier: verifier, Consolidator: consolidator,
+			verifierWall: 200 * time.Millisecond,
+		}).Run(t.Context(), req)
+		if err != nil || result.Coverage == nil {
+			t.Fatalf("wall result=%+v err=%v", result, err)
+		}
+		report, err := findings.ReadFile(req.FindingsPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return report
 	}
-	report, err := findings.ReadFile(req.FindingsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := map[string]string{}
-	for _, item := range report.Findings {
-		got[item.ID] = item.Body
-	}
-	if len(report.Findings) != 2 || got["kept"] != "consolidated kept" || got["also"] != "consolidated also" {
-		t.Fatalf("published findings = %+v summary=%q", report.Findings, report.Summary)
-	}
+	t.Run("partial", func(t *testing.T) {
+		verified := kept
+		verified.Body = "verified kept"
+		report := run(t, func(ctx context.Context, r review.AgentRequest) (review.AgentResult, error) {
+			if err := focusedWriteReport(r.FindingsPath, findings.Report{Findings: []findings.Finding{verified}, Summary: "verified one"}); err != nil {
+				return review.AgentResult{}, err
+			}
+			<-ctx.Done()
+			return review.AgentResult{Cost: findings.Cost{Currency: "USD", Requests: 1}}, ctx.Err()
+		})
+		got := map[string]findings.Finding{}
+		for _, item := range report.Findings {
+			got[item.ID] = item
+		}
+		if len(report.Findings) != 3 || got["kept"].Body != "verified kept" || got["kept"].Severity != findings.SeverityError || got["also"].Severity != findings.SeverityNote || got["also"].Body != "Second defect" || got["third"].Severity != findings.SeverityNote || got["third"].Body != "Third defect" {
+			t.Fatalf("published findings = %+v", report.Findings)
+		}
+	})
+	t.Run("corrupt", func(t *testing.T) {
+		report := run(t, func(ctx context.Context, r review.AgentRequest) (review.AgentResult, error) {
+			if err := os.WriteFile(r.FindingsPath, []byte("{\"type\":\"finding\",\"id\":\"kept\"\n"), 0o600); err != nil {
+				return review.AgentResult{}, err
+			}
+			<-ctx.Done()
+			return review.AgentResult{}, ctx.Err()
+		})
+		got := map[string]findings.Finding{}
+		for _, item := range report.Findings {
+			got[item.ID] = item
+		}
+		if len(report.Findings) != 3 || got["kept"].Severity != findings.SeverityNote || got["kept"].Body != "Confirmed defect kept" || got["also"].Severity != findings.SeverityNote || got["third"].Severity != findings.SeverityNote {
+			t.Fatalf("published findings = %+v", report.Findings)
+		}
+	})
 }
 
 func TestPlannedForwardsUnplannedReview(t *testing.T) {
