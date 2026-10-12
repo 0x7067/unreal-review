@@ -43,18 +43,25 @@ func cmdEval(args []string) error {
 	decompose := fs.Bool("decompose", false, "use bounded aggregate scopes for every review case")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
 	asJSON := fs.Bool("json", false, "print machine-readable JSON instead of a table")
-	corpus := fs.String("corpus", "planted", "planted or martian")
+	corpus := fs.String("corpus", "planted", "planted, martian, or pr38")
 	profile := fs.String("profile", "core", "martian golden categories: core, strict, or all")
 	parallel := fs.Int("parallel", 8, "martian cases reviewed at once")
 	only := fs.String("cases", "", "comma-separated case names for the selected corpus (default: all)")
 	judgeModel := fs.String("judge-model", "anthropic/claude-sonnet-5.5", "OpenRouter model that matches martian findings to golden comments")
+	runs := fs.Int("runs", 1, "repeat the pr38 corpus and print each run, the mean, and the union of hits")
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
 	switch *corpus {
-	case "planted", "martian":
+	case "planted", "martian", "pr38":
 	default:
-		return fmt.Errorf("unknown corpus %q: use planted or martian", *corpus)
+		return fmt.Errorf("unknown corpus %q: use planted, martian, or pr38", *corpus)
+	}
+	if *runs < 1 {
+		return fmt.Errorf("--runs must be at least 1")
+	}
+	if *runs != 1 && *corpus != "pr38" {
+		return fmt.Errorf("--runs applies to the pr38 corpus")
 	}
 	if *model == "" {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")
@@ -87,6 +94,11 @@ func cmdEval(args []string) error {
 			return err
 		}
 	}
+	if *corpus == "pr38" {
+		if _, err = selectNamed(eval.PR38CaseNames(), *only, "pr38", func(name string) string { return name }); err != nil {
+			return err
+		}
+	}
 	root := *outDir
 	if root == "" {
 		temp, err := os.MkdirTemp("", "unreal-review-eval-")
@@ -104,6 +116,8 @@ func cmdEval(args []string) error {
 	case "planted":
 	case "martian":
 		return evalMartian(ctx, root, *model, reviewer, key, ready)
+	case "pr38":
+		return pr38Eval(ctx, root, *model, reviewer, *runs, *decompose, *asJSON)
 	}
 	scores := make([]eval.Score, 0, len(planted))
 	for _, c := range planted {
