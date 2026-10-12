@@ -172,7 +172,7 @@ func prepareVerifierSandbox(ctx context.Context, workspace, headSHA, reviewID st
 	sb.active = true
 	note := ""
 	if entries, err := os.ReadDir(toolchain.modcache); err != nil || len(entries) == 0 {
-		note = " (module cache not found; dependency builds will fail)"
+		note = " (module cache not found; builds that need downloaded modules will fail)"
 	}
 	sb.notice = fmt.Sprintf("unreal-review: verifier sandbox active (offline, %d s per command, scratch %s)%s.", int(timeout/time.Second), tree, note)
 	sb.announce()

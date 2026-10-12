@@ -288,6 +288,7 @@ func TestFallbackVerifierScrubsEnv(t *testing.T) {
 	repo, sha := sandboxModuleRepo(t)
 	req := plannedTestRequest(t)
 	req.Workspace, req.HeadSHA, req.ReviewID = repo, sha, "sandbox-"+t.Name()
+	t.Setenv("HOME", t.TempDir())
 	home := os.Getenv("HOME")
 	for key, value := range map[string]string{"CANARY_SANDBOX": sandboxSecrets[0], "OPENROUTER_API_KEY": sandboxSecrets[1], "GH_TOKEN": sandboxSecrets[2]} {
 		t.Setenv(key, value)
@@ -336,7 +337,7 @@ func TestActiveVerifierPromptCarriesSeverityRule(t *testing.T) {
 	if !strings.Contains(verifier.SystemPrompt, "applies only to claims about runtime behavior") {
 		skipOrFail(t, notices.String())
 	}
-	contains(t, notices.String(), "module cache not found; dependency builds will fail")
+	contains(t, notices.String(), "module cache not found; builds that need downloaded modules will fail")
 	for _, phrase := range []string{"re-emitted with severity note, not dropped", "exact quoted lines"} {
 		contains(t, verifier.SystemPrompt, phrase)
 	}
