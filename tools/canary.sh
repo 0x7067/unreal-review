@@ -454,6 +454,14 @@ OPENROUTER_API_KEY=dummy cli --name eval-corpus -- eval --model x --corpus bogus
 require_exit eval-corpus 1
 expect eval-corpus.md 'unknown corpus "bogus": use planted, martian, or pr38' "$(stderr_of eval-corpus)" "eval-corpus"
 
+OPENROUTER_API_KEY=dummy cli --name eval-runs -- eval --model x --corpus pr38 --runs 0 --out "$VERIFY_SCRATCH/e"
+require_exit eval-runs 1
+expect eval-corpus.md '--runs must be at least 1' "$(stderr_of eval-runs)" "eval-runs"
+
+OPENROUTER_API_KEY=dummy cli --name eval-runs-corpus -- eval --model x --corpus planted --runs 3 --out "$VERIFY_SCRATCH/e"
+require_exit eval-runs-corpus 1
+expect eval-corpus.md '--runs applies to the pr38 corpus' "$(stderr_of eval-runs-corpus)" "eval-runs-corpus"
+
 OPENROUTER_API_KEY=dummy cli --name eval-cases -- eval --model x --cases nosuch --out "$VERIFY_SCRATCH/e"
 require_exit eval-cases 1
 expect eval-corpus.md 'unknown planted case "nosuch"' "$(stderr_of eval-cases)" "eval-cases"
