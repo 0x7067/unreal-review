@@ -462,6 +462,11 @@ OPENROUTER_API_KEY=dummy cli --name eval-runs-corpus -- eval --model x --corpus 
 require_exit eval-runs-corpus 1
 expect eval-corpus.md '--runs applies to the pr38 corpus' "$(stderr_of eval-runs-corpus)" "eval-runs-corpus"
 
+env -u UNREAL_HARNESS_LLM_MODEL "$SCRIPTS/cli.sh" --name eval-runs-pr38 -- eval --corpus pr38 --runs 2 --out "$VERIFY_SCRATCH/e"
+require_exit eval-runs-pr38 1
+expect eval-corpus.md "set --model or UNREAL_HARNESS_LLM_MODEL" "$(stderr_of eval-runs-pr38)" "eval-runs-pr38"
+require_absent "$(stderr_of eval-runs-pr38)" "--runs applies to the pr38 corpus" "eval-runs-pr38"
+
 OPENROUTER_API_KEY=dummy cli --name eval-cases -- eval --model x --cases nosuch --out "$VERIFY_SCRATCH/e"
 require_exit eval-cases 1
 expect eval-corpus.md 'unknown planted case "nosuch"' "$(stderr_of eval-cases)" "eval-cases"
