@@ -81,10 +81,8 @@ type PR38Score struct {
 	Err        string   `json:"err,omitempty"`
 }
 
-// Completed is a finished review whose findings were saved. review.Run can
-// return a complete report together with a persistence error.
 func (s PR38Score) Completed() bool {
-	return s.Status == string(findings.StatusComplete) && s.Err == ""
+	return completedReview(s.Status, s.Err)
 }
 
 type PR38Mean struct {

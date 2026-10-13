@@ -142,6 +142,15 @@ func cmdEval(args []string) error {
 	fmt.Fprintf(os.Stderr, "artifacts: %s\n", root)
 	return nil
 }
+
+func martianTotals(scores []eval.MartianScore) evalTotals {
+	plain := make([]eval.Score, len(scores))
+	for i, score := range scores {
+		plain[i] = score.Score
+	}
+	return totals(plain)
+}
+
 func totals(scores []eval.Score) evalTotals {
 	total := evalTotals{Cases: len(scores)}
 	for _, score := range scores {
