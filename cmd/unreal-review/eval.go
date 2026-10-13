@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -132,23 +133,24 @@ func cmdEval(args []string) error {
 		scores = append(scores, score)
 		fmt.Fprintf(os.Stderr, "%s done\n", c.Name)
 	}
-	if *asJSON {
-		enc := json.NewEncoder(os.Stdout)
+	if err := writePlanted(os.Stdout, scores, *asJSON); err != nil {
+		return err
+	}
+	if !*asJSON {
+		fmt.Fprintf(os.Stderr, "artifacts: %s\n", root)
+	}
+	return nil
+}
+
+func writePlanted(w io.Writer, scores []eval.Score, asJSON bool) error {
+	if asJSON {
+		enc := json.NewEncoder(w)
 		enc.SetEscapeHTML(false)
 		enc.SetIndent("", "  ")
 		return enc.Encode(evalSummary{Cases: scores, Total: totals(scores)})
 	}
-	printScores(scores)
-	fmt.Fprintf(os.Stderr, "artifacts: %s\n", root)
+	printScores(w, scores)
 	return nil
-}
-
-func martianTotals(scores []eval.MartianScore) evalTotals {
-	plain := make([]eval.Score, len(scores))
-	for i, score := range scores {
-		plain[i] = score.Score
-	}
-	return totals(plain)
 }
 
 func totals(scores []eval.Score) evalTotals {
@@ -168,8 +170,8 @@ func totals(scores []eval.Score) evalTotals {
 	return total
 }
 
-func printScores(scores []eval.Score) {
-	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+func printScores(w io.Writer, scores []eval.Score) {
+	writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	defer func() { _ = writer.Flush() }()
 	_, _ = fmt.Fprintln(writer, "case\tstatus\trecall\tprecision\tseverity\tfound\tgold\textra\tcost\ttime")
 	for _, score := range scores {

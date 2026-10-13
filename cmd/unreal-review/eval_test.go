@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/0x7067/unreal-review/internal/eval"
@@ -160,22 +163,41 @@ func TestEvalRunsFlagLeavesNoDirectory(t *testing.T) {
 	}
 }
 
-func TestPersistErrorIsNotCountedCompleted(t *testing.T) {
+func TestPlantedSaveErrorIsExcludedFromCompleted(t *testing.T) {
 	saved := eval.Score{Name: "saved", Status: "complete", Err: "write findings: disk full", Gold: 1, Matched: 1, CostUSD: 9}
 	ok := eval.Score{Name: "ok", Status: "complete", Gold: 1, Matched: 1, CostUSD: 0.5}
 	again := eval.Score{Name: "again", Status: "complete", Gold: 1, Matched: 1, CostUSD: 0.25}
 
-	if got := totals([]eval.Score{saved, ok}); got.Completed != 1 || got.Cases != 2 {
-		t.Fatalf("planted total.completed=%d cases=%d", got.Completed, got.Cases)
+	var out bytes.Buffer
+	if err := writePlanted(&out, []eval.Score{saved, ok}, true); err != nil {
+		t.Fatal(err)
 	}
-	if got := totals([]eval.Score{saved, ok, again}); got.Completed != 2 || got.Cases != 3 {
-		t.Fatalf("planted total.completed=%d cases=%d", got.Completed, got.Cases)
+	var got evalSummary
+	if decErr := json.Unmarshal(out.Bytes(), &got); decErr != nil || got.Total.Completed != 1 || got.Total.Cases != 2 || len(got.Cases) != 2 || got.Cases[0].Err != "write findings: disk full" {
+		t.Fatalf("json: %v %s", decErr, out.String())
 	}
-	if got := martianTotals([]eval.MartianScore{{Score: saved}, {Score: ok}}); got.Completed != 1 || got.Cases != 2 {
-		t.Fatalf("martian total.completed=%d cases=%d", got.Completed, got.Cases)
+
+	out.Reset()
+	if err := writePlanted(&out, []eval.Score{saved, ok}, false); err != nil {
+		t.Fatal(err)
 	}
-	if got := martianTotals([]eval.MartianScore{{Score: saved}, {Score: ok}, {Score: again}}); got.Completed != 2 || got.Cases != 3 {
-		t.Fatalf("martian total.completed=%d cases=%d", got.Completed, got.Cases)
+	if !strings.Contains(out.String(), "complete write findings: disk full") || !strings.Contains(out.String(), "1/2 complete") {
+		t.Fatalf("table: %s", out.String())
+	}
+
+	out.Reset()
+	if err := writePlanted(&out, []eval.Score{ok, again}, true); err != nil {
+		t.Fatal(err)
+	}
+	if decErr := json.Unmarshal(out.Bytes(), &got); decErr != nil || got.Total.Completed != 2 || got.Total.Cases != 2 {
+		t.Fatalf("saved json: %v %s", decErr, out.String())
+	}
+	out.Reset()
+	if err := writePlanted(&out, []eval.Score{ok, again}, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "2/2 complete") {
+		t.Fatalf("saved table: %s", out.String())
 	}
 }
 
