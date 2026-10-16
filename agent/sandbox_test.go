@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/unreallabsai/unreal-agent/harness/llm"
+
 	"github.com/0x7067/unreal-review/findings"
 	"github.com/0x7067/unreal-review/review"
 )
@@ -694,8 +696,9 @@ func TestZeroBudgetRefusesOptionPrefixes(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "readable-line") || strings.TrimSpace(out) == sandboxBudgetSpent {
 		t.Fatalf("read was refused: exit %d\n%s", code, out)
 	}
-	out, code = runShell(t, shell, "rg foo "+dir+"/*")
-	if strings.TrimSpace(out) == sandboxBudgetSpent || strings.Contains(out, "foo-from-expansion") || strings.Contains(out, "planted-name") || !strings.Contains(out, "*") {
+	literal := dir + "/*"
+	out, code = runShell(t, shell, "rg foo "+literal)
+	if strings.TrimSpace(out) == sandboxBudgetSpent || strings.Contains(out, "foo-from-expansion") || strings.Contains(out, "planted-name") || !strings.Contains(out, literal) {
 		t.Fatalf("glob read expanded or was refused: exit %d\n%s", code, out)
 	}
 	out, _ = runShell(t, shell, "git diff")
@@ -719,6 +722,82 @@ func TestZeroBudgetRefusesOptionPrefixes(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "state")); !os.IsNotExist(err) {
 		t.Fatalf("refused commands recorded spend: %v", err)
 	}
+}
+
+func TestReadOnlyBashComesFromTheRequestFlag(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	inner := filepath.Join(dir, "inner")
+	must(t, os.WriteFile(inner, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o700))
+	refused := "Quotes, backslashes, ~, $, |, ;, &, <, >, backticks, newlines and parentheses are refused."
+	sb := &verifierSandbox{active: true, shell: inner, tree: dir, commandTimeout: time.Second}
+
+	child := review.AgentRequest{
+		ReviewID: "ro-flag", SystemPrompt: "base", Workspace: dir,
+		FindingsPath: filepath.Join(dir, "ro.jsonl"), Model: "test-model", Prompt: "Review.",
+	}
+	applyVerifierSandbox(&child, Harness{}, sb, 0)
+	if !child.ReadOnlyBash {
+		t.Fatal("zero-budget sandbox left ReadOnlyBash unset")
+	}
+	description, command := bashToolText(t, child)
+	if !strings.Contains(description, refused) || !strings.Contains(command, refused) {
+		t.Fatalf("bash tool:\n%s\ncommand:\n%s", description, command)
+	}
+
+	decoy := review.AgentRequest{
+		ReviewID: "exec-flag", SystemPrompt: "Globs are not expanded.", Workspace: dir,
+		FindingsPath: filepath.Join(dir, "exec.jsonl"), Model: "test-model", Prompt: "Review.",
+	}
+	applyVerifierSandbox(&decoy, Harness{}, sb, sandboxTaskWall)
+	if decoy.ReadOnlyBash {
+		t.Fatal("exec budget set ReadOnlyBash")
+	}
+	description, command = bashToolText(t, decoy)
+	if strings.Contains(description, refused) || strings.Contains(command, refused) {
+		t.Fatalf("prompt phrase selected the read-only bash tool:\n%s\n%s", description, command)
+	}
+
+	scrub, err := installScrubShell(dir)
+	must(t, err)
+	scrubbed := review.AgentRequest{ReviewID: "scrub-flag", SystemPrompt: "Globs are not expanded."}
+	applyVerifierSandbox(&scrubbed, Harness{}, &verifierSandbox{active: false, shell: scrub, root: dir}, 0)
+	if scrubbed.ReadOnlyBash {
+		t.Fatal("scrub shell set ReadOnlyBash")
+	}
+}
+
+type toolCapture struct {
+	tools []llm.Tool
+}
+
+func (c *toolCapture) Respond(_ context.Context, req llm.Request, _ llm.RequestOptions) (llm.Response, error) {
+	if c.tools == nil {
+		c.tools = append([]llm.Tool(nil), req.Tools...)
+	}
+	return messageResponse("ro-bash", findings.CleanVerdict+"."), nil
+}
+
+func bashToolText(t *testing.T, req review.AgentRequest) (string, string) {
+	t.Helper()
+	captured := &toolCapture{}
+	if _, err := (Harness{ThinkingLevel: "high"}).run(t.Context(), captured, req); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	for _, item := range captured.tools {
+		if item.Name != "Bash" {
+			continue
+		}
+		props, _ := item.Parameters["properties"].(map[string]any)
+		cmd, _ := props["command"].(map[string]any)
+		text, _ := cmd["description"].(string)
+		if item.Description == "" {
+			t.Fatal("Bash tool has no description")
+		}
+		return item.Description, text
+	}
+	t.Fatal("Bash tool missing")
+	return "", ""
 }
 
 func TestScrubShellZeroBudgetRefusesReads(t *testing.T) {

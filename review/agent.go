@@ -23,6 +23,9 @@ type AgentRequest struct {
 	// Shell is the Bash interpreter for this session. Empty means /bin/sh.
 	// Verifier tasks set a sandbox or environment-scrubbing wrapper.
 	Shell string
+	// ReadOnlyBash selects the zero-budget Bash tool description. The verifier
+	// sets it when a sandboxed batch has no code-execution budget.
+	ReadOnlyBash bool
 	// PriorCost is already included in the root checkpoint. Stateful adapters
 	// return only cost not yet included there, including durably staged work
 	// whose caller was interrupted before publishing its checkpoint.

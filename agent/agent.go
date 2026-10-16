@@ -165,7 +165,7 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 		shell = "/bin/sh"
 	}
 	bashDescription := ""
-	if strings.Contains(req.SystemPrompt, "Globs are not expanded.") {
+	if req.ReadOnlyBash {
 		bashDescription = readOnlyBashTool
 	}
 	registry := newRecordRegistry(tool.NewRegistry(tool.StaticTranslators{
