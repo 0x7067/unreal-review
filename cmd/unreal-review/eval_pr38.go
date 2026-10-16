@@ -71,8 +71,10 @@ func finishPR38(stdout, stderr io.Writer, report eval.PR38Report, asJSON bool, r
 		enc.SetIndent("", "  ")
 		err = enc.Encode(report)
 	} else {
-		printPR38(stdout, report)
-		_, _ = fmt.Fprintf(stderr, "artifacts: %s\n", root)
+		err = printPR38(stdout, report)
+		if err == nil {
+			_, err = fmt.Fprintf(stderr, "artifacts: %s\n", root)
+		}
 	}
 	if err != nil {
 		return err
@@ -83,29 +85,40 @@ func finishPR38(stdout, stderr io.Writer, report eval.PR38Report, asJSON bool, r
 	return nil
 }
 
-func printPR38(w io.Writer, report eval.PR38Report) {
-	printScoreTable(w, report)
-	_, _ = fmt.Fprintln(w, eval.PR38Rule())
+func printPR38(w io.Writer, report eval.PR38Report) error {
+	if err := printScoreTable(w, report); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintln(w, eval.PR38Rule())
+	return err
 }
 
-func printScoreTable(w io.Writer, report eval.PR38Report) {
+func printScoreTable(w io.Writer, report eval.PR38Report) error {
 	writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(writer, "run\tstatus\trecall\tprecision\thits\tweak\tunlabeled\terror\tfindings\tcost\trequests\ttime")
+	if _, err := fmt.Fprintln(writer, "run\tstatus\trecall\tprecision\thits\tweak\tunlabeled\terror\tfindings\tcost\trequests\ttime"); err != nil {
+		return err
+	}
 	for _, score := range report.Runs {
 		note := ""
 		if score.Err != "" {
 			note = " " + shortErr(score.Err)
 		}
-		_, _ = fmt.Fprintf(writer, "%d\t%s%s\t%.2f\t%s\t%d/%d\t%d\t%d\t%.2f\t%d\t$%.4f\t%d\t%ds\n",
+		if _, err := fmt.Fprintf(writer, "%d\t%s%s\t%.2f\t%s\t%d/%d\t%d\t%d\t%.2f\t%d\t$%.4f\t%d\t%ds\n",
 			score.Run, score.Status, note, score.Recall, formatPrecision(score.Precision), score.Hits, report.Real,
-			score.Weak, score.Unlabeled, score.ErrorShare, score.Produced, score.CostUSD, score.Requests, score.DurationMS/1000)
+			score.Weak, score.Unlabeled, score.ErrorShare, score.Produced, score.CostUSD, score.Requests, score.DurationMS/1000); err != nil {
+			return err
+		}
 	}
 	mean := report.Mean
-	_, _ = fmt.Fprintf(writer, "mean\t%d/%d complete\t%.2f\t%s\t\t\t\t%.2f\t%.1f\t$%.4f\t%.1f\t%ds\n",
+	if _, err := fmt.Fprintf(writer, "mean\t%d/%d complete\t%.2f\t%s\t\t\t\t%.2f\t%.1f\t$%.4f\t%.1f\t%ds\n",
 		report.Completed, len(report.Runs), mean.Recall, formatPrecision(mean.Precision), mean.ErrorShare,
-		mean.Produced, mean.CostUSD, mean.Requests, int64(mean.DurationMS)/1000)
-	_, _ = fmt.Fprintf(writer, "union\t%s\t\t\t%d/%d\t\t\t\t\t$%.4f total\n", strings.Join(report.UnionHits, ","), report.Union, report.Real, report.CostUSD)
-	_ = writer.Flush()
+		mean.Produced, mean.CostUSD, mean.Requests, int64(mean.DurationMS)/1000); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(writer, "union\t%s\t\t\t%d/%d\t\t\t\t\t$%.4f total\n", strings.Join(report.UnionHits, ","), report.Union, report.Real, report.CostUSD); err != nil {
+		return err
+	}
+	return writer.Flush()
 }
 
 func formatPrecision(p *float64) string {

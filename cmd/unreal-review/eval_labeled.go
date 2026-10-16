@@ -80,8 +80,10 @@ func finishLabeled(stdout, stderr io.Writer, report eval.LabeledReport, asJSON b
 		enc.SetIndent("", "  ")
 		err = enc.Encode(report)
 	} else {
-		printLabeled(stdout, report)
-		_, _ = fmt.Fprintf(stderr, "artifacts: %s\n", root)
+		err = printLabeled(stdout, report)
+		if err == nil {
+			_, err = fmt.Fprintf(stderr, "artifacts: %s\n", root)
+		}
 	}
 	if err != nil {
 		return err
@@ -92,16 +94,32 @@ func finishLabeled(stdout, stderr io.Writer, report eval.LabeledReport, asJSON b
 	return nil
 }
 
-func printLabeled(w io.Writer, report eval.LabeledReport) {
+func printLabeled(w io.Writer, report eval.LabeledReport) error {
 	for i, c := range report.Cases {
 		if i > 0 {
-			_, _ = fmt.Fprintln(w)
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
 		}
-		_, _ = fmt.Fprintln(w, c.Corpus)
-		printScoreTable(w, c)
+		if _, err := fmt.Fprintln(w, c.Corpus); err != nil {
+			return err
+		}
+		if err := printScoreTable(w, c); err != nil {
+			return err
+		}
 	}
-	_, _ = fmt.Fprintln(w)
-	_, _ = fmt.Fprintln(w, "pooled")
-	printScoreTable(w, report.Pooled)
-	_, _ = fmt.Fprintln(w, eval.LabeledRule())
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "pooled"); err != nil {
+		return err
+	}
+	if err := printScoreTable(w, report.Pooled); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "spent $%.4f %ds\n", report.SpentCostUSD, report.SpentDurationMS/1000); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintln(w, eval.LabeledRule())
+	return err
 }

@@ -195,8 +195,8 @@ func TestReportLabeledPoolsCompleteRunsOnly(t *testing.T) {
 	if report.Pooled.Union != 2 || report.Pooled.UnionHits[0] != "pr31-profile" || report.Pooled.UnionHits[1] != "pr25-timeout" {
 		t.Fatalf("union %v", report.Pooled.UnionHits)
 	}
-	if math.Abs(report.Pooled.CostUSD-0.40) > 1e-12 || math.Abs(report.Pooled.Mean.Recall-(2.0/9)/2) > 1e-12 {
-		t.Fatalf("cost=%v recall=%v", report.Pooled.CostUSD, report.Pooled.Mean.Recall)
+	if math.Abs(report.Pooled.CostUSD-0.40) > 1e-12 || math.Abs(report.SpentCostUSD-9.51) > 1e-12 || report.SpentDurationMS != 4500 || math.Abs(report.Pooled.Mean.Recall-(2.0/9)/2) > 1e-12 {
+		t.Fatalf("cost=%v spent=%v time=%d recall=%v", report.Pooled.CostUSD, report.SpentCostUSD, report.SpentDurationMS, report.Pooled.Mean.Recall)
 	}
 	if report.Pooled.Mean.Precision == nil || math.Abs(*report.Pooled.Mean.Precision-1) > 1e-12 {
 		t.Fatalf("precision mean %v", report.Pooled.Mean.Precision)
