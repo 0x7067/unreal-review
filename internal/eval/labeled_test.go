@@ -209,4 +209,48 @@ func TestReportLabeledPoolsCompleteRunsOnly(t *testing.T) {
 	if report.Pooled.Runs[1].Completed() || report.Pooled.Runs[2].Precision != nil {
 		t.Fatalf("failed=%v blank precision=%v", report.Pooled.Runs[1].Completed(), report.Pooled.Runs[2].Precision)
 	}
+	failedRow := report.Pooled.Runs[1]
+	if failedRow.Hits != 3 || math.Abs(failedRow.Recall-float64(failedRow.Hits)/float64(report.Pooled.Real)) > 1e-12 {
+		t.Fatalf("failed row hits=%d recall=%v real=%d", failedRow.Hits, failedRow.Recall, report.Pooled.Real)
+	}
+}
+
+func TestReportLabeledOmitsIncompleteRepetitions(t *testing.T) {
+	pr31, err := ScoreLabeled("pr31", pr38Run(findings.StatusComplete, 0.10, 1,
+		pr38Finding("internal/eval/martian.go", 197, 197, findings.SeverityError),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr31.Run, pr31.DurationMS = 1, 1000
+	pr25, err := ScoreLabeled("pr25", pr38Run(findings.StatusComplete, 0.20, 1,
+		pr38Finding("internal/eval/martian.go", 266, 266, findings.SeverityError),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr25.Run, pr25.DurationMS = 1, 2000
+	extra := pr31
+	extra.Run, extra.DurationMS, extra.CostUSD = 2, 3000, 0.30
+
+	report, err := ReportLabeled([]string{"pr31", "pr25"}, [][]PR38Score{
+		{pr31, extra},
+		{pr25},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Pooled.Runs) != 1 || report.Pooled.Completed != 1 || report.Pooled.Failed != 0 || report.Pooled.Real != 9 {
+		t.Fatalf("pooled completed=%d failed=%d real=%d runs=%d", report.Pooled.Completed, report.Pooled.Failed, report.Pooled.Real, len(report.Pooled.Runs))
+	}
+	row := report.Pooled.Runs[0]
+	if row.Hits != 2 || math.Abs(row.CostUSD-0.30) > 1e-12 || row.DurationMS != 3000 || math.Abs(row.Recall-float64(row.Hits)/float64(report.Pooled.Real)) > 1e-12 {
+		t.Fatalf("pooled run hits=%d cost=%v time=%d recall=%v real=%d", row.Hits, row.CostUSD, row.DurationMS, row.Recall, report.Pooled.Real)
+	}
+	if math.Abs(report.Pooled.CostUSD-0.30) > 1e-12 || math.Abs(report.SpentCostUSD-0.60) > 1e-12 || report.SpentDurationMS != 6000 {
+		t.Fatalf("cost=%v spent=%v time=%d", report.Pooled.CostUSD, report.SpentCostUSD, report.SpentDurationMS)
+	}
+	if report.Cases[0].Completed != 2 || math.Abs(report.Cases[0].CostUSD-0.40) > 1e-12 || report.Cases[1].Completed != 1 {
+		t.Fatalf("cases pr31=%+v pr25=%+v", report.Cases[0], report.Cases[1])
+	}
 }

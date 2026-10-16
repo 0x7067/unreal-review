@@ -75,7 +75,7 @@ func TestRunLabeledKeepsEarlierCasesWhenSetupFails(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 	var got eval.LabeledReport
-	if decErr := json.Unmarshal(out.Bytes(), &got); decErr != nil || len(got.Cases) != 2 || got.Cases[0].Completed != 1 || got.Cases[0].CostUSD != 0.1 || len(got.Cases[1].Runs) != 0 || got.Pooled.Completed != 0 || len(got.Pooled.Runs) != 1 || got.Pooled.Runs[0].Completed() || got.Pooled.Runs[0].CostUSD != 0.1 || got.SpentCostUSD != 0.1 || !strings.Contains(got.Pooled.Runs[0].Err, "stopped before pr25") {
+	if decErr := json.Unmarshal(out.Bytes(), &got); decErr != nil || len(got.Cases) != 2 || got.Cases[0].Completed != 1 || got.Cases[0].CostUSD != 0.1 || len(got.Cases[1].Runs) != 0 || got.Pooled.Completed != 0 || len(got.Pooled.Runs) != 0 || got.Pooled.Real != 9 || got.SpentCostUSD != 0.1 {
 		t.Fatalf("report: %v %s", decErr, out.String())
 	}
 	if got.Cases[0].Union != 1 || got.Cases[0].UnionHits[0] != "pr31-symlink" {

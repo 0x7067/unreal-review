@@ -12,7 +12,7 @@ import (
 	"github.com/0x7067/unreal-review/review"
 )
 
-const labeledNote = "Each finding is assigned to at most one label, the one with the largest line overlap; ties go to a weak label, then to the earlier label. Recall is distinct real labels hit over that case's real labels. Precision is those hits over hits plus findings assigned to a weak label, and is n/a when a run has no real hit and no weak finding. A second finding on a real label already hit does not change the numerator. Unlabeled findings match no label and are outside precision, but they still count in the finding total and in error share. Findings anchored to removed lines (anchor=old) use base coordinates and are scored as unlabeled. Means use completed runs only. A completed run with null precision is excluded from the precision mean. The pooled row sums hits, weak findings, cost, and real labels across the selected cases; it counts a run only when every case completed. A real hit moves precision by increasing the numerator, and a weak finding adds to the denominator. Unlabeled count and error share are the noise signals. The spent cost and wall time include attempts that failed or stopped partway."
+const labeledNote = "Each finding is assigned to at most one label, the one with the largest line overlap; ties go to a weak label, then to the earlier label. Recall is distinct real labels hit over that case's real labels. Precision is those hits over hits plus findings assigned to a weak label, and is n/a when a run has no real hit and no weak finding. A second finding on a real label already hit does not change the numerator. Unlabeled findings match no label and are outside precision, but they still count in the finding total and in error share. Findings anchored to removed lines (anchor=old) use base coordinates and are scored as unlabeled. Means use completed runs only. A completed run with null precision is excluded from the precision mean. The pooled row sums hits, weak findings, cost, and real labels across the selected cases and omits a repetition missing a case. A real hit moves precision by increasing the numerator, and a weak finding adds to the denominator. Unlabeled count and error share are the noise signals. Spent cost sums every score that exists, including a failed review and a case that finished before a later setup failed. Spent wall time is that review time and excludes checkout, including a failed setup."
 
 // LabeledReport is one labeled-corpus invocation: a report per case and a pooled report.
 // Pooled recall is the sum of distinct real hits over the sum of real labels.
@@ -44,9 +44,10 @@ func ScoreLabeled(name string, report findings.Report) (PR38Score, error) {
 	return scoreLabels(c.Labels, report), nil
 }
 
-// ReportLabeled aggregates each case's runs. A repetition missing a case is a
-// failed pooled row. SpentCostUSD and SpentDurationMS sum every attempt, including
-// those rows. The pooled mean and its cost total stay on completed runs.
+// ReportLabeled aggregates each case's runs. A repetition missing a case is
+// left out of the pooled rows. SpentCostUSD and SpentDurationMS sum the scores
+// that exist, including those repetitions. SpentDurationMS is review time and
+// excludes checkout. The pooled mean and its cost total stay on completed runs.
 func ReportLabeled(names []string, byCase [][]PR38Score) (LabeledReport, error) {
 	if len(names) != len(byCase) {
 		return LabeledReport{}, fmt.Errorf("labeled cases: %d names and %d score columns", len(names), len(byCase))
@@ -67,38 +68,24 @@ func ReportLabeled(names []string, byCase [][]PR38Score) (LabeledReport, error) 
 	}
 	pooled := make([]PR38Score, 0, n)
 	for run := 0; run < n; run++ {
-		pooled = append(pooled, poolRun(names, byCase, run))
-		report.SpentCostUSD += pooled[run].CostUSD
-		report.SpentDurationMS += pooled[run].DurationMS
+		scores := make([]PR38Score, 0, len(names))
+		complete := true
+		for i := range names {
+			if run >= len(byCase[i]) {
+				complete = false
+				continue
+			}
+			score := byCase[i][run]
+			scores = append(scores, score)
+			report.SpentCostUSD += score.CostUSD
+			report.SpentDurationMS += score.DurationMS
+		}
+		if complete {
+			pooled = append(pooled, poolLabeled(names, scores))
+		}
 	}
 	report.Pooled = aggregateLabels("labeled", ids, pooled)
 	return report, nil
-}
-
-func poolRun(names []string, byCase [][]PR38Score, run int) PR38Score {
-	present := make([]string, 0, len(names))
-	scores := make([]PR38Score, 0, len(names))
-	var missing []string
-	for i, name := range names {
-		if run < len(byCase[i]) {
-			present = append(present, name)
-			scores = append(scores, byCase[i][run])
-			continue
-		}
-		missing = append(missing, name)
-	}
-	score := poolLabeled(present, scores)
-	if len(missing) == 0 {
-		return score
-	}
-	score.Status = string(findings.StatusFailed)
-	note := "stopped before " + strings.Join(missing, ", ")
-	if score.Err != "" {
-		score.Err = note + "; " + score.Err
-	} else {
-		score.Err = note
-	}
-	return score
 }
 
 func poolLabeled(names []string, scores []PR38Score) PR38Score {
