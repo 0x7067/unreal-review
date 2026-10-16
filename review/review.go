@@ -48,7 +48,7 @@ type Result struct {
 	Report findings.Report
 }
 
-func Run(ctx context.Context, opts Options) (Result, error) {
+func Run(ctx context.Context, opts Options) (_ Result, err error) {
 	workspace, err := filepath.Abs(opts.Workspace)
 	if err != nil {
 		return Result{}, fmt.Errorf("workspace: %w", err)
@@ -114,7 +114,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	defer cleanup()
+	defer func() { err = errors.Join(err, cleanup()) }()
 
 	prior, err := readWork(findingsPath)
 	if err != nil {
@@ -184,7 +184,9 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 			return result, err
 		}
 		if fileOut(opts.Out) {
-			_ = os.Remove(findingsPath)
+			if rmErr := os.Remove(findingsPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+				return result, rmErr
+			}
 		}
 		return result, nil
 	case interrupted:
@@ -328,24 +330,23 @@ func loadCheckpoint(path string) (findings.Report, error) {
 	return report, err
 }
 
-func prepareWork(out string, truncate bool) (string, func(), error) {
+func prepareWork(out string, truncate bool) (string, func() error, error) {
 	if fileOut(out) {
 		path := out + ".work"
 		if err := openWork(path, truncate); err != nil {
-			return "", func() {}, err
+			return "", func() error { return nil }, err
 		}
-		return path, func() {}, nil
+		return path, func() error { return nil }, nil
 	}
 	file, err := os.CreateTemp("", "unreal-review-findings-*.jsonl")
 	if err != nil {
-		return "", func() {}, fmt.Errorf("create findings file: %w", err)
+		return "", func() error { return nil }, fmt.Errorf("create findings file: %w", err)
 	}
 	path := file.Name()
 	if err := file.Close(); err != nil {
-		_ = os.Remove(path)
-		return "", func() {}, fmt.Errorf("close findings file: %w", err)
+		return "", func() error { return nil }, errors.Join(fmt.Errorf("close findings file: %w", err), os.Remove(path))
 	}
-	return path, func() { _ = os.Remove(path) }, nil
+	return path, func() error { return os.Remove(path) }, nil
 }
 
 func openWork(path string, truncate bool) error {

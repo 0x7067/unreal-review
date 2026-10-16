@@ -160,7 +160,13 @@ func buildReviewPlan(ctx context.Context, workspace string, sel selection) (*Rev
 	return plan, nil
 }
 
-func planJSON(value any) string { data, _ := json.Marshal(value); return string(data) }
+func planJSON(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
 
 func planFragmentFields(fragments []planFragment) ([]string, []DiffSpan, string) {
 	paths := []string{}

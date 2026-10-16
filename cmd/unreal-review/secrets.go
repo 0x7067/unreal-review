@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -41,7 +42,7 @@ func isolateSecrets() error {
 	return reexecWithout(held)
 }
 
-func receiveSecrets(raw string) error {
+func receiveSecrets(raw string) (err error) {
 	if err := os.Unsetenv(secretsFDEnv); err != nil {
 		return err
 	}
@@ -50,7 +51,7 @@ func receiveSecrets(raw string) error {
 		return fmt.Errorf("%s: %w", secretsFDEnv, err)
 	}
 	file := os.NewFile(uintptr(fd), "secrets")
-	defer func() { _ = file.Close() }()
+	defer func() { err = errors.Join(err, file.Close()) }()
 	encoded, err := io.ReadAll(file)
 	if err != nil {
 		return fmt.Errorf("read secrets: %w", err)

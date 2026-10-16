@@ -104,11 +104,11 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 	if err != nil {
 		return result, fmt.Errorf("focused: lock: %w", err)
 	}
-	defer func() { _ = lockFile.Close() }()
+	defer func() { runErr = errors.Join(runErr, lockFile.Close()) }()
 	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return result, fmt.Errorf("focused: review already running: %w", err)
 	}
-	defer func() { _ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN) }()
+	defer func() { runErr = errors.Join(runErr, unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)) }()
 	settings := []string{req.Workspace, req.Model, req.Prompt, req.SystemPrompt, focusedVersion, f.Config}
 	if f.DiscoveryOnly {
 		settings = append(settings, "discovery-only")
@@ -298,7 +298,10 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 			return nil
 		}
 		// Never collapse overlap. Only byte-identical location and body are redundant.
-		key := focusedExact(item)
+		key, err := focusedExact(item)
+		if err != nil {
+			return err
+		}
 		if _, exists := exact[key]; exists && !preserve {
 			return nil
 		}
@@ -374,7 +377,10 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 				ids = append(ids, item.ID)
 			}
 		}
-		idJSON, _ := json.Marshal(ids)
+		idJSON, mErr := json.Marshal(ids)
+		if mErr != nil {
+			return result, mErr
+		}
 		prompt += string(idJSON) + ". Finish with an ordinary one-line summary of confirmed output (No material issues if all rejected).\nCandidate JSON:\n" + string(input)
 		if len(prompt) > review.MaxPlanPromptBytes {
 			return result, fmt.Errorf("focused: verification prompt exceeds %d bytes", review.MaxPlanPromptBytes)
@@ -446,9 +452,12 @@ func focusedCoalesce(items []findings.Finding) ([]findings.Finding, error) {
 	return out, nil
 }
 
-func focusedExact(f findings.Finding) string {
-	b, _ := json.Marshal([]any{f.Path, f.StartLine, f.EndLine, f.Anchor, f.Body})
-	return string(b)
+func focusedExact(f findings.Finding) (string, error) {
+	b, err := json.Marshal([]any{f.Path, f.StartLine, f.EndLine, f.Anchor, f.Body})
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 func focusedComplete(path string, cost findings.Cost) (findings.Report, error) {
 	r, err := findings.ReadFile(path)
@@ -530,31 +539,34 @@ func focusedCostDelta(total, prior findings.Cost) (findings.Cost, error) {
 	}
 	return d, nil
 }
-func focusedAtomic(path string, b []byte) error {
+func focusedAtomic(path string, b []byte) (err error) {
 	file, err := os.CreateTemp(filepath.Dir(path), ".focused-*")
 	if err != nil {
 		return err
 	}
 	name := file.Name()
-	defer func() { _ = os.Remove(name) }()
-	if _, err := file.Write(b); err != nil {
-		_ = file.Close()
+	defer func() {
+		rmErr := os.Remove(name)
+		if rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			err = errors.Join(err, rmErr)
+		}
+	}()
+	if _, werr := file.Write(b); werr != nil {
+		return errors.Join(werr, file.Close())
+	}
+	if serr := file.Sync(); serr != nil {
+		return errors.Join(serr, file.Close())
+	}
+	if err = file.Close(); err != nil {
 		return err
 	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(name, path); err != nil {
+	if err = os.Rename(name, path); err != nil {
 		return err
 	}
 	dir, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
-	defer func() { _ = dir.Close() }()
+	defer func() { err = errors.Join(err, dir.Close()) }()
 	return dir.Sync()
 }

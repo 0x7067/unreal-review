@@ -41,7 +41,10 @@ func ReviewPipeline(strategy string, harness Harness) (review.Agent, error) {
 	budgeted.MaxBashCalls = plannedMaxBashCalls
 	consolidator := harness
 	consolidator.MaxBashCalls = -1
-	plannedDiscovery, _ := Reviewer(strategy, budgeted)
+	plannedDiscovery, err := Reviewer(strategy, budgeted)
+	if err != nil {
+		return nil, err
+	}
 	parallel := 4
 	if focused, ok := plannedDiscovery.(Focused); ok {
 		focused.DiscoveryOnly = true

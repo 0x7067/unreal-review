@@ -97,13 +97,17 @@ func evalMartian(ctx context.Context, root, model string, reviewer review.Agent,
 		enc.SetIndent("", "  ")
 		return enc.Encode(summary)
 	}
-	printMartian(summary)
+	if err := printMartian(summary); err != nil {
+		return err
+	}
 	fmt.Fprintf(os.Stderr, "artifacts: %s\n", root)
 	return nil
 }
-func printMartian(summary martianSummary) {
+func printMartian(summary martianSummary) error {
 	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(writer, "case\tstatus\trecall\tseverity\tfound\tgold\textra\tcost\ttime")
+	if _, err := fmt.Fprintln(writer, "case\tstatus\trecall\tseverity\tfound\tgold\textra\tcost\ttime"); err != nil {
+		return err
+	}
 	for _, score := range summary.Cases {
 		note := ""
 		if score.Err != "" {
@@ -111,35 +115,56 @@ func printMartian(summary martianSummary) {
 		} else if score.JudgeErr != "" {
 			note = " judge: " + shortErr(score.JudgeErr)
 		}
-		_, _ = fmt.Fprintf(writer, "%s\t%s%s\t%.2f\t%.2f\t%d\t%d\t%d\t$%.4f\t%ds\n",
+		if _, err := fmt.Fprintf(writer, "%s\t%s%s\t%.2f\t%.2f\t%d\t%d\t%d\t$%.4f\t%ds\n",
 			score.Name, score.Status, note, score.Recall(), score.SeverityAgreement(),
-			score.Matched, score.Gold, score.Extra, score.CostUSD, score.DurationMS/1000)
+			score.Matched, score.Gold, score.Extra, score.CostUSD, score.DurationMS/1000); err != nil {
+			return err
+		}
 	}
 	total := summary.Total
-	_, _ = fmt.Fprintf(writer, "total\t%d/%d complete\t%.2f\t%.2f\t%d\t%d\t%d\t$%.4f\t\n",
+	if _, err := fmt.Fprintf(writer, "total\t%d/%d complete\t%.2f\t%.2f\t%d\t%d\t%d\t$%.4f\t\n",
 		total.Completed, total.Cases, eval.Agreement(total.Matched, total.Gold), eval.Agreement(total.SeverityHits, total.Gold),
-		total.Matched, total.Gold, total.Extra, total.CostUSD)
-	_ = writer.Flush()
+		total.Matched, total.Gold, total.Extra, total.CostUSD); err != nil {
+		return err
+	}
+	if err := writer.Flush(); err != nil {
+		return err
+	}
 	writer = tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(writer, "\nmartian severity\tmaps to\trecall\tseverity\tfound\tgold")
+	if _, err := fmt.Fprintln(writer, "\nmartian severity\tmaps to\trecall\tseverity\tfound\tgold"); err != nil {
+		return err
+	}
 	for _, severity := range eval.MartianSeverities {
 		tally := summary.BySeverity[severity]
 		if tally.Gold == 0 {
-			_, _ = fmt.Fprintf(writer, "%s\t%s\t-\t-\t0\t0\n", severity, eval.MartianSeverity(severity))
+			if _, err := fmt.Fprintf(writer, "%s\t%s\t-\t-\t0\t0\n", severity, eval.MartianSeverity(severity)); err != nil {
+				return err
+			}
 			continue
 		}
-		_, _ = fmt.Fprintf(writer, "%s\t%s\t%.2f\t%.2f\t%d\t%d\n", severity, eval.MartianSeverity(severity),
-			eval.Agreement(tally.Matched, tally.Gold), eval.Agreement(tally.SeverityHits, tally.Gold), tally.Matched, tally.Gold)
+		if _, err := fmt.Fprintf(writer, "%s\t%s\t%.2f\t%.2f\t%d\t%d\n", severity, eval.MartianSeverity(severity),
+			eval.Agreement(tally.Matched, tally.Gold), eval.Agreement(tally.SeverityHits, tally.Gold), tally.Matched, tally.Gold); err != nil {
+			return err
+		}
 	}
-	_ = writer.Flush()
+	if err := writer.Flush(); err != nil {
+		return err
+	}
 	writer = tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(writer, "\nmartian profile\tprecision\trecall\tf1\ttp\tfp\tfn")
+	if _, err := fmt.Fprintln(writer, "\nmartian profile\tprecision\trecall\tf1\ttp\tfp\tfn"); err != nil {
+		return err
+	}
 	for _, profile := range eval.MartianProfiles {
 		counts := summary.ByProfile[profile]
-		_, _ = fmt.Fprintf(writer, "%s\t%.1f\t%.1f\t%.1f\t%d\t%d\t%d\n", profile,
-			100*counts.Precision(), 100*counts.Recall(), 100*counts.F1(), counts.TP, counts.FP, counts.FN)
+		if _, err := fmt.Fprintf(writer, "%s\t%.1f\t%.1f\t%.1f\t%d\t%d\t%d\n", profile,
+			100*counts.Precision(), 100*counts.Recall(), 100*counts.F1(), counts.TP, counts.FP, counts.FN); err != nil {
+			return err
+		}
 	}
-	_ = writer.Flush()
+	if err := writer.Flush(); err != nil {
+		return err
+	}
 	fmt.Printf("profile %s, judge %s ($%.4f). Precision, recall, and F1 use the built-in direct matcher with Martian's profile accounting: fp counts every extra, and a match on a golden comment outside a profile counts in neither tp nor fp. For comparable benchmark scores, export findings through Martian's pinned step 2/2.5/3 runner. Extras match no golden comment; the golden set is sparse on minor issues, so extras are not all false positives.\n",
 		summary.Profile, summary.JudgeModel, summary.JudgeCost)
+	return nil
 }

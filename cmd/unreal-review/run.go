@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,23 +17,40 @@ import (
 	"github.com/0x7067/unreal-review/review"
 )
 
-func cmdRun(args []string) error {
+type runFlags struct {
+	workspace, pr, repo, outPath, model, thinking, strategy, agentLog *string
+	fresh, decompose                                                  *bool
+	timeout                                                           *time.Duration
+	spec                                                              specFlags
+	exclude                                                           *stringList
+}
+
+func registerRunFlags(fs *flag.FlagSet) runFlags {
+	var f runFlags
+	f.workspace = fs.String("workspace", ".", "git repository to review")
+	f.spec = addSpecFlags(fs)
+	f.pr = fs.String("pr", "", "pull request to review: owner/repo#n, a URL, or a number")
+	f.repo = fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repo when --pr is a number")
+	// Heap-allocate so Parse updates the returned flags, not a discarded copy.
+	f.exclude = &stringList{}
+	fs.Var(f.exclude, "exclude", "git glob to omit from the diff; repeatable")
+	f.outPath = fs.String("out", "findings.jsonl", "findings JSONL path, or - for stdout")
+	f.fresh = fs.Bool("fresh", false, "start a new review even if --out already exists")
+	f.decompose = fs.Bool("decompose", false, "use bounded scopes and aggregate coverage even below the automatic large-diff threshold")
+	f.model = fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
+	f.thinking = fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
+	f.strategy = fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
+	f.timeout = fs.Duration("timeout", 20*time.Minute, "timeout for the whole review")
+	f.agentLog = fs.String("agent-log", "", "optional path for the harness session JSONL log")
+	return f
+}
+
+func cmdRun(args []string) (err error) {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	workspace := fs.String("workspace", ".", "git repository to review")
-	spec := addSpecFlags(fs)
-	pr := fs.String("pr", "", "pull request to review: owner/repo#n, a URL, or a number")
-	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repo when --pr is a number")
-	var exclude stringList
-	fs.Var(&exclude, "exclude", "git glob to omit from the diff; repeatable")
-	outPath := fs.String("out", "findings.jsonl", "findings JSONL path, or - for stdout")
-	fresh := fs.Bool("fresh", false, "start a new review even if --out already exists")
-	decompose := fs.Bool("decompose", false, "use bounded scopes and aggregate coverage even below the automatic large-diff threshold")
-	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
-	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
-	strategy := fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
-	timeout := fs.Duration("timeout", 20*time.Minute, "timeout for the whole review")
-	agentLog := fs.String("agent-log", "", "optional path for the harness session JSONL log")
+	f := registerRunFlags(fs)
+	workspace, spec, pr, repo, exclude, outPath, fresh, decompose := f.workspace, f.spec, f.pr, f.repo, f.exclude, f.outPath, f.fresh, f.decompose
+	model, thinking, strategy, timeout, agentLog := f.model, f.thinking, f.strategy, f.timeout, f.agentLog
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
@@ -41,7 +59,7 @@ func cmdRun(args []string) error {
 	}
 	key := secret("OPENROUTER_API_KEY")
 	if strings.TrimSpace(key) == "" {
-		return fmt.Errorf("set OPENROUTER_API_KEY")
+		return fmt.Errorf("%w", ErrAPIKey)
 	}
 	level, err := agent.SanitizeLevel(*thinking)
 	if err != nil {
@@ -62,7 +80,7 @@ func cmdRun(args []string) error {
 	var logWriter io.Writer
 	if *agentLog != "" {
 		logFile := &agentLogFile{path: *agentLog}
-		defer func() { _ = logFile.Close() }()
+		defer func() { err = errors.Join(err, logFile.Close()) }()
 		logWriter = logFile
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -77,7 +95,7 @@ func cmdRun(args []string) error {
 		Workspace: *workspace,
 		Spec:      selected,
 		Paths:     fs.Args(),
-		Exclude:   exclude,
+		Exclude:   *exclude,
 		Out:       *outPath,
 		Fresh:     *fresh,
 		Decompose: *decompose,
@@ -90,7 +108,7 @@ func cmdRun(args []string) error {
 		if writeErr != nil {
 			return writeErr
 		}
-		defer func() { _ = out.Close() }()
+		defer func() { err = errors.Join(err, out.Close()) }()
 		if writeErr := findings.Write(out, result.Report); writeErr != nil {
 			return writeErr
 		}

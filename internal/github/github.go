@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -273,7 +274,7 @@ func (c *Client) patch(ctx context.Context, path string, payload any) error {
 	return c.do(ctx, http.MethodPatch, path, payload, nil)
 }
 
-func (c *Client) do(ctx context.Context, method, path string, payload, dest any) error {
+func (c *Client) do(ctx context.Context, method, path string, payload, dest any) (err error) {
 	var body io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
@@ -294,7 +295,7 @@ func (c *Client) do(ctx context.Context, method, path string, payload, dest any)
 	if err != nil {
 		return fmt.Errorf("github %s %s: %w", method, path, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { err = errors.Join(err, resp.Body.Close()) }()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("github %s %s: read body: %w", method, path, err)

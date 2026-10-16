@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -256,7 +257,7 @@ func judgePrompt(c MartianCase, produced []findings.Finding) string {
 	return b.String()
 }
 
-func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Finding) (verdict, error) {
+func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Finding) (_ verdict, err error) {
 	if len(c.Comments) == 0 || len(produced) == 0 {
 		return verdict{}, nil
 	}
@@ -286,7 +287,7 @@ func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Fin
 	if err != nil {
 		return verdict{}, fmt.Errorf("judge: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { err = errors.Join(err, resp.Body.Close()) }()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return verdict{}, fmt.Errorf("judge: %w", err)

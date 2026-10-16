@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -24,17 +25,20 @@ func cmdRender(args []string) error {
 	case "markdown":
 		return renderMarkdown(args[1:])
 	case "-h", "--help", "help":
-		printUsage(os.Stdout)
-		return nil
+		return printUsage(os.Stdout)
 	default:
 		return fmt.Errorf("unknown render target %q", args[0])
 	}
 }
 
-func renderMarkdown(args []string) error {
+func registerMarkdownFlags(fs *flag.FlagSet) *string {
+	return fs.String("out", "-", "output path, or - for stdout")
+}
+
+func renderMarkdown(args []string) (err error) {
 	fs := flag.NewFlagSet("render markdown", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	outPath := fs.String("out", "-", "output path, or - for stdout")
+	outPath := registerMarkdownFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
@@ -46,17 +50,29 @@ func renderMarkdown(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = out.Close() }()
+	defer func() { err = errors.Join(err, out.Close()) }()
 	return render.Markdown(out, report)
+}
+
+type githubFlags struct {
+	pr, repo, commit *string
+	dryRun           *bool
+}
+
+func registerGitHubFlags(fs *flag.FlagSet) githubFlags {
+	return githubFlags{
+		pr:     fs.String("pr", "", "pull request: owner/repo#n, a URL, or a number"),
+		repo:   fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repo when --pr is a number"),
+		commit: fs.String("commit", "", "commit SHA for inline comments (default: PR head)"),
+		dryRun: fs.Bool("dry-run", false, "print the review payload instead of posting"),
+	}
 }
 
 func renderGitHub(args []string) error {
 	fs := flag.NewFlagSet("render github", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	prSpec := fs.String("pr", "", "pull request: owner/repo#n, a URL, or a number")
-	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repo when --pr is a number")
-	commit := fs.String("commit", "", "commit SHA for inline comments (default: PR head)")
-	dryRun := fs.Bool("dry-run", false, "print the review payload instead of posting")
+	f := registerGitHubFlags(fs)
+	prSpec, repo, commit, dryRun := f.pr, f.repo, f.commit, f.dryRun
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
@@ -193,11 +209,8 @@ func reportPosted(result render.GitHubResult, cost findings.Cost) {
 	fmt.Fprintf(os.Stderr, "cost: %s\n", cost.Format())
 }
 
-func loadReport(path string) (findings.Report, error) {
-	var (
-		r   io.ReadCloser
-		err error
-	)
+func loadReport(path string) (report findings.Report, err error) {
+	var r io.ReadCloser
 	if path == "" || path == "-" {
 		r = io.NopCloser(os.Stdin)
 	} else {
@@ -206,7 +219,7 @@ func loadReport(path string) (findings.Report, error) {
 			return findings.Report{}, fmt.Errorf("open %s: %w", path, err)
 		}
 	}
-	defer func() { _ = r.Close() }()
+	defer func() { err = errors.Join(err, r.Close()) }()
 	return findings.Parse(r)
 }
 

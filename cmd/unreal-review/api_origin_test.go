@@ -1,12 +1,14 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"strings"
 	"testing"
+
+	"github.com/0x7067/unreal-review/agent"
 )
 
 func TestGitHubAPIOrigin(t *testing.T) {
@@ -44,22 +46,24 @@ func TestGitHubAPIOrigin(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer secret")
 	resp, err := client.HTTP.Do(req)
 	if err == nil {
-		_ = resp.Body.Close()
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Error(cerr)
+		}
 		t.Fatal("github client followed an off-host redirect")
 	}
 
 	for _, check := range []struct {
-		raw  string
-		want string
+		raw string
+		is  error
 	}{
-		{"https://api.github.com", `host "api.github.com" is not loopback`},
-		{"http://127.0.0.2:9", `host "127.0.0.2" is not loopback`},
-		{"not a url", "must be an http or https URL on 127.0.0.1, ::1, or localhost"},
+		{"https://api.github.com", agent.ErrNotLoopback},
+		{"http://127.0.0.2:9", agent.ErrNotLoopback},
+		{"not a url", agent.ErrAPIURL},
 	} {
 		t.Setenv("UNREAL_REVIEW_GITHUB_API", check.raw)
 		_, err = githubClient("token")
-		if err == nil || !strings.Contains(err.Error(), check.want) {
-			t.Fatalf("%q: error = %v, want a loopback refusal", check.raw, err)
+		if err == nil || !errors.Is(err, check.is) {
+			t.Fatalf("%q: error = %v, want %v", check.raw, err, check.is)
 		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -46,6 +47,23 @@ const (
 	compactionDisabled = math.MaxInt64
 )
 
+// ErrUnauthorized is a model HTTP 401. The provider text stays in front of it.
+var ErrUnauthorized = errors.New("status 401")
+
+type unauthorizedError struct {
+	error
+}
+
+func (e unauthorizedError) Unwrap() []error { return []error{e.error, ErrUnauthorized} }
+
+func withUnauthorized(err error) error {
+	var api *responsesapi.APIError
+	if errors.As(err, &api) && api.StatusCode == http.StatusUnauthorized {
+		return unauthorizedError{err}
+	}
+	return err
+}
+
 func OpenRouterBase() (string, error) {
 	base, err := LoopbackBaseURL(openRouterBaseEnv, os.Getenv(openRouterBaseEnv))
 	if err != nil {
@@ -69,7 +87,7 @@ type Harness struct {
 
 var _ review.Agent = Harness{}
 
-func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.AgentResult, error) {
+func (h Harness) Run(ctx context.Context, req review.AgentRequest) (result review.AgentResult, err error) {
 	if req.Resuming {
 		dir, err := sessionDirectory()
 		if err != nil {
@@ -92,7 +110,7 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (review.Agent
 	if err != nil {
 		return review.AgentResult{}, fmt.Errorf("create openrouter client: %w", err)
 	}
-	defer func() { _ = closeAdapter() }()
+	defer func() { err = errors.Join(err, closeAdapter()) }()
 	return h.run(ctx, adapter, req)
 }
 
@@ -126,8 +144,7 @@ func newLoopbackModelAdapter(apiKey, base string) (llm.Adapter, func() error, er
 		},
 	})
 	if err != nil {
-		_ = remote.Close()
-		return nil, nil, err
+		return nil, nil, errors.Join(err, remote.Close())
 	}
 	return adapter, remote.Close, nil
 }
@@ -279,7 +296,7 @@ func (s harnessSession) turn(ctx context.Context, messageID inbox.ID, message st
 		Operations:            operation.NewLocalOperationManager(ctx),
 	}).Run(ctx)
 	if err != nil {
-		return fmt.Errorf("run coordinator: %w", err)
+		return fmt.Errorf("run coordinator: %w", withUnauthorized(err))
 	}
 	return nil
 }

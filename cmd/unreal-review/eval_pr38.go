@@ -40,7 +40,9 @@ func runPR38s(ctx context.Context, stdout, stderr io.Writer, root string, runs i
 		score.Run = n
 		scores = append(scores, score)
 		if score.Completed() {
-			_, _ = fmt.Fprintf(stderr, "pr38 run %d done\n", n)
+			if _, err := fmt.Fprintf(stderr, "pr38 run %d done\n", n); err != nil {
+				return err
+			}
 		}
 	}
 	err := finishPR38(stdout, stderr, eval.AggregatePR38(scores), asJSON, root)
@@ -62,7 +64,9 @@ func finishPR38(stdout, stderr io.Writer, report eval.PR38Report, asJSON bool, r
 				text = "no status"
 			}
 		}
-		_, _ = fmt.Fprintf(stderr, "pr38 run %d failed: %s\n", score.Run, text)
+		if _, err := fmt.Fprintf(stderr, "pr38 run %d failed: %s\n", score.Run, text); err != nil {
+			return err
+		}
 	}
 	var err error
 	if asJSON {

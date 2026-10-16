@@ -13,23 +13,37 @@ import (
 	"github.com/0x7067/unreal-review/review"
 )
 
+type groupFlags struct {
+	workspace *string
+	spec      specFlags
+	exclude   *stringList
+}
+
+func registerGroupFlags(fs *flag.FlagSet) groupFlags {
+	var f groupFlags
+	f.workspace = fs.String("workspace", ".", "git repository to inspect")
+	f.spec = addSpecFlags(fs)
+	// Heap-allocate so Parse updates the returned flags, not a discarded copy.
+	f.exclude = &stringList{}
+	fs.Var(f.exclude, "exclude", "git glob to omit from the diff; repeatable")
+	return f
+}
+
 func cmdGroup(args []string) error {
 	fs := flag.NewFlagSet("group", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	workspace := fs.String("workspace", ".", "git repository to inspect")
-	spec := addSpecFlags(fs)
-	var exclude stringList
-	fs.Var(&exclude, "exclude", "git glob to omit from the diff; repeatable")
+	f := registerGroupFlags(fs)
+	workspace, spec, exclude := f.workspace, f.spec, f.exclude
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	result, err := review.Groups(ctx, *workspace, spec.spec(), fs.Args(), exclude)
+	result, err := review.Groups(ctx, *workspace, spec.spec(), fs.Args(), *exclude)
 	if err != nil {
 		return err
 	}
-	return printGroups(os.Stdout, result, *workspace, exclude)
+	return printGroups(os.Stdout, result, *workspace, *exclude)
 }
 
 func printGroups(w io.Writer, result review.GroupResult, workspace string, exclude []string) error {

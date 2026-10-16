@@ -105,7 +105,10 @@ func TestPlannedWholeCallTimeout(t *testing.T) {
 	req := plannedTestRequest(t)
 	fake := plannedTestAgent(func(ctx context.Context, r review.AgentRequest) (review.AgentResult, error) {
 		<-ctx.Done()
-		result, _ := plannedTestEmit(r, nil)
+		result, err := plannedTestEmit(r, nil)
+		if err != nil {
+			return result, err
+		}
 		return result, ctx.Err()
 	})
 

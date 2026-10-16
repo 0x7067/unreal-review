@@ -34,29 +34,44 @@ type evalTotals struct {
 	Requests     int     `json:"requests"`
 }
 
+type evalFlags struct {
+	out, model, thinking, strategy, corpus, profile, only, judgeModel *string
+	decompose, asJSON                                                 *bool
+	timeout                                                           *time.Duration
+	parallel, runs                                                    *int
+}
+
+func registerEvalFlags(fs *flag.FlagSet) evalFlags {
+	var f evalFlags
+	f.out = fs.String("out", "", "directory for eval artifacts (default: a fresh temp dir)")
+	f.model = fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
+	f.thinking = fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
+	f.strategy = fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
+	f.decompose = fs.Bool("decompose", false, "use bounded aggregate scopes for every review case")
+	f.timeout = fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
+	f.asJSON = fs.Bool("json", false, "print machine-readable JSON instead of a table")
+	f.corpus = fs.String("corpus", "planted", "planted, martian, pr38, or labeled")
+	f.profile = fs.String("profile", "core", "martian golden categories: core, strict, or all")
+	f.parallel = fs.Int("parallel", 8, "martian cases reviewed at once")
+	f.only = fs.String("cases", "", "comma-separated case names for the selected corpus (default: all)")
+	f.judgeModel = fs.String("judge-model", "anthropic/claude-sonnet-5.5", "OpenRouter model that matches martian findings to golden comments")
+	f.runs = fs.Int("runs", 1, "repeat the pr38 or labeled corpus and print each run, the mean, and the union of hits")
+	return f
+}
+
 func cmdEval(args []string) error {
 	fs := flag.NewFlagSet("eval", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	outDir := fs.String("out", "", "directory for eval artifacts (default: a fresh temp dir)")
-	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
-	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
-	strategy := fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
-	decompose := fs.Bool("decompose", false, "use bounded aggregate scopes for every review case")
-	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
-	asJSON := fs.Bool("json", false, "print machine-readable JSON instead of a table")
-	corpus := fs.String("corpus", "planted", "planted, martian, pr38, or labeled")
-	profile := fs.String("profile", "core", "martian golden categories: core, strict, or all")
-	parallel := fs.Int("parallel", 8, "martian cases reviewed at once")
-	only := fs.String("cases", "", "comma-separated case names for the selected corpus (default: all)")
-	judgeModel := fs.String("judge-model", "anthropic/claude-sonnet-5.5", "OpenRouter model that matches martian findings to golden comments")
-	runs := fs.Int("runs", 1, "repeat the pr38 or labeled corpus and print each run, the mean, and the union of hits")
+	f := registerEvalFlags(fs)
+	outDir, model, thinking, strategy, decompose, timeout := f.out, f.model, f.thinking, f.strategy, f.decompose, f.timeout
+	asJSON, corpus, profile, parallel, only, judgeModel, runs := f.asJSON, f.corpus, f.profile, f.parallel, f.only, f.judgeModel, f.runs
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
 	switch *corpus {
 	case "planted", "martian", "pr38", "labeled":
 	default:
-		return fmt.Errorf("unknown corpus %q: use planted, martian, pr38, or labeled", *corpus)
+		return fmt.Errorf("%w %q: use planted, martian, pr38, or labeled", ErrUnknownCorpus, *corpus)
 	}
 	if *runs < 1 {
 		return fmt.Errorf("--runs must be at least 1")
@@ -69,7 +84,7 @@ func cmdEval(args []string) error {
 	}
 	key := secret("OPENROUTER_API_KEY")
 	if strings.TrimSpace(key) == "" {
-		return fmt.Errorf("set OPENROUTER_API_KEY")
+		return fmt.Errorf("%w", ErrAPIKey)
 	}
 	level, err := agent.SanitizeLevel(*thinking)
 	if err != nil {
@@ -158,8 +173,7 @@ func writePlanted(w io.Writer, scores []eval.Score, asJSON bool) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(evalSummary{Cases: scores, Total: totals(scores)})
 	}
-	printScores(w, scores)
-	return nil
+	return printScores(w, scores)
 }
 
 func totals(scores []eval.Score) evalTotals {
@@ -179,23 +193,29 @@ func totals(scores []eval.Score) evalTotals {
 	return total
 }
 
-func printScores(w io.Writer, scores []eval.Score) {
+func printScores(w io.Writer, scores []eval.Score) error {
 	writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	defer func() { _ = writer.Flush() }()
-	_, _ = fmt.Fprintln(writer, "case\tstatus\trecall\tprecision\tseverity\tfound\tgold\textra\tcost\ttime")
+	if _, err := fmt.Fprintln(writer, "case\tstatus\trecall\tprecision\tseverity\tfound\tgold\textra\tcost\ttime"); err != nil {
+		return err
+	}
 	for _, score := range scores {
 		note := ""
 		if score.Err != "" {
 			note = " " + shortErr(score.Err)
 		}
-		_, _ = fmt.Fprintf(writer, "%s\t%s%s\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t$%.4f\t%ds\n",
+		if _, err := fmt.Fprintf(writer, "%s\t%s%s\t%.2f\t%.2f\t%.2f\t%d\t%d\t%d\t$%.4f\t%ds\n",
 			score.Name, score.Status, note, score.Recall(), score.Precision(), score.SeverityAgreement(),
-			score.Matched, score.Gold, score.Extra, score.CostUSD, score.DurationMS/1000)
+			score.Matched, score.Gold, score.Extra, score.CostUSD, score.DurationMS/1000); err != nil {
+			return err
+		}
 	}
 	total := totals(scores)
-	_, _ = fmt.Fprintf(writer, "total\t%d/%d complete\t\t\t%.2f\t%d\t%d\t%d\t$%.4f\t\n",
+	if _, err := fmt.Fprintf(writer, "total\t%d/%d complete\t\t\t%.2f\t%d\t%d\t%d\t$%.4f\t\n",
 		total.Completed, total.Cases, eval.Agreement(total.SeverityHits, total.Gold),
-		total.Matched, total.Gold, total.Extra, total.CostUSD)
+		total.Matched, total.Gold, total.Extra, total.CostUSD); err != nil {
+		return err
+	}
+	return writer.Flush()
 }
 
 func shortErr(msg string) string {
