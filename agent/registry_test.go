@@ -35,7 +35,7 @@ func innerRegistry(t *testing.T) tool.Registry {
 }
 
 func TestTranslateRecordsANormalizedFinding(t *testing.T) {
-	registry := newRecordRegistry(innerRegistry(t))
+	registry := newRecordRegistry(innerRegistry(t), "")
 	translator, ok := registry.Resolve(review.RecordFindingTool)
 	if !ok {
 		t.Fatal("Resolve: want the record translator")
@@ -77,7 +77,7 @@ func TestTranslateRecordsANormalizedFinding(t *testing.T) {
 }
 
 func TestTranslateDefaultsEndLineAndAnchor(t *testing.T) {
-	registry := newRecordRegistry(innerRegistry(t))
+	registry := newRecordRegistry(innerRegistry(t), "")
 	translator, _ := registry.Resolve(review.RecordFindingTool)
 	ctx := &recordingContext{}
 
@@ -105,7 +105,7 @@ func TestTranslateDefaultsEndLineAndAnchor(t *testing.T) {
 }
 
 func TestTranslateRejectsInvalidArguments(t *testing.T) {
-	registry := newRecordRegistry(innerRegistry(t))
+	registry := newRecordRegistry(innerRegistry(t), "")
 	translator, _ := registry.Resolve(review.RecordFindingTool)
 
 	tests := []struct {

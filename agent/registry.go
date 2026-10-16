@@ -15,14 +15,28 @@ import (
 
 type recordRegistry struct {
 	tool.Registry
+	bashDescription string
 }
 
-func newRecordRegistry(inner tool.Registry) tool.Registry {
-	return recordRegistry{Registry: inner}
+func newRecordRegistry(inner tool.Registry, bashDescription string) tool.Registry {
+	return recordRegistry{Registry: inner, bashDescription: bashDescription}
 }
 
 func (r recordRegistry) StaticDefinitions() []tool.Definition {
 	defs := r.Registry.StaticDefinitions()
+	if r.bashDescription != "" {
+		for i := range defs {
+			if defs[i].Tool.Name != tool.BashName {
+				continue
+			}
+			defs[i].Tool.Description = r.bashDescription
+			props, _ := defs[i].Tool.Parameters["properties"].(map[string]any)
+			cmd, _ := props["command"].(map[string]any)
+			if cmd != nil {
+				cmd["description"] = r.bashDescription
+			}
+		}
+	}
 	return append(defs, recordFindingDefinition())
 }
 

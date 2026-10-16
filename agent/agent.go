@@ -164,6 +164,10 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 	if strings.TrimSpace(shell) == "" {
 		shell = "/bin/sh"
 	}
+	bashDescription := ""
+	if strings.Contains(req.SystemPrompt, "Globs are not expanded.") {
+		bashDescription = readOnlyBashTool
+	}
 	registry := newRecordRegistry(tool.NewRegistry(tool.StaticTranslators{
 		Bash: newBoundedBash(req.Workspace, h.MaxBashCalls, bash.New(bash.Config{
 			Shell:         shell,
@@ -171,7 +175,7 @@ func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentR
 			BaseDirectory: operationDirectory,
 		})),
 		ViewImage: viewimage.New(viewimage.Config{Directory: req.Workspace}),
-	}, tool.BashName, tool.ViewImageName))
+	}, tool.BashName, tool.ViewImageName), bashDescription)
 
 	observer := newSessionObserver(sessionID, req.FindingsPath, h.Log, cancel)
 	observerID := store.AddObserver(observer.Observe)

@@ -508,15 +508,22 @@ func execVerifierAddendum(active bool, perCommand time.Duration) string {
 	return fmt.Sprintf("\nVerifier sandbox: the workspace is a scratch copy of the reviewed commit and code may be run offline here (go build, go vet, go test of the changed packages, or a repro written in this scratch copy). Each command is killed after %d s; the network is off. Reads are free; anything that runs code counts against the %d-minute budget. After that budget, decide from the evidence you have and do not run more code. Run code only for a low-confidence candidate: severity error whose cited lines do not include a changed line of the diff. Do not run code for a warning, a note, or a diff-visible candidate. This severity rule applies only to claims about runtime behavior. A finding that claims runtime behavior and is demonstrated by a command you ran in this session keeps its severity; cite that command and a short output excerpt in the body. A runtime-behavior claim you could not demonstrate is re-emitted with severity note, not dropped. A finding settled by reading the code alone (exact quoted lines at the cited range, such as a compile error or an always-false condition) may keep its severity. A wrong or missing argument, option, or condition visible in the diff is settled by reading the code and keeps its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change.", seconds, minutes)
 }
 
-const readOnlyVerifierAddendum = "\nVerifier sandbox: this batch is read-only. Every candidate is high-confidence (severity warning or note) or diff-visible (its cited lines include a changed line of the selected diff: an added line when anchor is new, a removed line when anchor is old). Code execution has no budget. cat, ls, head, nl, wc, tail, rg, and git show, grep, log, and diff still run. Any other command is refused. Decide from the code you read. A finding settled by exact quoted lines may keep its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change."
+const readOnlyBashTool = "Read-only shell command. Pass paths and patterns as bare words, or use rg -F. Quotes, backslashes, and ~ are refused. Globs are not expanded."
+
+const readOnlyVerifierAddendum = "\nVerifier sandbox: this batch is read-only. Every candidate is high-confidence (severity warning or note) or diff-visible (its cited lines include a changed line of the selected diff: an added line when anchor is new, a removed line when anchor is old). Code execution has no budget. cat, ls, head, nl, wc, tail, rg, and git show, grep, log, and diff still run. Any other command is refused. " + readOnlyBashTool + " Decide from the code you read. A finding settled by exact quoted lines may keep its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change."
+
+const scrubReadOnlyAddendum = "\nVerifier sandbox is unavailable, so this batch is read-only and no shell command will run. Decide from the code you read. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change."
 
 func verifierSandboxAddendum(active bool, perCommand time.Duration, readOnly bool) string {
+	if readOnly && !active {
+		return scrubReadOnlyAddendum
+	}
 	if readOnly {
 		return readOnlyVerifierAddendum
 	}
 	return execVerifierAddendum(active, perCommand)
 }
-func installCommandBudget(dir, inner string, wall time.Duration) (string, error) {
+func installCommandBudget(dir, inner string, wall time.Duration, freeReads bool) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -527,6 +534,10 @@ func installCommandBudget(dir, inner string, wall time.Duration) (string, error)
 	if secs < 0 {
 		secs = 0
 	}
+	free := 0
+	if freeReads {
+		free = 1
+	}
 	state := filepath.Join(dir, "state")
 	body := fmt.Sprintf(`#!/bin/sh
 set -eu
@@ -536,6 +547,7 @@ if [ "${1:-}" != "-c" ]; then
 fi
 state=%s
 limit=%d
+free=%d
 inner=%s
 msg=%s
 lock_open() { exec 9>"$state.lock"; flock 9; }
@@ -624,6 +636,9 @@ rg_blocked() {
 }
 charges() {
   cmd=$1
+  if [ "$free" -eq 0 ]; then
+    return 0
+  fi
   case $cmd in
     *'$'*|*'|'*|*';'*|*'&'*|*'>'*|*'<'*|*'('*|*')'*|*'
 '*) return 0 ;;
@@ -632,16 +647,9 @@ charges() {
   sq=$(printf '\047')
   dq=$(printf '\042')
   bs=$(printf '\134')
-  # The inner shell removes quotes and backslashes and expands globs. Refuse the raw characters.
-  # '[' and '*' are separate patterns: dash treats an unquoted '[' as a character class and would swallow the next alternative.
+  # Quotes, backslashes, and tilde are interpreted by the inner shell. Globs are not: it runs under set -f.
   case $cmd in
-    *$tick*|*"$sq"*|*"$dq"*|*"$bs"*|*'~'*|*'?'*) return 0 ;;
-  esac
-  case $cmd in
-    *'['*) return 0 ;;
-  esac
-  case $cmd in
-    *'*'*) return 0 ;;
+    *$tick*|*"$sq"*|*"$dq"*|*"$bs"*|*'~'*) return 0 ;;
   esac
   set -f
   set -- $cmd
@@ -715,7 +723,7 @@ if charges "$run"; then
   lock_close
 fi
 exit "$code"
-`, shQuote(state), secs, shQuote(inner), shQuote(sandboxBudgetSpent))
+`, shQuote(state), secs, free, shQuote(inner), shQuote(sandboxBudgetSpent))
 	path := filepath.Join(dir, "shell")
 	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
 		return "", err
@@ -734,7 +742,7 @@ func applyVerifierSandbox(child *review.AgentRequest, agent review.Agent, sb *ve
 		if !readOnly {
 			wall = sandboxTaskWall
 		}
-		budget, err := installCommandBudget(filepath.Join(filepath.Dir(sb.shell), "budget", focusedHash(child.ReviewID)), sb.shell, wall)
+		budget, err := installCommandBudget(filepath.Join(filepath.Dir(sb.shell), "budget", focusedHash(child.ReviewID)), sb.shell, wall, sb.active)
 		if err != nil {
 			if readOnly {
 				sb.disableBash = true

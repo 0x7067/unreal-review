@@ -384,10 +384,11 @@ func TestVerifierBatchesKeepSeparateBudgets(t *testing.T) {
 	}
 }
 func TestVerifierCommandBudget(t *testing.T) {
+	skipIfTempDirUnsafe(t)
 	dir := t.TempDir()
 	file := filepath.Join(dir, "note")
 	must(t, os.WriteFile(file, []byte("line\n"), 0o644))
-	shell, err := installCommandBudget(dir, "/bin/sh", time.Second)
+	shell, err := installCommandBudget(dir, "/bin/sh", time.Second, true)
 	must(t, err)
 	free := []string{
 		"cat " + file,
@@ -466,7 +467,7 @@ func TestVerifierCommandBudget(t *testing.T) {
 	}
 
 	parallel := t.TempDir()
-	shell, err = installCommandBudget(parallel, "/bin/sh", time.Minute)
+	shell, err = installCommandBudget(parallel, "/bin/sh", time.Minute, true)
 	must(t, err)
 	stamps := filepath.Join(parallel, "stamps")
 	var wg sync.WaitGroup
@@ -557,6 +558,7 @@ func TestInactiveFocusedVerifierPromptIsUnchanged(t *testing.T) {
 }
 
 func TestPlannedVerifierSkipsExecForHighConfidence(t *testing.T) {
+	skipIfTempDirUnsafe(t)
 	captureNotices(t)
 	req := plannedTestRequest(t)
 	req.Plan.Tasks[0].Prompt = "Review local a\n```diff\n" +
@@ -663,23 +665,38 @@ func TestPlannedVerifierSkipsExecForHighConfidence(t *testing.T) {
 			t.Fatalf("low-confidence split = high %v low %v", high.ids, low.ids)
 		}
 	}
-	if strings.TrimSpace(high.echo) != sandboxBudgetSpent || strings.TrimSpace(high.cat) != "readable-line" {
-		t.Fatalf("high-confidence exec was not skipped:\necho:\n%s\ncat:\n%s", high.echo, high.cat)
+	if strings.TrimSpace(high.echo) != sandboxBudgetSpent || strings.TrimSpace(high.cat) != sandboxBudgetSpent {
+		t.Fatalf("high-confidence command was not refused:\necho:\n%s\ncat:\n%s", high.echo, high.cat)
 	}
 	if strings.TrimSpace(low.echo) != "ran-code" || strings.Contains(low.echo, sandboxBudgetSpent) || strings.TrimSpace(low.cat) != "readable-line" {
 		t.Fatalf("low-confidence exec was not allowed:\necho:\n%s\ncat:\n%s", low.echo, low.cat)
 	}
 }
 
+func skipIfTempDirUnsafe(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	if strings.ContainsAny(dir, " '\"\\*?[~$") {
+		t.Skipf("temp dir %q contains a shell metacharacter", dir)
+	}
+}
+
 func TestZeroBudgetRefusesOptionPrefixes(t *testing.T) {
+	skipIfTempDirUnsafe(t)
 	dir := t.TempDir()
 	note := filepath.Join(dir, "note.txt")
 	must(t, os.WriteFile(note, []byte("readable-line\n"), 0o644))
-	shell, err := installCommandBudget(dir, "/bin/sh", 0)
+	plant := filepath.Join(dir, "planted-name")
+	must(t, os.WriteFile(plant, []byte("foo-from-expansion\n"), 0o644))
+	shell, err := installCommandBudget(dir, "/bin/sh", 0, true)
 	must(t, err)
 	out, code := runShell(t, shell, "rg readable-line "+note)
 	if code != 0 || !strings.Contains(out, "readable-line") || strings.TrimSpace(out) == sandboxBudgetSpent {
 		t.Fatalf("read was refused: exit %d\n%s", code, out)
+	}
+	out, code = runShell(t, shell, "rg foo "+dir+"/*")
+	if strings.TrimSpace(out) == sandboxBudgetSpent || strings.Contains(out, "foo-from-expansion") || strings.Contains(out, "planted-name") || !strings.Contains(out, "*") {
+		t.Fatalf("glob read expanded or was refused: exit %d\n%s", code, out)
 	}
 	out, _ = runShell(t, shell, "git diff")
 	if strings.TrimSpace(out) == sandboxBudgetSpent {
@@ -693,7 +710,6 @@ func TestZeroBudgetRefusesOptionPrefixes(t *testing.T) {
 		"rg '--pre=sh' x",
 		"git diff \\--ext-diff",
 		"git grep \"-Osh\" x",
-		"rg foo *",
 	} {
 		out, code = runShell(t, shell, command)
 		if code != 0 || strings.TrimSpace(out) != sandboxBudgetSpent {
@@ -702,6 +718,30 @@ func TestZeroBudgetRefusesOptionPrefixes(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "state")); !os.IsNotExist(err) {
 		t.Fatalf("refused commands recorded spend: %v", err)
+	}
+}
+
+func TestScrubShellZeroBudgetRefusesReads(t *testing.T) {
+	skipIfTempDirUnsafe(t)
+	dir := t.TempDir()
+	note := filepath.Join(dir, "note.txt")
+	must(t, os.WriteFile(note, []byte("readable-line\n"), 0o644))
+	inner := filepath.Join(dir, "inner")
+	must(t, os.WriteFile(inner, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o700))
+	active := applyVerifierSandbox(&review.AgentRequest{ReviewID: "active-ro", SystemPrompt: "base"}, Harness{}, &verifierSandbox{active: true, shell: inner, tree: dir}, 0).(Harness)
+	out, code := runShell(t, active.Shell, "cat "+note)
+	if code != 0 || strings.TrimSpace(out) != "readable-line" {
+		t.Fatalf("sandboxed read: exit %d\n%s", code, out)
+	}
+	scrub, err := installScrubShell(dir)
+	must(t, err)
+	got := applyVerifierSandbox(&review.AgentRequest{ReviewID: "scrub-ro", SystemPrompt: "base"}, Harness{}, &verifierSandbox{active: false, shell: scrub, root: dir}, 0).(Harness)
+	out, code = runShell(t, got.Shell, "cat "+note)
+	if code != 0 || strings.TrimSpace(out) != sandboxBudgetSpent || strings.Contains(out, "readable-line") {
+		t.Fatalf("scrub read ran: exit %d\n%s", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(got.Shell), "state")); !os.IsNotExist(err) {
+		t.Fatalf("refused read recorded spend: %v", err)
 	}
 }
 
