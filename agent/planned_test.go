@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -115,6 +116,144 @@ func TestPlannedWholeCallTimeout(t *testing.T) {
 	}
 	if _, err := os.Stat(req.FindingsPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("published before complete coverage")
+	}
+}
+
+func TestVerifierWallCapPublishesCandidates(t *testing.T) {
+	kept := plannedTestIssue("kept")
+	also := plannedTestIssue("also")
+	also.StartLine, also.EndLine = 8, 8
+	also.Body = "Second defect"
+	weak := plannedTestIssue("weak")
+	weak.StartLine, weak.EndLine = 12, 12
+	weak.Severity = findings.SeverityWarning
+	weak.Body = "Weak candidate"
+	candidates := []findings.Finding{kept, also, weak}
+	consolidator := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		items, err := plannedTestCandidates(r.Prompt)
+		if err != nil {
+			return review.AgentResult{}, err
+		}
+		return plannedTestEmit(r, items)
+	})
+	run := func(t *testing.T, verifier plannedTestAgent) findings.Report {
+		t.Helper()
+		req := plannedTestRequest(t)
+		discovery := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+			if strings.Contains(r.Prompt, "local a") {
+				return plannedTestEmit(r, candidates)
+			}
+			return plannedTestEmit(r, nil)
+		})
+		result, err := (Planned{
+			Agent: discovery, Verifier: verifier, Consolidator: consolidator,
+			verifierWall: 200 * time.Millisecond,
+		}).Run(t.Context(), req)
+		if err != nil || result.Coverage == nil {
+			t.Fatalf("wall result=%+v err=%v", result, err)
+		}
+		report, err := findings.ReadFile(req.FindingsPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return report
+	}
+	t.Run("partial", func(t *testing.T) {
+		verified := kept
+		verified.Body = "verified kept"
+		report := run(t, func(ctx context.Context, r review.AgentRequest) (review.AgentResult, error) {
+			if err := focusedWriteReport(r.FindingsPath, findings.Report{Findings: []findings.Finding{verified}, Summary: "verified one"}); err != nil {
+				return review.AgentResult{}, err
+			}
+			<-ctx.Done()
+			return review.AgentResult{Cost: findings.Cost{Currency: "USD", Requests: 1}}, ctx.Err()
+		})
+		got := map[string]findings.Finding{}
+		for _, item := range report.Findings {
+			got[item.ID] = item
+		}
+		if len(report.Findings) != 1 || got["kept"].Body != "verified kept" || got["kept"].Severity != findings.SeverityError || got["also"].ID != "" || got["weak"].ID != "" {
+			t.Fatalf("published findings = %+v", report.Findings)
+		}
+	})
+	t.Run("none", func(t *testing.T) {
+		report := run(t, func(ctx context.Context, _ review.AgentRequest) (review.AgentResult, error) {
+			<-ctx.Done()
+			return review.AgentResult{}, ctx.Err()
+		})
+		assertWallNotes(t, report)
+	})
+	t.Run("corrupt", func(t *testing.T) {
+		report := run(t, func(ctx context.Context, r review.AgentRequest) (review.AgentResult, error) {
+			if err := os.WriteFile(r.FindingsPath, []byte("{\"type\":\"finding\",\"id\":\"kept\"\n"), 0o600); err != nil {
+				return review.AgentResult{}, err
+			}
+			<-ctx.Done()
+			return review.AgentResult{}, ctx.Err()
+		})
+		assertWallNotes(t, report)
+	})
+}
+
+func assertWallNotes(t *testing.T, report findings.Report) {
+	t.Helper()
+	got := map[string]findings.Finding{}
+	for _, item := range report.Findings {
+		got[item.ID] = item
+	}
+	if len(report.Findings) != 2 || got["kept"].Severity != findings.SeverityNote || got["kept"].Body != "Confirmed defect kept" || got["also"].Severity != findings.SeverityNote || got["also"].Body != "Second defect" || got["weak"].ID != "" {
+		t.Fatalf("published findings = %+v", report.Findings)
+	}
+}
+
+func TestVerifierWallStopResumes(t *testing.T) {
+	req := plannedTestRequest(t)
+	issue := plannedTestIssue("kept")
+	var calls atomic.Int32
+	discovery := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		calls.Add(1)
+		if strings.Contains(r.Prompt, "local a") {
+			return plannedTestEmit(r, []findings.Finding{issue})
+		}
+		return plannedTestEmit(r, nil)
+	})
+	verifier := plannedTestAgent(func(ctx context.Context, _ review.AgentRequest) (review.AgentResult, error) {
+		calls.Add(1)
+		<-ctx.Done()
+		return review.AgentResult{}, ctx.Err()
+	})
+	consolidator := plannedTestAgent(func(_ context.Context, _ review.AgentRequest) (review.AgentResult, error) {
+		t.Errorf("consolidator ran for a single finding")
+		return review.AgentResult{}, fmt.Errorf("consolidator ran")
+	})
+	p := Planned{Agent: discovery, Verifier: verifier, Consolidator: consolidator, verifierWall: 200 * time.Millisecond}
+	first, err := p.Run(t.Context(), req)
+	if err != nil || first.Coverage == nil {
+		t.Fatalf("wall result=%+v err=%v", first, err)
+	}
+	report, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Findings) != 1 || report.Findings[0].ID != "kept" || report.Findings[0].Severity != findings.SeverityNote || report.Findings[0].Body != issue.Body {
+		t.Fatalf("published findings = %+v", report.Findings)
+	}
+	after := calls.Load()
+	req.Resuming = true
+	req.PriorCost = first.Cost
+	again, err := p.Run(t.Context(), req)
+	if err != nil || again.Coverage == nil {
+		t.Fatalf("resume result=%+v err=%v", again, err)
+	}
+	if calls.Load() != after {
+		t.Fatalf("resume reran children: calls %d -> %d", after, calls.Load())
+	}
+	resumed, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resumed.Findings) != 1 || resumed.Findings[0].ID != "kept" || resumed.Findings[0].Severity != findings.SeverityNote || resumed.Findings[0].Body != issue.Body {
+		t.Fatalf("resumed findings = %+v", resumed.Findings)
 	}
 }
 
