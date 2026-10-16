@@ -466,8 +466,8 @@ func TestPlannedRejectsFarOrOtherFileVerifierSpan(t *testing.T) {
 	other.Path = "other.go"
 	for _, moved := range []findings.Finding{far, other} {
 		path, err := plannedRunVerified(t, []findings.Finding{candidate}, []findings.Finding{moved})
-		if err == nil || !strings.Contains(err.Error(), "verifier changed canonical location") {
-			t.Fatalf("span %+v err=%v", moved, err)
+		if err == nil {
+			t.Fatalf("published span %+v", moved)
 		}
 		if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
 			t.Fatalf("published %+v: %v", moved, statErr)

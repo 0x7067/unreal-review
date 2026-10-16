@@ -183,24 +183,21 @@ func TestFocusedRestoresCanonicalLocationForKnownVerifierID(t *testing.T) {
 	}
 
 	req = focusedTestRequest(t)
-	stray := focusedTestIssue("not-a-candidate")
-	stray.Path = "elsewhere.go"
-	stray.StartLine = 2
-	stray.EndLine = 3
-	stray.Anchor = findings.AnchorOld
+	far := candidate
+	far.Path = "elsewhere.go"
 	invent := focusedTestRunner(func(_ context.Context, child review.AgentRequest) (review.AgentResult, error) {
 		switch {
 		case strings.Contains(child.Prompt, "Verification and semantic deduplication"):
-			return focusedTestEmit(child, []findings.Finding{stray})
+			return focusedTestEmit(child, []findings.Finding{far})
 		case strings.Contains(child.Prompt, "Discovery lens: correctness"):
 			return focusedTestEmit(child, []findings.Finding{candidate})
 		}
 		return focusedTestEmit(child, nil)
 	})
 	if _, err := (Focused{Agent: invent}).Run(t.Context(), req); err == nil {
-		t.Fatal("published a verifier id at an unknown location")
+		t.Fatal("published a known id outside the location window")
 	}
 	if _, err := os.Stat(req.FindingsPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("published a verifier id at an unknown location: %v", err)
+		t.Fatalf("published a known id outside the location window: %v", err)
 	}
 }
