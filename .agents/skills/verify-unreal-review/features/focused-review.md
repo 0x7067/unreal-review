@@ -1,6 +1,6 @@
 # Focused review
 
-`run --strategy focused` uses four independent discovery passes followed by a verification/consolidation pass. Candidate findings stay private until the verifier accepts them. The public findings JSONL retains its root review id, source fingerprint, one summary, and aggregate cost. `single` remains the default.
+`run` and `eval` default to `--strategy focused`: four parallel discovery passes (logic, concurrency, error handling, security), exact dedupe, then the existing verification pass. Candidate findings stay private until the verifier accepts them. The public findings JSONL retains its root review id, source fingerprint, one summary, and aggregate cost. `--strategy single` is the one-pass review. Discovery uses one step less thinking than the requested level and at most eight Bash calls; verification keeps the requested level.
 
 ## Sub-features
 
@@ -44,5 +44,5 @@ Preconditions:
 - For working-tree reviews, place `--out` outside the reviewed workspace or Git-ignore the output and its `.work` file before starting. Untracked generated artifacts otherwise change the diff fingerprint. Planted eval fixtures exclude their own output automatically.
 - Stage manifests/sessions live under HOME in the agent adapter. Preserve them for resume. `--fresh` changes the root id and isolates old state.
 - Costs durably captured in completed/failed stage records can be reconciled after parent checkpoint interruption. A hard process kill while an underlying provider request is still in flight can still leave unknown billed usage, as with the single harness.
-- Large diffs are automatically decomposed and coverage-gated. Combining that path with `--strategy focused` runs focused discovery inside each bounded task and can multiply cost substantially.
+- Large diffs are automatically decomposed and coverage-gated. `--strategy focused` runs the four lenses inside each bounded task, in parallel, with the short discovery budget above. `--strategy single` keeps one discovery pass per task.
 - Fake-provider success demonstrates pipeline integration, not improved defect recall. A planted-corpus pilot also does not establish a Martian leaderboard improvement.

@@ -30,7 +30,7 @@ func cmdRun(args []string) error {
 	decompose := fs.Bool("decompose", false, "use bounded scopes and aggregate coverage even below the automatic large-diff threshold")
 	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
-	strategy := fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
+	strategy := fs.String("strategy", "focused", "focused (default: logic, concurrency, errors, security) or single")
 	timeout := fs.Duration("timeout", 20*time.Minute, "timeout for the whole review")
 	agentLog := fs.String("agent-log", "", "optional path for the harness session JSONL log")
 	if err := fs.Parse(args); err != nil {

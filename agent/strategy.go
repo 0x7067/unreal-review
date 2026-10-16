@@ -14,6 +14,10 @@ import (
 // compares confirmed records and has Bash disabled.
 const plannedMaxBashCalls = 32
 
+// focusedDiscoveryBashCalls keeps each lens to a short scan. Verification and
+// planned consolidation keep their own budgets.
+const focusedDiscoveryBashCalls = 8
+
 // Reviewer selects an adapter strategy without changing the review product.
 func Reviewer(strategy string, harness Harness) (review.Agent, error) {
 	switch strings.TrimSpace(strategy) {
@@ -37,6 +41,9 @@ func ReviewPipeline(strategy string, harness Harness) (review.Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	if focused, ok := direct.(Focused); ok {
+		direct = withLeanDiscovery(focused, harness)
+	}
 	budgeted := harness
 	budgeted.MaxBashCalls = plannedMaxBashCalls
 	consolidator := harness
@@ -45,13 +52,37 @@ func ReviewPipeline(strategy string, harness Harness) (review.Agent, error) {
 	parallel := 4
 	if focused, ok := plannedDiscovery.(Focused); ok {
 		focused.DiscoveryOnly = true
-		plannedDiscovery = focused
-		parallel = 2 // Each focused child already fans out across four lenses.
+		// Lenses already run in parallel, so fewer planned tasks run at once.
+		plannedDiscovery = withLeanDiscovery(focused, budgeted)
+		parallel = 2
 	}
 	return Planned{
 		Direct: direct, Agent: plannedDiscovery, Verifier: budgeted, Consolidator: consolidator, Timeout: harness.Timeout,
 		Config: fmt.Sprintf("%s/%s/bash=%d", strings.TrimSpace(strategy), harness.ThinkingLevel, plannedMaxBashCalls), Parallel: parallel,
 	}, nil
+}
+
+// withLeanDiscovery points lens passes at a shorter model effort and a small
+// Bash budget. The verifier keeps the caller's harness.
+func withLeanDiscovery(focused Focused, full Harness) Focused {
+	lean := full
+	lean.ThinkingLevel = leanDiscoveryLevel(full.ThinkingLevel)
+	lean.MaxBashCalls = focusedDiscoveryBashCalls
+	focused.Discovery = lean
+	return focused
+}
+
+func leanDiscoveryLevel(level string) string {
+	switch strings.TrimSpace(level) {
+	case "max":
+		return "xhigh"
+	case "xhigh":
+		return "high"
+	case "high", "":
+		return "medium"
+	default:
+		return "low"
+	}
 }
 
 // A focused run and parallel eval cases may share one log. Keep each observer

@@ -51,12 +51,14 @@ unreal-review run --from abc1234 --to def5678 --exclude '*.lock' -- cmd/
 
 `--out` names the checkpoint file; see [schema/findings-v1.md](schema/findings-v1.md) for the `run` record, resume rules, and `--fresh`.
 
-`--strategy single` is the default. For a higher-cost recall experiment,
-`--strategy focused` runs four independent discovery passes (correctness,
-failure paths, security/data, and contracts/tests), then a fresh verification
-and same-issue consolidation pass. Only verified findings reach the public
-checkpoint, including evidence-backed minor notes. Line overlap alone does not
-merge findings. The findings-v1 schema, severity rubric, and renderers are unchanged.
+`--strategy focused` is the default. It runs four parallel discovery passes
+(logic and correctness, concurrency, error handling, and security), merges
+exact duplicates, then the same verification and consolidation pass as before.
+Discovery uses one step less thinking and a short Bash budget; verification
+keeps the requested thinking level. `--strategy single` is the one-pass
+review. Only verified findings reach the public checkpoint, including
+evidence-backed minor notes. Line overlap alone does not merge findings. The
+findings-v1 schema, severity rubric, and renderers are unchanged.
 
 ```sh
 unreal-review run --strategy focused --out findings.jsonl
@@ -72,9 +74,8 @@ both the output and its `.work` file in Git. Otherwise generated untracked
 artifacts change the source fingerprint and correctly prevent continuation.
 Planted eval fixtures ignore their generated checkpoint files automatically.
 Changed settings or missing stage state require `--fresh`. `--timeout` covers
-the whole review invocation, not each pass. More discovery may find more real
-defects or more noise, so focused is not the default until repeated benchmark
-measurements establish its tradeoff. Notes can be posted inline on GitHub.
+the whole review invocation, not each pass. Pass `--strategy single` to compare
+against the one-pass pipeline. Notes can be posted inline on GitHub.
 
 Diffs above 200,000 bytes automatically use a bounded aggregate plan instead
 of one unbounded prompt. `--decompose` exercises the same path for a smaller
@@ -211,7 +212,7 @@ OPENROUTER_API_KEY=... UNREAL_HARNESS_LLM_MODEL=openai/gpt-6-luna-pro unreal-rev
 
 The text report prints the scoring rule under the table.
 
-The report also gives the share of findings rated `error`, the finding count, and cost in USD, requests, and wall time. `--runs N` repeats the review and prints each run, the mean over completed runs, the total cost, and the union of real labels hit. Defaults are `--strategy single` and `--thinking-level high` unless those flags are passed. `--out <dir>` keeps each run's checkout and findings. A rerun with the same `--out` starts fresh. A failed run is printed and the command exits non-zero; it is left out of the mean. On `openai/gpt-6-luna-pro` a completed run costs about $0.45 to $0.55. The labels are judgments of what those runs reported, not a complete list of defects in the diff.
+The report also gives the share of findings rated `error`, the finding count, and cost in USD, requests, and wall time. `--runs N` repeats the review and prints each run, the mean over completed runs, the total cost, and the union of real labels hit. Defaults are `--strategy focused` and `--thinking-level high` unless those flags are passed. `--out <dir>` keeps each run's checkout and findings. A rerun with the same `--out` starts fresh. A failed run is printed and the command exits non-zero; it is left out of the mean. On `openai/gpt-6-luna-pro` a completed single-strategy run costs about $0.45 to $0.55. The labels are judgments of what those runs reported, not a complete list of defects in the diff.
 
 `--corpus labeled` reviews pr38 together with three more ranges of this repository (`pr31` `89539063`..`99151334`, `pr25` `123592e8`..`dd9e2114`, `pr3` `8ad9a39d`..`6addc09f`) and prints one table per case plus a pooled table. Scoring is the same overlap rule. Pooled recall sums distinct real hits over the real labels in the selected cases, and a run counts in the mean only when every case completed. A real hit moves precision by increasing the numerator, and a weak finding adds to the denominator. Unlabeled count and error share are the noise signals. An incomplete repetition is left out of the pooled table. Spent cost sums every score that exists, including a failed review and a case that finished before a later setup failed. Spent wall time is that review time and excludes checkout, including a failed setup. The mean uses completed runs only. A review failure is a failed row when every selected case has a score. A setup error prints the finished cases and then returns the error. `--cases` selects a subset. `--corpus pr38` is unchanged. The pr31 `find` escapes (symlink, escaped newline, tilde, command substitution) are unfixed; from bot review comments; confirmed by code reading.
 
