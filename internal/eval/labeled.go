@@ -12,7 +12,7 @@ import (
 	"github.com/0x7067/unreal-review/review"
 )
 
-const labeledNote = "Each finding is assigned to at most one label, the one with the largest line overlap; ties go to a weak label, then to the earlier label. Recall is distinct real labels hit over that case's real labels. Precision is those hits over hits plus findings assigned to a weak label, and is n/a when a run has no real hit and no weak finding. A second finding on a real label already hit does not change the numerator. Unlabeled findings match no label and are outside precision, but they still count in the finding total and in error share. Findings anchored to removed lines (anchor=old) use base coordinates and are scored as unlabeled. Means use completed runs only. A completed run with null precision is excluded from the precision mean. The pooled row sums hits, weak findings, cost, and real labels across the selected cases; it counts a run only when every case completed."
+const labeledNote = "Each finding is assigned to at most one label, the one with the largest line overlap; ties go to a weak label, then to the earlier label. Recall is distinct real labels hit over that case's real labels. Precision is those hits over hits plus findings assigned to a weak label, and is n/a when a run has no real hit and no weak finding. A second finding on a real label already hit does not change the numerator. Unlabeled findings match no label and are outside precision, but they still count in the finding total and in error share. Findings anchored to removed lines (anchor=old) use base coordinates and are scored as unlabeled. Means use completed runs only. A completed run with null precision is excluded from the precision mean. The pooled row sums hits, weak findings, cost, and real labels across the selected cases; it counts a run only when every case completed. Precision on the new cases moves only via weak labels, and there are few of those, so pooled precision is dominated by pr38; unlabeled count and error share are the noise signals."
 
 // LabeledReport is one labeled-corpus invocation: a report per case and a pooled report.
 // Pooled recall is the sum of distinct real hits over the sum of real labels.
@@ -197,16 +197,16 @@ func labeledCorpus() []labeledCase {
 var pr31Labels = []pr38Label{
 	// MartianProfile's error is discarded, so an unknown profile counts every golden comment as out of profile. Fixed by aef1f4e (#80).
 	{ID: "pr31-profile", Verdict: "real", Sites: []pr38Site{{Path: "internal/eval/martian.go", StartLine: 197, EndLine: 197}}},
-	// filepath.Clean collapses link/.. before EvalSymlinks, so find can list outside the workspace. https://github.com/0x7067/unreal-review/pull/31#discussion_r4135920205
+	// filepath.Clean collapses link/.. before EvalSymlinks, so find can list outside the workspace. Unfixed; from bot review comments; confirmed by code reading. https://github.com/0x7067/unreal-review/pull/31#discussion_r4135920205
 	{ID: "pr31-symlink", Verdict: "real", Sites: []pr38Site{{Path: "internal/agent/bash_boundary.go", StartLine: 108, EndLine: 111}}},
-	// An escaped newline is written into the token, so fi\\\nnd reaches the shell as find. https://github.com/0x7067/unreal-review/pull/31#discussion_r4135920218
+	// An escaped newline is written into the token, so fi\\\nnd reaches the shell as find. Unfixed; from bot review comments; confirmed by code reading. https://github.com/0x7067/unreal-review/pull/31#discussion_r4135920218
 	{ID: "pr31-newline", Verdict: "real", Sites: []pr38Site{{Path: "internal/agent/bash_boundary.go", StartLine: 153, EndLine: 157}, {Path: "internal/agent/bash_boundary.go", StartLine: 179, EndLine: 180}}},
-	// The root check rejects $ and ` but not an unquoted ~, which the shell expands to home. https://github.com/0x7067/unreal-review/pull/31#discussion_r4136392239
+	// The root check rejects $ and ` but not an unquoted ~, which the shell expands to home. Unfixed; from bot review comments; confirmed by code reading. https://github.com/0x7067/unreal-review/pull/31#discussion_r4136392239
 	{ID: "pr31-tilde", Verdict: "real", Sites: []pr38Site{{Path: "internal/agent/bash_boundary.go", StartLine: 96, EndLine: 98}}},
-	// A non-simple command with no literal find token is handed to the shell. https://github.com/0x7067/unreal-review/pull/31#discussion_r4136392220
+	// A non-simple command with no literal find token is handed to the shell. Unfixed; from bot review comments; confirmed by code reading. https://github.com/0x7067/unreal-review/pull/31#discussion_r4136392220
 	{ID: "pr31-subst", Verdict: "real", Sites: []pr38Site{{Path: "internal/agent/bash_boundary.go", StartLine: 67, EndLine: 71}}},
-	// mentionsFind rejects a filename argument that is itself named find. https://github.com/0x7067/unreal-review/pull/31#discussion_r4136345675
-	{ID: "pr31-name", Verdict: "real", Sites: []pr38Site{{Path: "internal/agent/bash_boundary.go", StartLine: 73, EndLine: 77}}},
+	// Usability false positive: find . -name find is rejected. https://github.com/0x7067/unreal-review/pull/31#discussion_r4136345675
+	{ID: "pr31-name", Verdict: "weak", Sites: []pr38Site{{Path: "internal/agent/bash_boundary.go", StartLine: 73, EndLine: 77}}},
 }
 
 var pr25Labels = []pr38Label{
@@ -218,8 +218,8 @@ var pr25Labels = []pr38Label{
 	{ID: "pr25-cases", Verdict: "real", Sites: []pr38Site{{Path: "cmd/unreal-review/eval_martian.go", StartLine: 101, EndLine: 108}}},
 	// The checkout git helper inherits GIT_DIR. Fixed by 7077e36 (#53).
 	{ID: "pr25-git-env", Verdict: "real", Sites: []pr38Site{{Path: "internal/eval/martian.go", StartLine: 332, EndLine: 337}}},
-	// ScoreMartian still runs when the judge returns an error, and the run returns nil. https://github.com/0x7067/unreal-review/pull/25#discussion_r4136583090
-	{ID: "pr25-judge", Verdict: "real", Sites: []pr38Site{{Path: "internal/eval/martian.go", StartLine: 314, EndLine: 325}}},
+	// ScoreMartian still runs when the judge returns an error. JudgeErr is recorded; debatable. https://github.com/0x7067/unreal-review/pull/25#discussion_r4136583090
+	{ID: "pr25-judge", Verdict: "weak", Sites: []pr38Site{{Path: "internal/eval/martian.go", StartLine: 314, EndLine: 325}}},
 }
 
 var pr3Labels = []pr38Label{
@@ -227,11 +227,9 @@ var pr3Labels = []pr38Label{
 	{ID: "pr3-receipt", Verdict: "real", Sites: []pr38Site{{Path: "cmd/unreal-review/pull.go", StartLine: 45, EndLine: 59}}},
 	// The planted fixture git helper inherits GIT_DIR. Fixed by 7077e36 (#53).
 	{ID: "pr3-git-env", Verdict: "real", Sites: []pr38Site{{Path: "internal/eval/eval.go", StartLine: 139, EndLine: 144}}},
-	// Status complete with a persist error still counts as a finished review. Fixed by 9770a25 (#101).
+	// Score.Completed treats status complete as finished and ignores the persist error. Fixed by 9770a25 (#101).
 	{ID: "pr3-unsaved", Verdict: "real", Sites: []pr38Site{
 		{Path: "internal/eval/eval.go", StartLine: 62, EndLine: 63},
 		{Path: "internal/eval/eval.go", StartLine: 129, EndLine: 131},
-		{Path: "internal/review/review.go", StartLine: 65, EndLine: 72},
-		{Path: "internal/review/review.go", StartLine: 152, EndLine: 157},
 	}},
 }

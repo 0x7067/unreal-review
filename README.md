@@ -213,13 +213,13 @@ The text report prints the scoring rule under the table.
 
 The report also gives the share of findings rated `error`, the finding count, and cost in USD, requests, and wall time. `--runs N` repeats the review and prints each run, the mean over completed runs, the total cost, and the union of real labels hit. Defaults are `--strategy single` and `--thinking-level high` unless those flags are passed. `--out <dir>` keeps each run's checkout and findings. A rerun with the same `--out` starts fresh. A failed run is printed and the command exits non-zero; it is left out of the mean. On `openai/gpt-6-luna-pro` a completed run costs about $0.45 to $0.55. The labels are judgments of what those runs reported, not a complete list of defects in the diff.
 
-`--corpus labeled` reviews pr38 together with three more ranges of this repository (`pr31` `89539063`..`99151334`, `pr25` `123592e8`..`dd9e2114`, `pr3` `8ad9a39d`..`6addc09f`) and prints one table per case plus a pooled table. Scoring is the same overlap rule. Pooled recall sums distinct real hits over the real labels in the selected cases, and a run is pooled only when every case completed. `--cases` selects a subset. `--corpus pr38` is unchanged.
+`--corpus labeled` reviews pr38 together with three more ranges of this repository (`pr31` `89539063`..`99151334`, `pr25` `123592e8`..`dd9e2114`, `pr3` `8ad9a39d`..`6addc09f`) and prints one table per case plus a pooled table. Scoring is the same overlap rule. Pooled recall sums distinct real hits over the real labels in the selected cases, and a run is pooled only when every case completed. `--cases` selects a subset. `--corpus pr38` is unchanged. The pr31 `find` escapes (symlink, escaped newline, tilde, command substitution) are unfixed; from bot review comments; confirmed by code reading. Precision on the new cases moves only via weak labels, and there are few of those, so pooled precision is dominated by pr38; unlabeled count and error share are the noise signals.
 
 ```sh
 OPENROUTER_API_KEY=... UNREAL_HARNESS_LLM_MODEL=openai/gpt-6-luna-pro unreal-review eval --corpus labeled --runs 3 --out labeled-baseline
 ```
 
-One run is the four reviews in sequence. Scaled from the pr38 band and the diff sizes, expect about $1.10 to $1.50 and 20 to 40 minutes on `openai/gpt-6-luna-pro`.
+One run is the four reviews in sequence. On `openai/gpt-6-luna-pro`, expect about $0.90 to $1.30 and 30 to 45 minutes per run, and 1.5 to 2 hours for `--runs 3`.
 
 ## Findings file
 

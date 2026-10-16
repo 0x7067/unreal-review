@@ -40,8 +40,8 @@ func TestScoreLabeledPR31(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"pr31-profile", "pr31-symlink", "pr31-newline", "pr31-tilde", "pr31-subst", "pr31-name"}
-	if score.Hits != 6 || score.Weak != 0 || score.Unlabeled != 1 || score.Produced != 8 || score.Recall != 1 {
+	want := []string{"pr31-profile", "pr31-symlink", "pr31-newline", "pr31-tilde", "pr31-subst"}
+	if score.Hits != 5 || score.Weak != 1 || score.Unlabeled != 1 || score.Produced != 8 || score.Recall != 1 {
 		t.Fatalf("hits=%d weak=%d unlabeled=%d produced=%d recall=%v ids=%v", score.Hits, score.Weak, score.Unlabeled, score.Produced, score.Recall, score.HitIDs)
 	}
 	if len(score.HitIDs) != len(want) {
@@ -52,13 +52,13 @@ func TestScoreLabeledPR31(t *testing.T) {
 			t.Fatalf("ids %v", score.HitIDs)
 		}
 	}
-	if score.Precision == nil || *score.Precision != 1 || math.Abs(score.ErrorShare-5.0/8.0) > 1e-12 {
+	if score.Precision == nil || math.Abs(*score.Precision-5.0/6.0) > 1e-12 || math.Abs(score.ErrorShare-5.0/8.0) > 1e-12 {
 		t.Fatalf("precision=%v error=%v", score.Precision, score.ErrorShare)
 	}
 	span, err := ScoreLabeled("pr31", findings.Report{Findings: []findings.Finding{
 		pr38Finding("internal/agent/bash_boundary.go", 67, 77, findings.SeverityError),
 	}})
-	if err != nil || span.Hits != 1 || len(span.HitIDs) != 1 || span.HitIDs[0] != "pr31-subst" || span.Weak != 0 || span.Unlabeled != 0 {
+	if err != nil || span.Hits != 0 || len(span.HitIDs) != 0 || span.Weak != 1 || span.Unlabeled != 0 {
 		t.Fatalf("tie span: err=%v %+v", err, span)
 	}
 	old := pr38Finding("internal/eval/martian.go", 197, 197, findings.SeverityError)
@@ -82,8 +82,8 @@ func TestScoreLabeledPR25(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"pr25-timeout", "pr25-cancel", "pr25-cases", "pr25-git-env", "pr25-judge"}
-	if score.Hits != 5 || score.Recall != 1 || score.Weak != 0 || score.Unlabeled != 1 || score.Produced != 7 {
+	want := []string{"pr25-timeout", "pr25-cancel", "pr25-cases", "pr25-git-env"}
+	if score.Hits != 4 || score.Recall != 1 || score.Weak != 1 || score.Unlabeled != 1 || score.Produced != 7 {
 		t.Fatalf("hits=%d recall=%v weak=%d unlabeled=%d produced=%d ids=%v", score.Hits, score.Recall, score.Weak, score.Unlabeled, score.Produced, score.HitIDs)
 	}
 	if len(score.HitIDs) != len(want) {
@@ -113,7 +113,7 @@ func TestScoreLabeledPR3(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if score.Hits != 3 || score.Recall != 1 || score.Weak != 0 || score.Unlabeled != 1 || score.Produced != 5 ||
+	if score.Hits != 3 || score.Recall != 1 || score.Weak != 0 || score.Unlabeled != 2 || score.Produced != 5 ||
 		len(score.HitIDs) != 3 || score.HitIDs[0] != "pr3-receipt" || score.HitIDs[1] != "pr3-git-env" || score.HitIDs[2] != "pr3-unsaved" {
 		t.Fatalf("score %+v", score)
 	}
@@ -183,19 +183,19 @@ func TestReportLabeledPoolsCompleteRunsOnly(t *testing.T) {
 	if report.Corpus != "labeled" || len(report.Cases) != 2 || report.Cases[0].Corpus != "pr31" || report.Cases[1].Corpus != "pr25" {
 		t.Fatalf("cases %+v", report.Cases)
 	}
-	if report.Cases[0].Completed != 3 || report.Cases[0].Failed != 0 || report.Cases[0].Real != 6 || report.Cases[0].Union != 1 || report.Cases[0].UnionHits[0] != "pr31-profile" {
+	if report.Cases[0].Completed != 3 || report.Cases[0].Failed != 0 || report.Cases[0].Real != 5 || report.Cases[0].Union != 1 || report.Cases[0].UnionHits[0] != "pr31-profile" {
 		t.Fatalf("pr31 %+v", report.Cases[0])
 	}
 	if report.Cases[1].Completed != 2 || report.Cases[1].Failed != 1 || math.Abs(report.Cases[1].CostUSD-0.25) > 1e-12 || report.Cases[1].Union != 1 {
 		t.Fatalf("pr25 %+v", report.Cases[1])
 	}
-	if report.Pooled.Completed != 2 || report.Pooled.Failed != 1 || report.Pooled.Real != 11 || len(report.Pooled.Runs) != 3 {
+	if report.Pooled.Completed != 2 || report.Pooled.Failed != 1 || report.Pooled.Real != 9 || len(report.Pooled.Runs) != 3 {
 		t.Fatalf("pooled completed=%d failed=%d real=%d runs=%d", report.Pooled.Completed, report.Pooled.Failed, report.Pooled.Real, len(report.Pooled.Runs))
 	}
 	if report.Pooled.Union != 2 || report.Pooled.UnionHits[0] != "pr31-profile" || report.Pooled.UnionHits[1] != "pr25-timeout" {
 		t.Fatalf("union %v", report.Pooled.UnionHits)
 	}
-	if math.Abs(report.Pooled.CostUSD-0.40) > 1e-12 || math.Abs(report.Pooled.Mean.Recall-(2.0/11)/2) > 1e-12 {
+	if math.Abs(report.Pooled.CostUSD-0.40) > 1e-12 || math.Abs(report.Pooled.Mean.Recall-(2.0/9)/2) > 1e-12 {
 		t.Fatalf("cost=%v recall=%v", report.Pooled.CostUSD, report.Pooled.Mean.Recall)
 	}
 	if report.Pooled.Mean.Precision == nil || math.Abs(*report.Pooled.Mean.Precision-1) > 1e-12 {
@@ -203,7 +203,7 @@ func TestReportLabeledPoolsCompleteRunsOnly(t *testing.T) {
 	}
 	first := report.Pooled.Runs[0]
 	if first.Hits != 2 || first.Unlabeled != 3 || first.Produced != 5 || first.Requests != 5 || first.DurationMS != 3000 ||
-		math.Abs(first.Recall-2.0/11) > 1e-12 || math.Abs(first.ErrorShare-3.0/5.0) > 1e-12 || first.Precision == nil || math.Abs(*first.Precision-1) > 1e-12 {
+		math.Abs(first.Recall-2.0/9) > 1e-12 || math.Abs(first.ErrorShare-3.0/5.0) > 1e-12 || first.Precision == nil || math.Abs(*first.Precision-1) > 1e-12 {
 		t.Fatalf("pooled run %+v", first)
 	}
 	if report.Pooled.Runs[1].Completed() || report.Pooled.Runs[2].Precision != nil {

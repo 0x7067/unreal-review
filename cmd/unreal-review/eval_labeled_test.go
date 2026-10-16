@@ -46,7 +46,7 @@ func TestRunLabeledPrintsEachCaseAndThePool(t *testing.T) {
 		t.Fatalf("stderr=%s", errOut.String())
 	}
 	text := out.String()
-	if !strings.Contains(text, "pr31\n") || !strings.Contains(text, "pr25\n") || !strings.Contains(text, "pooled\n") || !strings.Contains(text, "1/6") || !strings.Contains(text, "pr31-profile") {
+	if !strings.Contains(text, "pr31\n") || !strings.Contains(text, "pr25\n") || !strings.Contains(text, "pooled\n") || !strings.Contains(text, "1/5") || !strings.Contains(text, "pr31-profile") {
 		t.Fatalf("table:\n%s", text)
 	}
 	if strings.Contains(text, "five real labels") {
