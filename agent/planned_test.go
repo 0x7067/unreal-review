@@ -384,3 +384,61 @@ func TestPlannedRebindsTwoCandidatesAtTheSameLocation(t *testing.T) {
 		t.Fatalf("published %+v", report.Findings)
 	}
 }
+
+func TestPlannedRestoresCanonicalLocationForKnownVerifierID(t *testing.T) {
+	candidate := plannedTestIssue("known-span")
+	moved := candidate
+	moved.Path = "moved.go"
+	moved.StartLine = 8
+	moved.EndLine = 11
+	moved.Anchor = findings.AnchorOld
+	moved.Severity = findings.SeverityWarning
+	moved.Body = "Sharper confirmed body"
+
+	req := plannedTestRequest(t)
+	fake := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		switch {
+		case strings.Contains(r.Prompt, "verify:"):
+			return plannedTestEmit(r, []findings.Finding{moved})
+		case strings.Contains(r.Prompt, "local a"):
+			return plannedTestEmit(r, []findings.Finding{candidate})
+		}
+		return plannedTestEmit(r, nil)
+	})
+	if _, err := (Planned{Agent: fake, Verifier: fake, Consolidator: fake}).Run(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	report, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("published %+v", report.Findings)
+	}
+	got := report.Findings[0]
+	if got.ID != "known-span" || got.Path != "a.go" || got.StartLine != 4 || got.EndLine != 4 || got.Anchor != findings.AnchorNew || got.Severity != findings.SeverityWarning || got.Body != "Sharper confirmed body" {
+		t.Fatalf("published %+v", got)
+	}
+
+	req = plannedTestRequest(t)
+	stray := plannedTestIssue("not-a-candidate")
+	stray.Path = "elsewhere.go"
+	stray.StartLine = 2
+	stray.EndLine = 3
+	stray.Anchor = findings.AnchorOld
+	invent := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		switch {
+		case strings.Contains(r.Prompt, "verify:"):
+			return plannedTestEmit(r, []findings.Finding{stray})
+		case strings.Contains(r.Prompt, "local a"):
+			return plannedTestEmit(r, []findings.Finding{candidate})
+		}
+		return plannedTestEmit(r, nil)
+	})
+	if _, err := (Planned{Agent: invent, Verifier: invent, Consolidator: invent}).Run(t.Context(), req); err == nil {
+		t.Fatal("published a verifier id at an unknown location")
+	}
+	if _, err := os.Stat(req.FindingsPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("published a verifier id at an unknown location: %v", err)
+	}
+}

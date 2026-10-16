@@ -635,8 +635,24 @@ func plannedValidateOutput(r findings.Report, candidates map[string]findings.Fin
 	return nil
 }
 
+// restoreCanonicalLocations copies path, lines, and anchor from a known candidate.
+// Severity and body stay with the verifier output.
+func restoreCanonicalLocations(items []findings.Finding, candidates map[string]findings.Finding) {
+	for i := range items {
+		original, ok := candidates[items[i].ID]
+		if !ok {
+			continue
+		}
+		items[i].Path = original.Path
+		items[i].StartLine = original.StartLine
+		items[i].EndLine = original.EndLine
+		items[i].Anchor = original.Anchor
+	}
+}
+
 func plannedRestoreCandidateIDs(items []findings.Finding, candidates map[string]findings.Finding) ([]findings.Finding, error) {
 	restored := append([]findings.Finding{}, items...)
+	restoreCanonicalLocations(restored, candidates)
 	claimed := map[string]bool{}
 	for _, item := range restored {
 		if _, ok := candidates[item.ID]; ok {

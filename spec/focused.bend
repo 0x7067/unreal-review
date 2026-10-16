@@ -28,6 +28,9 @@ def stageComplete(success: Bool, uninterrupted: Bool, summaryOk: Bool, costOk: B
 # focusedValidateVerification: Nat values stand for exact interned strings or
 # line numbers. Anchor is likewise interned, NOT interval overlap. Body and
 # severity are intentionally absent: the verifier may improve them.
+# Focused.Run copies a known ID's path, lines, and anchor from the candidate
+# before this check. A nudged span therefore reaches this predicate already
+# restored. Unknown IDs, and a span that was not restored, still fail here.
 type Location is Data:
   At{path: Nat, start: Nat, end: Nat, anchor: Nat}
 

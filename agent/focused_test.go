@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/0x7067/unreal-review/findings"
@@ -143,5 +146,62 @@ func TestFocusedResumeConfigurationValidation(t *testing.T) {
 				t.Fatal("invalid resume accepted")
 			}
 		})
+	}
+}
+
+func TestFocusedRestoresCanonicalLocationForKnownVerifierID(t *testing.T) {
+	candidate := focusedTestIssue("known-span")
+	moved := candidate
+	moved.Path = "moved.go"
+	moved.StartLine = 8
+	moved.EndLine = 11
+	moved.Anchor = findings.AnchorOld
+	moved.Severity = findings.SeverityWarning
+	moved.Body = "Sharper confirmed body"
+	req := focusedTestRequest(t)
+	fake := focusedTestRunner(func(_ context.Context, child review.AgentRequest) (review.AgentResult, error) {
+		switch {
+		case strings.Contains(child.Prompt, "Verification and semantic deduplication"):
+			return focusedTestEmit(child, []findings.Finding{moved})
+		case strings.Contains(child.Prompt, "Discovery lens: correctness"):
+			return focusedTestEmit(child, []findings.Finding{candidate})
+		}
+		return focusedTestEmit(child, nil)
+	})
+	if _, err := (Focused{Agent: fake}).Run(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	report, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("published %+v", report.Findings)
+	}
+	got := report.Findings[0]
+	if got.ID != "known-span" || got.Path != "a.go" || got.StartLine != 4 || got.EndLine != 4 || got.Anchor != findings.AnchorNew || got.Severity != findings.SeverityWarning || got.Body != "Sharper confirmed body" {
+		t.Fatalf("published %+v", got)
+	}
+
+	req = focusedTestRequest(t)
+	stray := focusedTestIssue("not-a-candidate")
+	stray.Path = "elsewhere.go"
+	stray.StartLine = 2
+	stray.EndLine = 3
+	stray.Anchor = findings.AnchorOld
+	invent := focusedTestRunner(func(_ context.Context, child review.AgentRequest) (review.AgentResult, error) {
+		switch {
+		case strings.Contains(child.Prompt, "Verification and semantic deduplication"):
+			return focusedTestEmit(child, []findings.Finding{stray})
+		case strings.Contains(child.Prompt, "Discovery lens: correctness"):
+			return focusedTestEmit(child, []findings.Finding{candidate})
+		}
+		return focusedTestEmit(child, nil)
+	})
+	if _, err := (Focused{Agent: invent}).Run(t.Context(), req); err == nil {
+		t.Fatal("published a verifier id at an unknown location")
+	}
+	if _, err := os.Stat(req.FindingsPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("published a verifier id at an unknown location: %v", err)
 	}
 }
