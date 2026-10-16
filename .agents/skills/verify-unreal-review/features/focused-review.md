@@ -39,7 +39,7 @@ Preconditions:
 
 - `--cases` selects names in the planted, martian, pr38, or labeled corpus and rejects unknown or duplicate names. Compare the same selected cases with both strategies. Eval can exit successfully while a case is paused, so inspect `status`, `err`, and `total.completed` in stdout rather than treating exit zero as complete coverage.
 - The focused strategy costs more calls and may take longer. `--timeout` covers the whole invocation, not each child.
-- Focused verification allows code execution only when a candidate is low-confidence: severity `error` and not diff-visible. `warning`, `note`, and any candidate whose cited lines include a changed diff line are read-only, with no code-execution budget. Reads still run.
+- Focused verification allows code execution only when a candidate is low-confidence: severity `error` and not diff-visible. `warning`, `note`, and any candidate whose cited lines include a changed diff line are read-only, with no code-execution budget. A rename counts under both paths. Reads still run.
 - Notes are currently eligible for GitHub inline comments. They are not automatically hidden.
 - Candidate reports are not publishable reviews. Render only the root public findings file.
 - For working-tree reviews, place `--out` outside the reviewed workspace or Git-ignore the output and its `.work` file before starting. Untracked generated artifacts otherwise change the diff fingerprint. Planted eval fixtures exclude their own output automatically.

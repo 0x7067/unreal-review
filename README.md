@@ -89,7 +89,7 @@ severity is the confidence signal: `warning` and `note` are high-confidence,
 and `error` is low-confidence only when the cited lines are not diff-visible.
 A candidate is diff-visible when its line range includes a changed line of the
 selected diff (an added line for `anchor=new`, a removed line for `anchor=old`;
-hunk context does not count). Planned verification keeps the sandbox code
+hunk context does not count). A rename counts under both paths. Planned verification keeps the sandbox code
 budget for low-confidence batches and gives every other batch no code-execution
 budget. Reads still run. A focused verification pass allows code execution only
 when that pass contains a low-confidence candidate.

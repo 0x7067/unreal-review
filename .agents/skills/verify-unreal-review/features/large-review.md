@@ -40,7 +40,7 @@ Preconditions:
 ## Gotchas
 
 - Automatic decomposition is not arbitrary byte slicing. Local ownership covers every original diff byte exactly once; repeated metadata and boundary excerpts are context only.
-- Verification runs code only for a low-confidence candidate: severity `error` whose cited lines are not a changed line of the selected diff. Severity `warning` and `note` are high-confidence. A changed line is an added line for `anchor=new` and a removed line for `anchor=old`; hunk context does not count. High-confidence and diff-visible batches have no code-execution budget. Reads still run.
+- Verification runs code only for a low-confidence candidate: severity `error` whose cited lines are not a changed line of the selected diff. Severity `warning` and `note` are high-confidence. A changed line is an added line for `anchor=new` and a removed line for `anchor=old`; hunk context does not count. A rename counts under both paths. High-confidence and diff-visible batches have no code-execution budget. Reads still run.
 - The current dependency hints include existing grouping and Go import edges. Other languages use a conservative full changed-scope manifest; this is not a claim of complete semantic graph or SCC resolution.
 - `single` remains the practical strategy for automatic large reviews. Combining `--strategy focused` with decomposition multiplies discovery work and has not shown a seeded-defect recall gain in the small pilot.
 - The 120,000 value is a serialized prompt-byte bound, not a model token guarantee. The model context limit can impose a lower practical bound.

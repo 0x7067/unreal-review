@@ -41,7 +41,9 @@ type Planned struct {
 
 var _ review.Agent = Planned{}
 
-const plannedVersion = "planned-v1"
+// planned-v2 splits verification by confidence. A v1 manifest must not resume
+// onto those batches.
+const plannedVersion = "planned-v2"
 const plannedBatchBytes = 100000
 
 type plannedReceipt struct {

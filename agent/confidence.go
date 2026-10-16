@@ -16,7 +16,8 @@ import (
 // High-confidence: severity warning or note. Those claims are checked by reading.
 // Diff-visible: the cited inclusive line range includes a changed line of the
 // selected diff. Anchor new matches an added line; anchor old matches a removed
-// line. Context lines in a hunk are not changed lines.
+// line. Context lines in a hunk are not changed lines. A rename records each
+// changed line under both the old path and the new path.
 // Low-confidence: severity error and not diff-visible.
 //
 // A planned verification batch is entirely one class. Low-confidence batches
@@ -128,10 +129,10 @@ func changedLines(diff string) diffLines {
 			inHunk = ok
 		case !inHunk || strings.HasPrefix(line, `\`):
 		case strings.HasPrefix(line, "+"):
-			addDiffLine(lines.added, newPath, newLine)
+			addChangedLine(lines.added, newPath, oldPath, newLine)
 			newLine++
 		case strings.HasPrefix(line, "-"):
-			addDiffLine(lines.removed, oldPath, oldLine)
+			addChangedLine(lines.removed, oldPath, newPath, oldLine)
 			oldLine++
 		default:
 			oldLine++
@@ -139,6 +140,13 @@ func changedLines(diff string) diffLines {
 		}
 	}
 	return lines
+}
+
+func addChangedLine(sets map[string]map[int]struct{}, path, also string, line int) {
+	addDiffLine(sets, path, line)
+	if also != "" && also != path {
+		addDiffLine(sets, also, line)
+	}
 }
 
 func addDiffLine(sets map[string]map[int]struct{}, path string, line int) {

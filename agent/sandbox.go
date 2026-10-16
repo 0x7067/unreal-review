@@ -551,6 +551,76 @@ load_spent() {
     *) SPENT=$line ;;
   esac
 }
+git_flag_ok() {
+  sub=$1
+  arg=$2
+  case $arg in
+    -n*)
+      case $sub in log|grep) ;; *) return 1 ;; esac
+      rest=${arg#-n}
+      case $rest in *[!0-9]*) return 1 ;; esac
+      return 0 ;;
+    --max-count)
+      case $sub in show|log) return 0 ;; esac
+      return 1 ;;
+    --max-count=*)
+      case $sub in show|log) ;; *) return 1 ;; esac
+      rest=${arg#--max-count=}
+      case $rest in ''|*[!0-9]*) return 1 ;; esac
+      return 0 ;;
+    -U*)
+      case $sub in show|log|diff) ;; *) return 1 ;; esac
+      rest=${arg#-U}
+      case $rest in ''|*[!0-9]*) return 1 ;; esac
+      return 0 ;;
+    --unified)
+      case $sub in show|log|diff) return 0 ;; esac
+      return 1 ;;
+    --unified=*)
+      case $sub in show|log|diff) ;; *) return 1 ;; esac
+      rest=${arg#--unified=}
+      case $rest in ''|*[!0-9]*) return 1 ;; esac
+      return 0 ;;
+  esac
+  case $sub in
+    show)
+      case $arg in
+        --|--stat|--name-only|--name-status|--patch|-p|-1|--no-color|--color=never|--format|--format=*|--pretty|--pretty=*) return 0 ;;
+      esac ;;
+    log)
+      case $arg in
+        --|--oneline|--stat|--name-only|--name-status|--patch|-p|-1|--no-color|--color=never|--format|--format=*|--pretty|--pretty=*) return 0 ;;
+      esac ;;
+    diff)
+      case $arg in
+        --|--stat|--name-only|--name-status|--patch|-p|--no-color|--color=never) return 0 ;;
+      esac ;;
+    grep)
+      case $arg in
+        --|-i|--ignore-case|-w|--word-regexp|-F|--fixed-strings|-e|--regexp|--regexp=*|--no-color|--color=never) return 0 ;;
+      esac ;;
+  esac
+  return 1
+}
+rg_blocked() {
+  arg=$1
+  case $arg in
+    --) return 1 ;;
+    --*) ;;
+    -*z*) return 0 ;;
+    *) return 1 ;;
+  esac
+  name=$arg
+  case $name in
+    *=*) name=${name%%%%=*} ;;
+  esac
+  for opt in --pre --pre-glob --search-zip; do
+    case $opt in
+      "$name"*) return 0 ;;
+    esac
+  done
+  return 1
+}
 charges() {
   cmd=$1
   case $cmd in
@@ -578,10 +648,9 @@ charges() {
       done
       return 1 ;;
     rg)
+      shift
       for arg do
-        case $arg in
-          --pre|--pre=*|--pre-glob|--pre-glob=*|-z|--search-zip|--search-zip=*) return 0 ;;
-        esac
+        rg_blocked "$arg" && return 0
       done
       return 1 ;;
     git)
@@ -589,9 +658,11 @@ charges() {
         show|grep|log|diff) ;;
         *) return 0 ;;
       esac
+      sub=$2
+      shift 2
       for arg do
         case $arg in
-          -c*|-O*|--ext-diff*|--open-files-in-pager*|--output*) return 0 ;;
+          -*) git_flag_ok "$sub" "$arg" || return 0 ;;
         esac
       done
       return 1 ;;

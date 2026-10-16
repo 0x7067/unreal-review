@@ -438,6 +438,10 @@ func TestVerifierCommandBudget(t *testing.T) {
 		"tail --follow " + qfile,
 		"rg -z line " + qfile,
 		"rg --search-zip line " + qfile,
+		"git grep --open-files-in-p=sh x",
+		"git diff --ext",
+		"git log --outp=f",
+		"rg --pr=sh x",
 	}
 	for _, command := range charged {
 		out, code := runShell(t, shell, command)
@@ -662,6 +666,112 @@ func TestPlannedVerifierSkipsExecForHighConfidence(t *testing.T) {
 	}
 	if strings.TrimSpace(low.echo) != "ran-code" || strings.Contains(low.echo, sandboxBudgetSpent) || strings.TrimSpace(low.cat) != "readable-line" {
 		t.Fatalf("low-confidence exec was not allowed:\necho:\n%s\ncat:\n%s", low.echo, low.cat)
+	}
+}
+
+func TestZeroBudgetRefusesOptionPrefixes(t *testing.T) {
+	dir := t.TempDir()
+	note := filepath.Join(dir, "note.txt")
+	must(t, os.WriteFile(note, []byte("readable-line\n"), 0o644))
+	shell, err := installCommandBudget(dir, "/bin/sh", 0)
+	must(t, err)
+	out, code := runShell(t, shell, "rg readable-line "+shQuote(note))
+	if code != 0 || !strings.Contains(out, "readable-line") || strings.TrimSpace(out) == sandboxBudgetSpent {
+		t.Fatalf("read was refused: exit %d\n%s", code, out)
+	}
+	out, _ = runShell(t, shell, "git diff")
+	if strings.TrimSpace(out) == sandboxBudgetSpent {
+		t.Fatalf("git diff was refused:\n%s", out)
+	}
+	for _, command := range []string{
+		"git grep --open-files-in-p=sh x",
+		"git diff --ext",
+		"git log --outp=f",
+		"rg --pr=sh x",
+	} {
+		out, code = runShell(t, shell, command)
+		if code != 0 || strings.TrimSpace(out) != sandboxBudgetSpent {
+			t.Fatalf("%q ran in a zero-budget batch: exit %d\n%s", command, code, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "state")); !os.IsNotExist(err) {
+		t.Fatalf("refused commands recorded spend: %v", err)
+	}
+}
+
+func TestRenameIsDiffVisibleOnBothPaths(t *testing.T) {
+	captureNotices(t)
+	req := plannedTestRequest(t)
+	req.Plan.Tasks[0].Prompt = "Review local a\n```diff\n" +
+		"diff --git a/old.go b/new.go\n" +
+		"similarity index 90%\n" +
+		"rename from old.go\n" +
+		"rename to new.go\n" +
+		"--- a/old.go\n" +
+		"+++ b/new.go\n" +
+		"@@ -1,3 +1,3 @@\n" +
+		" package p\n" +
+		"-func Old() {}\n" +
+		"+func New() {}\n" +
+		" func Stay() {}\n" +
+		"```\n"
+	onOld := plannedTestIssue("old-path")
+	onOld.Path = "old.go"
+	onOld.StartLine, onOld.EndLine = 2, 2
+	onOld.Body = "Added line is visible from the old path"
+	onNew := plannedTestIssue("new-path")
+	onNew.Path = "new.go"
+	onNew.Anchor = findings.AnchorOld
+	onNew.StartLine, onNew.EndLine = 2, 2
+	onNew.Body = "Removed line is visible from the new path"
+	hidden := plannedTestIssue("hidden")
+	hidden.Path = "other.go"
+	hidden.StartLine, hidden.EndLine = 9, 9
+	hidden.Body = "Error outside the rename"
+	var readOnly, execOK bool
+	fake := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		if strings.Contains(r.Prompt, "Planned discovery") {
+			if strings.Contains(r.Prompt, "local-a") {
+				return plannedTestEmit(r, []findings.Finding{onOld, onNew, hidden})
+			}
+			return plannedTestEmit(r, nil)
+		}
+		if strings.Contains(r.Prompt, "Planned consolidation") {
+			items, err := plannedTestCandidates(r.Prompt)
+			if err != nil {
+				return review.AgentResult{}, err
+			}
+			return plannedTestEmit(r, items)
+		}
+		if !strings.Contains(r.Prompt, "Planned verification") {
+			return plannedTestEmit(r, nil)
+		}
+		items, err := plannedTestCandidates(r.Prompt)
+		if err != nil {
+			return review.AgentResult{}, err
+		}
+		out, code := runShell(t, r.Shell, "echo ran-code")
+		if code != 0 {
+			t.Fatalf("echo exit %d\n%s", code, out)
+		}
+		ids := map[string]bool{}
+		for _, item := range items {
+			ids[item.ID] = true
+		}
+		switch {
+		case ids["old-path"] && ids["new-path"] && !ids["hidden"]:
+			readOnly = strings.TrimSpace(out) == sandboxBudgetSpent
+		case ids["hidden"] && !ids["old-path"] && !ids["new-path"]:
+			execOK = strings.TrimSpace(out) == "ran-code"
+		default:
+			t.Fatalf("unexpected batch %v\n%s", ids, out)
+		}
+		return plannedTestEmit(r, items)
+	})
+	_, err := (Planned{Agent: fake, Verifier: fake, Consolidator: fake, Config: "single/high"}).Run(t.Context(), req)
+	must(t, err)
+	if !readOnly || !execOK {
+		t.Fatalf("rename visibility read-only=%v exec=%v", readOnly, execOK)
 	}
 }
 
