@@ -37,10 +37,12 @@ func TestVerifierSandboxIsolation(t *testing.T) {
 	if strings.Count(script, " -i ") < 2 || strings.Contains(script, "-mod=readonly") || strings.Contains(script, "--overlay") || strings.Contains(script, "-skx") {
 		t.Fatalf("wrapper regresses env, modules, cache, or du:\n%s", script)
 	}
-	out, code := runShell(t, sb.shell, fmt.Sprintf(`env; for f in /proc/[0-9]*/environ; do tr '\0' '\n' <"$f"; done
+	must(t, os.WriteFile(filepath.Join(sb.root, "home", ".gitconfig"), []byte("[core]\n\tpager = touch /tmp/pwned\n"), 0o600))
+	out, code := runShell(t, sb.shell, fmt.Sprintf(`env; find /proc -name environ -type f | while IFS= read -r f; do tr '\0' '\n' <"$f" || true; done
 touch /usr/unreal-review-sandbox-pwned 2>usr.err || true; echo USR_ERR; cat usr.err
 touch /rootfill >/dev/null 2>&1 && echo ROOT_OK || echo ROOT_FAIL
 touch ./scratch-ok && echo SCRATCH_OK || echo SCRATCH_FAIL; touch "$HOME/h" && echo HOME_OK || echo HOME_FAIL; touch "$TMPDIR/t" && echo TMP_OK || echo TMP_FAIL
+test -e "$HOME/.gitconfig" && echo HOME_PLANTED || echo HOME_EMPTY
 test -e %s && echo HOME_VISIBLE || echo HOME_HIDDEN; touch %s && echo OUTSIDE_OK || echo OUTSIDE_FAIL
 python3 -c 'import socket;s=socket.socket();s.settimeout(2);s.connect(("1.1.1.1",443))' && echo CONNECTED || echo DIAL_FAIL
 go test ./...; git show %s:add.go; go env GOFLAGS`, shQuote(secret), shQuote(outside), sha))
@@ -52,7 +54,7 @@ go test ./...; git show %s:add.go; go env GOFLAGS`, shQuote(secret), shQuote(out
 			t.Fatalf("secret %q visible:\n%s", secretValue, out)
 		}
 	}
-	for _, want := range []string{"GOPROXY=off", "GOTOOLCHAIN=local", "Read-only file system", "ROOT_FAIL", "SCRATCH_OK", "HOME_OK", "TMP_OK", "HOME_HIDDEN", "OUTSIDE_FAIL", "DIAL_FAIL", "ok  \texample.com/tiny", "func Add", "-buildvcs=false"} {
+	for _, want := range []string{"GOPROXY=off", "GOTOOLCHAIN=local", "Read-only file system", "ROOT_FAIL", "SCRATCH_OK", "HOME_FAIL", "HOME_EMPTY", "TMP_OK", "HOME_HIDDEN", "OUTSIDE_FAIL", "DIAL_FAIL", "ok  \texample.com/tiny", "func Add", "-buildvcs=false"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %s:\n%s", want, out)
 		}
@@ -385,17 +387,16 @@ func TestVerifierCommandBudget(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "note")
 	must(t, os.WriteFile(file, []byte("line\n"), 0o644))
-	qfile := shQuote(file)
 	shell, err := installCommandBudget(dir, "/bin/sh", time.Second)
 	must(t, err)
 	free := []string{
-		"cat " + qfile,
-		"ls " + shQuote(dir),
-		"head -1 " + qfile,
-		"tail -1 " + qfile,
-		"nl " + qfile,
-		"wc -l " + qfile,
-		"rg line " + qfile,
+		"cat " + file,
+		"ls " + dir,
+		"head -1 " + file,
+		"tail -1 " + file,
+		"nl " + file,
+		"wc -l " + file,
+		"rg line " + file,
 		"git show HEAD",
 		"git diff",
 		"git log -1",
@@ -418,6 +419,7 @@ func TestVerifierCommandBudget(t *testing.T) {
 		t.Fatal("code command did not spend the budget")
 	}
 	marker := filepath.Join(dir, "ran")
+	qfile := shQuote(file)
 	qmarker := shQuote(marker)
 	charged := []string{
 		"echo $(go version)",
@@ -452,7 +454,7 @@ func TestVerifierCommandBudget(t *testing.T) {
 			t.Fatalf("charged %q ran: %v", command, err)
 		}
 	}
-	out, code = runShell(t, shell, "cat "+qfile)
+	out, code = runShell(t, shell, "cat "+file)
 	if code != 0 || out != "line\n" {
 		t.Fatalf("read after the budget: exit %d\n%s", code, out)
 	}
@@ -593,7 +595,7 @@ func TestPlannedVerifierSkipsExecForHighConfidence(t *testing.T) {
 	hidden.Body = "Caller crashes on the new return"
 	noteFile := filepath.Join(t.TempDir(), "note.txt")
 	must(t, os.WriteFile(noteFile, []byte("readable-line\n"), 0o644))
-	catCmd := "cat " + shQuote(noteFile)
+	catCmd := "cat " + noteFile
 
 	type batch struct {
 		ids  map[string]bool
@@ -675,7 +677,7 @@ func TestZeroBudgetRefusesOptionPrefixes(t *testing.T) {
 	must(t, os.WriteFile(note, []byte("readable-line\n"), 0o644))
 	shell, err := installCommandBudget(dir, "/bin/sh", 0)
 	must(t, err)
-	out, code := runShell(t, shell, "rg readable-line "+shQuote(note))
+	out, code := runShell(t, shell, "rg readable-line "+note)
 	if code != 0 || !strings.Contains(out, "readable-line") || strings.TrimSpace(out) == sandboxBudgetSpent {
 		t.Fatalf("read was refused: exit %d\n%s", code, out)
 	}
@@ -688,6 +690,10 @@ func TestZeroBudgetRefusesOptionPrefixes(t *testing.T) {
 		"git diff --ext",
 		"git log --outp=f",
 		"rg --pr=sh x",
+		"rg '--pre=sh' x",
+		"git diff \\--ext-diff",
+		"git grep \"-Osh\" x",
+		"rg foo *",
 	} {
 		out, code = runShell(t, shell, command)
 		if code != 0 || strings.TrimSpace(out) != sandboxBudgetSpent {

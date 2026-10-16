@@ -372,7 +372,8 @@ func sandboxMounts(root, tree string, tc goToolchain, gitBinds []string, tmpfs i
 	args = append(args, gitBinds...)
 	args = append(args, "--bind", gopath, gopath, "--bind", cache, cache)
 	size := strconv.FormatInt(tmpfs, 10)
-	args = append(args, "--size", size, "--tmpfs", home, "--size", size, "--tmpfs", tmp, "--chdir", tree, "--remount-ro", "/")
+	// HOME is a fresh empty tmpfs, then read-only, so an earlier command cannot leave .gitconfig or an rg config.
+	args = append(args, "--size", size, "--tmpfs", home, "--remount-ro", home, "--size", size, "--tmpfs", tmp, "--chdir", tree, "--remount-ro", "/")
 	pairs := shellAssignments([][2]string{
 		{"PATH", filepath.Join(tc.goroot, "bin") + ":/usr/bin:/bin"},
 		{"GOROOT", tc.goroot},
@@ -388,9 +389,9 @@ func sandboxMounts(root, tree string, tc goToolchain, gitBinds []string, tmpfs i
 	return args, pairs, nil
 }
 func sandboxScript(root string, timeoutSec int, limitKB int64, bin []string, envPairs, bwrapArgs string, fsize, as int64) string {
-	run := fmt.Sprintf("%s -i %s %s --as=%d --fsize=%d %s -k 2 \"$timeout_secs\" %s %s /bin/sh -c \"$1\"",
+	run := fmt.Sprintf("%s -i %s %s --as=%d --fsize=%d %s -k 2 \"$timeout_secs\" %s %s /bin/sh -f -c \"$1\"",
 		shQuote(bin[0]), envPairs, shQuote(bin[1]), as, fsize, shQuote(bin[2]), shQuote(bin[3]), bwrapArgs)
-	probe := fmt.Sprintf("%s -i %s --as=%d --fsize=%d %s -k 2 \"$timeout_secs\" %s %s /bin/sh -c 'unset PWD; test \"$(%s -l </proc/net/dev)\" -eq 3 && test -z \"$(%s)\"'",
+	probe := fmt.Sprintf("%s -i %s --as=%d --fsize=%d %s -k 2 \"$timeout_secs\" %s %s /bin/sh -f -c 'unset PWD; test \"$(%s -l </proc/net/dev)\" -eq 3 && test -z \"$(%s)\"'",
 		shQuote(bin[0]), shQuote(bin[1]), as, fsize, shQuote(bin[2]), shQuote(bin[3]), bwrapArgs, bin[4], bin[0])
 	return fmt.Sprintf("#!/bin/sh\nset -eu\nroot=%s\ntimeout_secs=%d\ncap_kb=%d\nrun() {\n  %s\n}\nif [ \"${1:-}\" = \"--probe\" ]; then\n  %s || exit 1\n  run \"go list -m\" || exit 2\n  exit 0\nfi\nif [ \"${1:-}\" != \"-c\" ]; then\n  echo \"unreal-review: verifier shell expects -c\" >&2\n  exit 2\nfi\n", shQuote(root), timeoutSec, limitKB, run, probe) +
 		"used=0\nwhile IFS= read -r line; do\n  kb=${line%%[!0-9]*}\n  [ -n \"$kb\" ] || continue\n  used=$((used + kb))\ndone <<EOF\n$(" + shQuote(bin[5]) + " -sk \"$root/tree\" \"$root/gocache\" \"$root/gopath\")\nEOF\nif [ \"$used\" -ge \"$cap_kb\" ]; then\n  echo \"unreal-review: verifier scratch exceeds ${cap_kb} KiB; refusing further commands\" >&2\n  exit 1\nfi\nrun \"${2-}\"\n"
@@ -415,7 +416,7 @@ func installScrubShell(root string) (string, error) {
 	if strings.TrimSpace(lang) == "" {
 		lang = "C.UTF-8"
 	}
-	body := fmt.Sprintf("#!/bin/sh\nset -eu\nif [ \"${1:-}\" != \"-c\" ]; then\n  echo \"unreal-review: verifier shell expects -c\" >&2\n  exit 2\nfi\nexec %s -i PATH=%s HOME=%s LANG=%s /bin/sh -c \"${2-}\"\n",
+	body := fmt.Sprintf("#!/bin/sh\nset -eu\nif [ \"${1:-}\" != \"-c\" ]; then\n  echo \"unreal-review: verifier shell expects -c\" >&2\n  exit 2\nfi\nexec %s -i PATH=%s HOME=%s LANG=%s /bin/sh -f -c \"${2-}\"\n",
 		shQuote(envBin), shQuote(path), shQuote(home), shQuote(lang))
 	shell := filepath.Join(root, "shell")
 	if err := os.WriteFile(shell, []byte(body), 0o700); err != nil {
@@ -628,8 +629,19 @@ charges() {
 '*) return 0 ;;
   esac
   tick=$(printf '\140')
+  sq=$(printf '\047')
+  dq=$(printf '\042')
+  bs=$(printf '\134')
+  # The inner shell removes quotes and backslashes and expands globs. Refuse the raw characters.
+  # '[' and '*' are separate patterns: dash treats an unquoted '[' as a character class and would swallow the next alternative.
   case $cmd in
-    *$tick*) return 0 ;;
+    *$tick*|*"$sq"*|*"$dq"*|*"$bs"*|*'~'*|*'?'*) return 0 ;;
+  esac
+  case $cmd in
+    *'['*) return 0 ;;
+  esac
+  case $cmd in
+    *'*'*) return 0 ;;
   esac
   set -f
   set -- $cmd
@@ -685,7 +697,7 @@ if charges "$run"; then
 fi
 start=$(date +%%s)
 set +e
-"$inner" -c "$run" 9>&-
+"$inner" -c "set -f; $run" 9>&-
 code=$?
 set -e
 if charges "$run"; then
