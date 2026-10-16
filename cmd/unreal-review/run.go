@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,42 +17,57 @@ import (
 	"github.com/0x7067/unreal-review/review"
 )
 
-func cmdRun(args []string) error {
+type runFlags struct {
+	workspace, pr, repo, outPath, model, thinking, strategy, agentLog *string
+	fresh, decompose                                                  *bool
+	timeout                                                           *time.Duration
+	spec                                                              specFlags
+	exclude                                                           *stringList
+}
+
+func registerRunFlags(fs *flag.FlagSet) runFlags {
+	var f runFlags
+	f.workspace = fs.String("workspace", ".", "git repository to review")
+	f.spec = addSpecFlags(fs)
+	f.pr = fs.String("pr", "", "pull request to review: owner/repo#n, a URL, or a number")
+	f.repo = fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repo when --pr is a number")
+	// Heap-allocate so Parse updates the returned flags, not a discarded copy.
+	f.exclude = &stringList{}
+	fs.Var(f.exclude, "exclude", "git glob to omit from the diff; repeatable")
+	f.outPath = fs.String("out", "findings.jsonl", "findings JSONL path, or - for stdout")
+	f.fresh = fs.Bool("fresh", false, "start a new review even if --out already exists")
+	f.decompose = fs.Bool("decompose", false, "use bounded scopes and aggregate coverage even below the automatic large-diff threshold")
+	f.model = fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
+	f.thinking = fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
+	f.strategy = fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
+	f.timeout = fs.Duration("timeout", 20*time.Minute, "timeout for the whole review")
+	f.agentLog = fs.String("agent-log", "", "optional path for the harness session JSONL log")
+	return f
+}
+
+func cmdRun(args []string) (err error) {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	workspace := fs.String("workspace", ".", "git repository to review")
-	spec := addSpecFlags(fs)
-	pr := fs.String("pr", "", "pull request to review: owner/repo#n, a URL, or a number")
-	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repo when --pr is a number")
-	var exclude stringList
-	fs.Var(&exclude, "exclude", "git glob to omit from the diff; repeatable")
-	outPath := fs.String("out", "findings.jsonl", "findings JSONL path, or - for stdout")
-	fresh := fs.Bool("fresh", false, "start a new review even if --out already exists")
-	decompose := fs.Bool("decompose", false, "use bounded scopes and aggregate coverage even below the automatic large-diff threshold")
-	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
-	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
-	strategy := fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
-	timeout := fs.Duration("timeout", 20*time.Minute, "timeout for the whole review")
-	agentLog := fs.String("agent-log", "", "optional path for the harness session JSONL log")
+	f := registerRunFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
-	if *model == "" {
+	if *f.model == "" {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")
 	}
 	key := secret("OPENROUTER_API_KEY")
 	if strings.TrimSpace(key) == "" {
-		return fmt.Errorf("set OPENROUTER_API_KEY")
+		return ErrAPIKey
 	}
-	level, err := agent.SanitizeLevel(*thinking)
+	level, err := agent.SanitizeLevel(*f.thinking)
 	if err != nil {
 		return err
 	}
-	selected := spec.spec()
-	selected.Pull = *pr
+	selected := f.spec.spec()
+	selected.Pull = *f.pr
 	var resolver review.PullResolver
-	if *pr != "" {
-		resolver, err = newPullResolver(secret("GH_TOKEN"), *repo)
+	if *f.pr != "" {
+		resolver, err = newPullResolver(secret("GH_TOKEN"), *f.repo)
 		if err != nil {
 			return err
 		}
@@ -60,37 +76,37 @@ func cmdRun(args []string) error {
 	// here would truncate an existing log when --strategy, the git range, or
 	// an empty diff fails first.
 	var logWriter io.Writer
-	if *agentLog != "" {
-		logFile := &agentLogFile{path: *agentLog}
-		defer func() { _ = logFile.Close() }()
+	if *f.agentLog != "" {
+		logFile := &agentLogFile{path: *f.agentLog}
+		defer func() { _ = logFile.Close() }() //nolint:errcheck // closing the agent log must not fail a successful review
 		logWriter = logFile
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	reviewer, err := agent.ReviewPipeline(*strategy, agent.Harness{
-		APIKey: key, ThinkingLevel: level, Log: logWriter, Timeout: *timeout,
+	reviewer, err := agent.ReviewPipeline(*f.strategy, agent.Harness{
+		APIKey: key, ThinkingLevel: level, Log: logWriter, Timeout: *f.timeout,
 	})
 	if err != nil {
 		return err
 	}
 	result, err := review.Run(ctx, review.Options{
-		Workspace: *workspace,
+		Workspace: *f.workspace,
 		Spec:      selected,
 		Paths:     fs.Args(),
-		Exclude:   exclude,
-		Out:       *outPath,
-		Fresh:     *fresh,
-		Decompose: *decompose,
-		Model:     *model,
+		Exclude:   *f.exclude,
+		Out:       *f.outPath,
+		Fresh:     *f.fresh,
+		Decompose: *f.decompose,
+		Model:     *f.model,
 		Pull:      resolver,
 		Agent:     reviewer,
 	})
-	if (*outPath == "" || *outPath == "-") && result.Report.Run != nil {
-		out, writeErr := openOut(*outPath)
+	if (*f.outPath == "" || *f.outPath == "-") && result.Report.Run != nil {
+		out, writeErr := openOut(*f.outPath)
 		if writeErr != nil {
 			return writeErr
 		}
-		defer func() { _ = out.Close() }()
+		defer func() { err = errors.Join(err, out.Close()) }()
 		if writeErr := findings.Write(out, result.Report); writeErr != nil {
 			return writeErr
 		}

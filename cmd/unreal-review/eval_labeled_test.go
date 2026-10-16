@@ -64,14 +64,15 @@ func TestRunLabeledKeepsEarlierCasesWhenSetupFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fetchFailed := errors.New("fetch failed")
 	var out, errOut bytes.Buffer
 	err = runLabeledCases(context.Background(), &out, &errOut, t.TempDir(), 1, true, []string{"pr31", "pr25"}, func(n int, name string) (eval.PR38Score, error) {
 		if name == "pr25" {
-			return eval.PR38Score{}, errors.New("fetch failed")
+			return eval.PR38Score{}, fetchFailed
 		}
 		return pr31, nil
 	})
-	if err == nil || !strings.Contains(err.Error(), "fetch failed") {
+	if err == nil || !errors.Is(err, fetchFailed) {
 		t.Fatalf("err=%v", err)
 	}
 	var got eval.LabeledReport

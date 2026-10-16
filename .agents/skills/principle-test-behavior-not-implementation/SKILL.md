@@ -19,7 +19,7 @@ If yes, rewrite it to observe behavior or delete it.
 - **Weak assertion:** only checks defined, truthy, non-empty, non-panicking, type, or greater than zero.
 - **Call or absence only:** only checks called/not called, nil, empty, zero length, or not equal to one wrong value.
 - **Self-referential expectation:** derives the expected value from the subject or helper implementing the same rule.
-- **Constant or prompt pin:** restates a limit, default, table row, configuration string, prompt phrase, error wording, stage name, or other implementation text.
+- **Constant or prompt pin:** restates a limit, default, table row, configuration string, prompt phrase, stage name, or other implementation text. Error identity is enforced by sentinels and errors.Is.
 - **Fixture asserts fixture:** reads back data prepared by the test without proving that the subject transformed it correctly.
 - **Internal routing detector:** asserts a concrete helper, adapter, branch, counter, or call sequence instead of the externally visible result.
 

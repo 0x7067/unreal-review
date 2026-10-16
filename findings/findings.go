@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -438,12 +439,15 @@ func AppendSummary(path, body string) error {
 	return appendLine(path, record{V: SchemaVersion, Type: TypeSummary, Body: body})
 }
 
-func appendLine(path string, rec record) error {
+// closeWritten closes an appended findings file. A test replaces it to fail the close.
+var closeWritten = func(file *os.File) error { return file.Close() }
+
+func appendLine(path string, rec record) (err error) {
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() { err = errors.Join(err, closeWritten(file)) }()
 	info, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("stat %s: %w", path, err)
@@ -519,13 +523,13 @@ func Write(w io.Writer, report Report) error {
 	return nil
 }
 
-func ReadFile(path string) (Report, error) {
+func ReadFile(path string) (report Report, err error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return Report{}, err
 	}
-	defer func() { _ = file.Close() }()
-	report, err := Parse(file)
+	defer func() { _ = file.Close() }() //nolint:errcheck // closing a finished read must not fail the run
+	report, err = Parse(file)
 	if err != nil {
 		return Report{}, fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -542,16 +546,13 @@ func WriteFile(path string, report Report) error {
 	writeErr := Write(tmp, report)
 	closeErr := tmp.Close()
 	if writeErr != nil {
-		_ = os.Remove(tmpName)
-		return writeErr
+		return errors.Join(writeErr, os.Remove(tmpName))
 	}
 	if closeErr != nil {
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("write %s: %w", path, closeErr)
+		return errors.Join(fmt.Errorf("write %s: %w", path, closeErr), os.Remove(tmpName))
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("write %s: %w", path, err)
+		return errors.Join(fmt.Errorf("write %s: %w", path, err), os.Remove(tmpName))
 	}
 	return nil
 }

@@ -154,11 +154,11 @@ func (p Planned) Run(ctx context.Context, req review.AgentRequest) (result revie
 	if err != nil {
 		return result, err
 	}
-	defer func() { _ = lock.Close() }()
+	defer func() { _ = lock.Close() }() //nolint:errcheck // releasing the lock must not fail the run
 	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return result, fmt.Errorf("planned: already running: %w", err)
 	}
-	defer func() { _ = unix.Flock(int(lock.Fd()), unix.LOCK_UN) }()
+	defer func() { _ = unix.Flock(int(lock.Fd()), unix.LOCK_UN) }() //nolint:errcheck // unlocking must not fail the run
 	binding, err := plannedJSON(struct {
 		Workspace, Model, Prompt, System, Version, Config string
 		Parallel                                          int
@@ -484,7 +484,10 @@ func (p Planned) Run(ctx context.Context, req review.AgentRequest) (result revie
 				ids = append(ids, item.ID)
 			}
 		}
-		keep, _ := plannedJSON(ids)
+		keep, err := plannedJSON(ids)
+		if err != nil {
+			return nil, err
+		}
 		instructions := "Inspect code/premises and record only confirmed material issues or concrete small notes. Reject unsupported hypotheses. "
 		if strings.HasPrefix(stage, "consolidate:") {
 			instructions = "All candidates are already confirmed. Retain every distinct underlying issue, including different bugs on overlapping lines. Merge only demonstrably the same underlying issue, retaining one candidate ID. Never reject a distinct confirmed issue. "
@@ -774,7 +777,10 @@ func plannedCandidates(items []findings.Finding, preserve map[string]bool) ([]fi
 			}
 			continue
 		}
-		key := focusedExact(item)
+		key, err := focusedExact(item)
+		if err != nil {
+			return nil, err
+		}
 		if exact[key] && !preserve[item.ID] {
 			continue
 		}

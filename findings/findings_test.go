@@ -2,6 +2,7 @@ package findings
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,6 +158,26 @@ func TestAppendContinuesFileWithoutTrailingNewline(t *testing.T) {
 	}
 	if parsed.Summary != "earlier" || len(parsed.Findings) != 1 || parsed.Findings[0].Path != "b.go" {
 		t.Fatalf("merged: %+v", parsed)
+	}
+}
+
+func TestAppendSummaryReturnsCloseError(t *testing.T) {
+	work := filepath.Join(t.TempDir(), "work.jsonl")
+	closeErr := errors.New("disk close")
+	orig := closeWritten
+	t.Cleanup(func() { closeWritten = orig })
+	closeWritten = func(file *os.File) error {
+		if err := file.Close(); err != nil {
+			return err
+		}
+		return closeErr
+	}
+	if err := AppendSummary(work, "The cache write races with the reader."); !errors.Is(err, closeErr) {
+		t.Fatalf("AppendSummary = %v, want close error", err)
+	}
+	report, err := ReadFile(work)
+	if err != nil || report.Summary != "The cache write races with the reader." {
+		t.Fatalf("summary = %q, %v", report.Summary, err)
 	}
 }
 

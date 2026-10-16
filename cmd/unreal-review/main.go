@@ -7,6 +7,11 @@ import (
 	"os"
 )
 
+var (
+	ErrAPIKey        = errors.New("set OPENROUTER_API_KEY")
+	ErrUnknownCorpus = errors.New("unknown corpus")
+)
+
 func main() {
 	if err := isolateSecrets(); err != nil {
 		fmt.Fprintf(os.Stderr, "unreal-review: %v\n", err)
@@ -20,7 +25,9 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		printUsage(os.Stderr)
+		if err := printUsage(os.Stderr); err != nil {
+			return err
+		}
 		return fmt.Errorf("command required")
 	}
 	switch args[0] {
@@ -33,16 +40,17 @@ func run(args []string) error {
 	case "render":
 		return cmdRender(args[1:])
 	case "help", "-h", "--help":
-		printUsage(os.Stdout)
-		return nil
+		return printUsage(os.Stdout)
 	default:
-		printUsage(os.Stderr)
+		if err := printUsage(os.Stderr); err != nil {
+			return err
+		}
 		return fmt.Errorf("unknown command %q", args[0])
 	}
 }
 
-func printUsage(w *os.File) {
-	_, _ = fmt.Fprint(w, `Review a git diff with the unreal-agent harness and write findings.jsonl.
+func printUsage(w *os.File) error {
+	_, err := fmt.Fprint(w, `Review a git diff with the unreal-agent harness and write findings.jsonl.
 Render that file for GitHub inline comments, markdown, or another host.
 
 Usage:
@@ -93,6 +101,7 @@ Environment:
   UNREAL_HARNESS_LLM_MODEL       default --model
   GH_TOKEN                       required for --pr and to post a GitHub review
 `)
+	return err
 }
 
 // successOnHelp turns -h/--help into success. The flag set already printed usage.

@@ -39,7 +39,7 @@ func runLabeledCases(ctx context.Context, stdout, stderr io.Writer, root string,
 			score.Run = n
 			byCase[i] = append(byCase[i], score)
 			if score.Completed() {
-				_, _ = fmt.Fprintf(stderr, "%s run %d done\n", name, n)
+				progressf(stderr, "%s run %d done\n", name, n)
 			}
 		}
 		if stop != nil {
@@ -70,7 +70,7 @@ func finishLabeled(stdout, stderr io.Writer, report eval.LabeledReport, asJSON b
 					text = "no status"
 				}
 			}
-			_, _ = fmt.Fprintf(stderr, "%s run %d failed: %s\n", c.Corpus, score.Run, text)
+			progressf(stderr, "%s run %d failed: %s\n", c.Corpus, score.Run, text)
 		}
 	}
 	var err error

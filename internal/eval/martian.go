@@ -256,7 +256,7 @@ func judgePrompt(c MartianCase, produced []findings.Finding) string {
 	return b.String()
 }
 
-func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Finding) (verdict, error) {
+func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Finding) (_ verdict, err error) {
 	if len(c.Comments) == 0 || len(produced) == 0 {
 		return verdict{}, nil
 	}
@@ -286,7 +286,7 @@ func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Fin
 	if err != nil {
 		return verdict{}, fmt.Errorf("judge: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // closing the judge response must not fail a successful match
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return verdict{}, fmt.Errorf("judge: %w", err)

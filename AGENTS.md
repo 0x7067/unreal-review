@@ -34,7 +34,7 @@ Canonical skills live in `.agents/skills/`; `.claude/skills`, `.grok/skills`, an
 
 ## Testing
 
-Apply [principle-test-behavior-not-implementation](.agents/skills/principle-test-behavior-not-implementation/SKILL.md) whenever writing, changing, reviewing, or keeping a test. Exercise the subject through its real contract and assert a literal user-observable result or artifact. Delete tests that only pin constants, prompts, error text, call counts, helper routing, configuration shape, mocks, empty values, or fixtures. If the test would still pass when the subject does no useful work, it is not a test.
+Apply [principle-test-behavior-not-implementation](.agents/skills/principle-test-behavior-not-implementation/SKILL.md) whenever writing, changing, reviewing, or keeping a test. Exercise the subject through its real contract and assert a literal user-observable result or artifact. Delete tests that only pin constants, prompts, call counts, helper routing, configuration shape, mocks, empty values, or fixtures. Error identity is enforced by sentinels and errors.Is. If the test would still pass when the subject does no useful work, it is not a test.
 
 ## Checks
 

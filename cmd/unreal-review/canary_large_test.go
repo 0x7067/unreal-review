@@ -42,7 +42,9 @@ func (cleanCanaryProvider) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
-	_, _ = fmt.Fprintf(w, "data: %s\n\n", encoded)
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", encoded); err != nil {
+		return
+	}
 }
 
 func largeCanaryGit(t *testing.T, dir string, args ...string) string {

@@ -5,11 +5,13 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -219,8 +221,9 @@ func TestRunRecordsCleanSummaryWithoutFindings(t *testing.T) {
 }
 
 func TestLoopbackHTTPClientRejectsOffHostRedirect(t *testing.T) {
+	hits, sink := offHostSink(t)
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "https://example.com/steal", http.StatusFound)
+		http.Redirect(w, r, sink+"/steal", http.StatusFound)
 	}))
 	t.Cleanup(stub.Close)
 
@@ -231,12 +234,35 @@ func TestLoopbackHTTPClientRejectsOffHostRedirect(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer secret")
 	resp, err := LoopbackHTTPClient().Do(req)
 	if err == nil {
-		_ = resp.Body.Close()
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Error(cerr)
+		}
 		t.Fatal("off-host redirect was followed")
 	}
-	if !strings.Contains(err.Error(), "refusing redirect to example.com: not loopback") {
-		t.Fatalf("error = %v, want refusing redirect", err)
+	if !errors.Is(err, ErrNotLoopback) {
+		t.Fatalf("error = %v, want not loopback", err)
 	}
+	if got := hits.Load(); got != 0 {
+		t.Fatalf("redirect target saw %d requests", got)
+	}
+}
+
+func offHostSink(t *testing.T) (*atomic.Int32, string) {
+	t.Helper()
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.2:0")
+	if err != nil {
+		t.Skipf("127.0.0.2 is not bindable: %v", err)
+	}
+	var hits atomic.Int32
+	sink := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	sink.Listener = ln
+	sink.Start()
+	t.Cleanup(sink.Close)
+	return &hits, sink.URL
 }
 
 func TestLoopbackHTTPClientAllowsLoopbackRedirect(t *testing.T) {
@@ -261,18 +287,23 @@ func TestLoopbackHTTPClientAllowsLoopbackRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("status %s", resp.Status)
 	}
 }
 
 func TestLoopbackModelAdapterRefusesOffHostRedirect(t *testing.T) {
+	hits, sink := offHostSink(t)
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer secret" {
 			t.Errorf("authorization %q", r.Header.Get("Authorization"))
 		}
-		http.Redirect(w, r, "https://example.com/steal", http.StatusFound)
+		http.Redirect(w, r, sink+"/steal", http.StatusFound)
 	}))
 	t.Cleanup(stub.Close)
 
@@ -280,7 +311,11 @@ func TestLoopbackModelAdapterRefusesOffHostRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = closeAdapter() })
+	t.Cleanup(func() {
+		if err := closeAdapter(); err != nil {
+			t.Error(err)
+		}
+	})
 	_, err = adapter.Respond(t.Context(), llm.Request{
 		Model: llm.Model{ID: "test"},
 		Input: []llm.Item{{
@@ -288,8 +323,45 @@ func TestLoopbackModelAdapterRefusesOffHostRedirect(t *testing.T) {
 			Data: llm.Message{Role: llm.RoleUser, Text: "hi"},
 		}},
 	}, llm.RequestOptions{})
-	if err == nil || !strings.Contains(err.Error(), "refusing redirect to example.com: not loopback") {
-		t.Fatalf("error = %v, want refusing redirect", err)
+	if err == nil {
+		t.Fatal("off-host redirect was followed")
+	}
+	if got := hits.Load(); got != 0 {
+		t.Fatalf("redirect target saw %d requests", got)
+	}
+}
+
+func TestProviderTextNotLoopbackIsNotSentinel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		if _, err := w.Write([]byte(`{"error":{"message":"not loopback","code":"bad_request"}}`)); err != nil {
+			t.Errorf("write: %v", err)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	adapter, closeAdapter, err := newLoopbackModelAdapter("secret", srv.URL+"/api/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := closeAdapter(); err != nil {
+			t.Error(err)
+		}
+	})
+	_, err = adapter.Respond(t.Context(), llm.Request{
+		Model: llm.Model{ID: "test"},
+		Input: []llm.Item{{
+			Type: llm.ItemMessage,
+			Data: llm.Message{Role: llm.RoleUser, Text: "hi"},
+		}},
+	}, llm.RequestOptions{})
+	if err == nil || !strings.Contains(err.Error(), "not loopback") {
+		t.Fatalf("error = %v, want the provider text", err)
+	}
+	if errors.Is(err, ErrNotLoopback) {
+		t.Fatalf("provider text identified as loopback refusal: %v", err)
 	}
 }
 
@@ -297,7 +369,7 @@ func TestHarnessRunRejectsNonLoopbackOpenRouter(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(openRouterBaseEnv, "https://openrouter.ai/api/v1")
 	_, err := (Harness{APIKey: "dummy", ThinkingLevel: "high"}).Run(t.Context(), reviewRequest(t))
-	if err == nil || !strings.Contains(err.Error(), `host "openrouter.ai" is not loopback`) {
+	if err == nil || !errors.Is(err, ErrNotLoopback) {
 		t.Fatalf("error = %v, want a loopback refusal", err)
 	}
 }
@@ -312,11 +384,17 @@ func TestHarnessRunUsesLocalOpenRouterAndReports401(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer dummy" {
 			t.Errorf("authorization = %q", r.Header.Get("Authorization"))
 		}
-		_, _ = io.Copy(io.Discard, r.Body)
-		_ = r.Body.Close()
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			t.Errorf("read body: %v", err)
+		}
+		if err := r.Body.Close(); err != nil {
+			t.Errorf("close body: %v", err)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":{"message":"Unauthorized","code":401}}`))
+		if _, err := w.Write([]byte(`{"error":{"message":"Unauthorized","code":401}}`)); err != nil {
+			t.Errorf("write: %v", err)
+		}
 		select {
 		case arrived <- struct{}{}:
 		default:
@@ -334,7 +412,7 @@ func TestHarnessRunUsesLocalOpenRouterAndReports401(t *testing.T) {
 	default:
 		t.Fatal("local OpenRouter request did not arrive")
 	}
-	if err == nil || !strings.Contains(err.Error(), "status 401") {
+	if err == nil || !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("run: %v, want status 401", err)
 	}
 }

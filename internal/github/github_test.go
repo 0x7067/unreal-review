@@ -201,7 +201,9 @@ func TestUpsertStatusCommentCreatesThenEdits(t *testing.T) {
 		paths = append(paths, r.URL.Path)
 		bodies = append(bodies, payload.Body)
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":99}`))
+		if _, err := w.Write([]byte(`{"id":99}`)); err != nil {
+			t.Errorf("write: %v", err)
+		}
 	}
 	mux.HandleFunc("/repos/o/r/issues/3/comments", record)
 	mux.HandleFunc("/repos/o/r/issues/comments/99", record)
@@ -263,7 +265,11 @@ func TestCheckRunReceiptRoundTrip(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/repos/o/r/check-runs", func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		calls = append(calls, call{method: r.Method, path: r.URL.RequestURI(), body: string(body)})
 		writeJSON(t, w, map[string]any{"id": 1})
 	})

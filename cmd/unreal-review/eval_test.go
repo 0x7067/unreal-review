@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/0x7067/unreal-review/agent"
 	"github.com/0x7067/unreal-review/internal/eval"
 )
 
@@ -18,7 +20,7 @@ func TestEvalBlankOpenRouterKeyIsRejected(t *testing.T) {
 
 	out := filepath.Join(t.TempDir(), "artifacts")
 	err := cmdEval([]string{"--thinking-level", "nope", "--out", out})
-	if err == nil || err.Error() != "set OPENROUTER_API_KEY" {
+	if err == nil || !errors.Is(err, ErrAPIKey) {
 		t.Fatalf("blank key: %v", err)
 	}
 	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
@@ -41,7 +43,7 @@ func TestEvalUnknownCorpusLeavesNoDirectory(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "artifacts")
 	before := evalScratchDirs(t)
 	err := cmdEval([]string{"--corpus", "nope", "--out", out})
-	if err == nil || err.Error() != `unknown corpus "nope": use planted, martian, pr38, or labeled` {
+	if err == nil || !errors.Is(err, ErrUnknownCorpus) {
 		t.Fatalf("cmdEval(--out) = %v", err)
 	}
 	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
@@ -49,7 +51,7 @@ func TestEvalUnknownCorpusLeavesNoDirectory(t *testing.T) {
 	}
 
 	err = cmdEval([]string{"--corpus", "nope"})
-	if err == nil || err.Error() != `unknown corpus "nope": use planted, martian, pr38, or labeled` {
+	if err == nil || !errors.Is(err, ErrUnknownCorpus) {
 		t.Fatalf("cmdEval() = %v", err)
 	}
 	for dir := range evalScratchDirs(t) {
@@ -61,7 +63,7 @@ func TestEvalUnknownCorpusLeavesNoDirectory(t *testing.T) {
 	for _, corpus := range []string{"planted", "martian", "pr38", "labeled"} {
 		dir := filepath.Join(t.TempDir(), "artifacts")
 		err = cmdEval([]string{"--corpus", corpus, "--out", dir})
-		if err == nil || err.Error() == `unknown corpus "`+corpus+`": use planted, martian, pr38, or labeled` {
+		if err == nil || errors.Is(err, ErrUnknownCorpus) {
 			t.Fatalf("corpus %s: %v", corpus, err)
 		}
 		if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
@@ -81,6 +83,7 @@ func TestEvalBadMartianFlagsLeaveNoDirectory(t *testing.T) {
 		args []string
 		base string
 		want string
+		is   error
 	}{
 		{
 			args: []string{"--corpus", "martian", "--parallel", "0"},
@@ -98,6 +101,7 @@ func TestEvalBadMartianFlagsLeaveNoDirectory(t *testing.T) {
 			args: []string{"--corpus", "martian"},
 			base: "https://example.com/api/v1",
 			want: `UNREAL_REVIEW_OPENROUTER_API host "example.com" is not loopback; use 127.0.0.1, ::1, or localhost`,
+			is:   agent.ErrNotLoopback,
 		},
 	}
 	for _, check := range checks {
@@ -108,7 +112,7 @@ func TestEvalBadMartianFlagsLeaveNoDirectory(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "artifacts")
 			before := evalScratchDirs(t)
 			err := cmdEval(append(append([]string{}, check.args...), "--out", out))
-			if err == nil || err.Error() != check.want {
+			if err == nil || !evalErrIs(err, check.want, check.is) {
 				t.Fatalf("cmdEval(--out) = %v", err)
 			}
 			if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
@@ -116,7 +120,7 @@ func TestEvalBadMartianFlagsLeaveNoDirectory(t *testing.T) {
 			}
 
 			err = cmdEval(check.args)
-			if err == nil || err.Error() != check.want {
+			if err == nil || !evalErrIs(err, check.want, check.is) {
 				t.Fatalf("cmdEval() = %v", err)
 			}
 			for dir := range evalScratchDirs(t) {
@@ -126,6 +130,13 @@ func TestEvalBadMartianFlagsLeaveNoDirectory(t *testing.T) {
 			}
 		})
 	}
+}
+
+func evalErrIs(err error, want string, is error) bool {
+	if is != nil {
+		return errors.Is(err, is)
+	}
+	return err.Error() == want
 }
 
 func TestEvalRunsFlagLeavesNoDirectory(t *testing.T) {

@@ -106,7 +106,9 @@ func TestScoreMartianUnknownProfile(t *testing.T) {
 func TestJudgeMatchScoresOpenRouterReply(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"matches\":[{\"golden\":0,\"finding\":0}]}"}}],"usage":{"cost":0.125}}`))
+		if _, err := w.Write([]byte(`{"choices":[{"message":{"content":"{\"matches\":[{\"golden\":0,\"finding\":0}]}"}}],"usage":{"cost":0.125}}`)); err != nil {
+			t.Errorf("write: %v", err)
+		}
 	}))
 	t.Cleanup(srv.Close)
 

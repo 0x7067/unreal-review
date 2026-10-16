@@ -218,7 +218,10 @@ func testBoundedBash(t *testing.T, workspace, marker string) interface {
 }
 
 func bashCall(command string) llm.ToolCall {
-	arguments, _ := json.Marshal(map[string]any{"command": command, "max_output_length": 4096})
+	arguments, err := json.Marshal(map[string]any{"command": command, "max_output_length": 4096})
+	if err != nil {
+		panic(err)
+	}
 	return llm.ToolCall{CallID: "bash-1", Name: "bash", Arguments: string(arguments)}
 }
 
