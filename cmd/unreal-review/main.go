@@ -66,10 +66,8 @@ against HEAD. --from/--to is merge-base of those refs; omit --to to
 include the working tree. --commit reviews one commit against its
 parent. --branch reviews a branch since it diverged from main or
 master. --workspace selects the checkout. --model names the OpenRouter
-model. --fresh starts over an existing --out. --strategy defaults to
-focused: four parallel discovery passes (logic, concurrency, error
-handling, security), then verification. single is one pass.
---decompose requests bounded tasks below the automatic size
+model. --fresh starts over an existing --out. --strategy is single or
+focused. --decompose requests bounded tasks below the automatic size
 threshold. --timeout limits the review. --thinking-level defaults to
 high (low|medium|high|xhigh|max). --agent-log writes the harness
 session JSONL. Interrupt to pause; run again with the same --out to continue.

@@ -40,7 +40,7 @@ func cmdEval(args []string) error {
 	outDir := fs.String("out", "", "directory for eval artifacts (default: a fresh temp dir)")
 	model := fs.String("model", os.Getenv("UNREAL_HARNESS_LLM_MODEL"), "OpenRouter model id")
 	thinking := fs.String("thinking-level", "high", "low, medium, high, xhigh, or max")
-	strategy := fs.String("strategy", "focused", "focused (default: logic, concurrency, errors, security) or single")
+	strategy := fs.String("strategy", "single", "single or focused (four discovery passes plus verification)")
 	decompose := fs.Bool("decompose", false, "use bounded aggregate scopes for every review case")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
 	asJSON := fs.Bool("json", false, "print machine-readable JSON instead of a table")

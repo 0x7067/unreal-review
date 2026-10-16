@@ -112,6 +112,9 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 	}
 	defer func() { _ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN) }()
 	settings := []string{req.Workspace, req.Model, req.Prompt, req.SystemPrompt, focusedVersion, f.Config}
+	if discover, ok := f.Discovery.(Harness); ok {
+		settings = append(settings, discover.ThinkingLevel, fmt.Sprintf("%d", discover.MaxBashCalls))
+	}
 	if f.DiscoveryOnly {
 		settings = append(settings, "discovery-only")
 	}
