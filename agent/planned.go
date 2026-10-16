@@ -41,6 +41,10 @@ var _ review.Agent = Planned{}
 const plannedVersion = "planned-v1"
 const plannedBatchBytes = 100000
 
+// canonicalSpanWindow is how far a verifier span may sit from its candidate
+// and still be restored. The path must match; overlap is always near enough.
+const canonicalSpanWindow = 5
+
 type plannedReceipt struct {
 	ID         string        `json:"id"`
 	Stage      string        `json:"stage"`
@@ -635,24 +639,75 @@ func plannedValidateOutput(r findings.Report, candidates map[string]findings.Fin
 	return nil
 }
 
-// restoreCanonicalLocations copies path, lines, and anchor from a known candidate.
-// Severity and body stay with the verifier output.
-func restoreCanonicalLocations(items []findings.Finding, candidates map[string]findings.Finding) {
-	for i := range items {
-		original, ok := candidates[items[i].ID]
+func sameCanonicalLocation(a, b findings.Finding) bool {
+	return a.Path == b.Path && a.StartLine == b.StartLine && a.EndLine == b.EndLine && a.Anchor == b.Anchor
+}
+
+func withinCanonicalSpan(item, original findings.Finding) bool {
+	if item.Path != original.Path {
+		return false
+	}
+	if item.StartLine <= original.EndLine && original.StartLine <= item.EndLine {
+		return true
+	}
+	gap := item.StartLine - original.EndLine
+	if item.EndLine < original.StartLine {
+		gap = original.StartLine - item.EndLine
+	}
+	return gap <= canonicalSpanWindow
+}
+
+// restoreCanonicalLocations copies path, lines, and anchor from a known candidate
+// when the raw span is on the same path and overlaps or falls within
+// canonicalSpanWindow. Severity and body stay with the verifier output.
+// A raw location that belongs to a different candidate is ambiguous.
+func restoreCanonicalLocations(items []findings.Finding, candidates map[string]findings.Finding) error {
+	for i, item := range items {
+		original, ok := candidates[item.ID]
 		if !ok {
 			continue
 		}
-		items[i].Path = original.Path
-		items[i].StartLine = original.StartLine
-		items[i].EndLine = original.EndLine
-		items[i].Anchor = original.Anchor
+		if !sameCanonicalLocation(item, original) {
+			for id, c := range candidates {
+				if id != item.ID && sameCanonicalLocation(item, c) {
+					return fmt.Errorf("ambiguous verifier location")
+				}
+			}
+		}
+		if !withinCanonicalSpan(item, original) {
+			continue
+		}
+		item.Path = original.Path
+		item.StartLine = original.StartLine
+		item.EndLine = original.EndLine
+		item.Anchor = original.Anchor
+		items[i] = item
 	}
+	return nil
+}
+
+func plannedDuplicateRawID(items []findings.Finding, candidates map[string]findings.Finding) error {
+	seen := map[string]findings.Finding{}
+	for _, item := range items {
+		if _, known := candidates[item.ID]; !known {
+			continue
+		}
+		if prev, ok := seen[item.ID]; ok && !sameCanonicalLocation(prev, item) {
+			return fmt.Errorf("planned: duplicate verifier ID")
+		}
+		seen[item.ID] = item
+	}
+	return nil
 }
 
 func plannedRestoreCandidateIDs(items []findings.Finding, candidates map[string]findings.Finding) ([]findings.Finding, error) {
 	restored := append([]findings.Finding{}, items...)
-	restoreCanonicalLocations(restored, candidates)
+	if err := plannedDuplicateRawID(restored, candidates); err != nil {
+		return nil, err
+	}
+	if err := restoreCanonicalLocations(restored, candidates); err != nil {
+		return nil, err
+	}
 	claimed := map[string]bool{}
 	for _, item := range restored {
 		if _, ok := candidates[item.ID]; ok {

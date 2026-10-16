@@ -152,9 +152,8 @@ func TestFocusedResumeConfigurationValidation(t *testing.T) {
 func TestFocusedRestoresCanonicalLocationForKnownVerifierID(t *testing.T) {
 	candidate := focusedTestIssue("known-span")
 	moved := candidate
-	moved.Path = "moved.go"
-	moved.StartLine = 8
-	moved.EndLine = 11
+	moved.StartLine = 6
+	moved.EndLine = 7
 	moved.Anchor = findings.AnchorOld
 	moved.Severity = findings.SeverityWarning
 	moved.Body = "Sharper confirmed body"

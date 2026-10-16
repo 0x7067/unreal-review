@@ -235,7 +235,7 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 				report.Findings, e = focusedCoalesce(report.Findings)
 			}
 			if e == nil && stage == "verification" {
-				restoreCanonicalLocations(report.Findings, verifyCandidates)
+				e = restoreCanonicalLocations(report.Findings, verifyCandidates)
 			}
 			if e == nil {
 				e = focusedWriteReport(path, report)
