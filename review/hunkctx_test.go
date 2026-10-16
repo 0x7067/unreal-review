@@ -2,9 +2,11 @@ package review
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/0x7067/unreal-review/findings"
 )
@@ -157,4 +159,110 @@ func TestRunPromptCarriesCallerContext(t *testing.T) {
 	if planned == "" {
 		t.Fatal("planned discovery prompt omitted the caller")
 	}
+}
+
+func TestContextClipKeepsUTF8(t *testing.T) {
+	euro := strings.Repeat("a", 159) + "€"
+	got := trimLine(euro)
+	if !utf8.ValidString(got) || got != strings.Repeat("a", 159) || strings.Contains(got, "€") {
+		t.Fatalf("line clip split a rune: %q", got)
+	}
+
+	body := strings.Repeat("b", 30) + "€tail"
+	hits := []contextHit{{path: "q.go", line: 12, text: body, name: "Name"}}
+	sym := contextSymbol{path: "p.go", name: "Name", line: 1}
+	kept := formatSymbol(sym, hits, 1024)
+	if !strings.Contains(kept, "€tail") || !utf8.ValidString(kept) {
+		t.Fatalf("fitting caller dropped the euro sign:\n%s", kept)
+	}
+	clipped := formatSymbol(sym, hits, 57)
+	if !utf8.ValidString(clipped) || strings.Contains(clipped, "€") || strings.Contains(clipped, "tail") || !strings.Contains(clipped, strings.Repeat("b", 30)) {
+		t.Fatalf("symbol clip split a rune:\n%s", clipped)
+	}
+}
+
+func TestDiscoveryContextDropsGrepFailure(t *testing.T) {
+	dir := gitRepo(t)
+	writeRepoFile(t, dir, "live.go", "package p\n\nfunc Live() {}\n")
+	writeRepoFile(t, dir, "caller.go", "package p\n\nfunc Use() {\n\tLive() // LIVE_CALL\n\tAbsent() // CALLS_ABSENT\n}\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "base")
+	diff := `diff --git a/live.go b/live.go
+--- a/live.go
++++ b/live.go
+@@ -1,3 +1,3 @@
+ package p
+
+-func Live() {}
++func Live() { /* touch */ }
+diff --git a/missing.go b/missing.go
+--- a/missing.go
++++ b/missing.go
+@@ -1,3 +1,3 @@
+ package p
+-func Absent() {}
++func Absent() { /* GONE */ }
+`
+	got, err := discoveryContext(t.Context(), dir, resolved{}, diff, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "LIVE_CALL") || !strings.Contains(got, "CALLS_ABSENT") {
+		t.Fatalf("git repo dropped a caller:\n%s", got)
+	}
+
+	plain := t.TempDir()
+	writeRepoFile(t, plain, "live.go", "package p\n\nfunc Live() {}\n")
+	writeRepoFile(t, plain, "caller.go", "package p\n\nfunc Use() {\n\tLive() // LIVE_CALL\n\tAbsent() // CALLS_ABSENT\n}\n")
+	missed, err := discoveryContext(t.Context(), plain, resolved{}, diff, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missed != "" || strings.Contains(missed, "CALLS_ABSENT") {
+		t.Fatalf("grep failure still produced context:\n%s", missed)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := discoveryContext(ctx, dir, resolved{}, diff, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled context returned %v", err)
+	}
+}
+
+func TestBuildReviewPlanOmitsContextWhenGrepFails(t *testing.T) {
+	dir := gitRepo(t)
+	writeRepoFile(t, dir, "pkg/target.go", "package pkg\n\nfunc Target() {}\n")
+	writeRepoFile(t, dir, "pkg/caller.go", "package pkg\n\nfunc Use() { Target() // PROMPT_CALL }\n")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-q", "-m", "base")
+	writeRepoFile(t, dir, "pkg/target.go", "package pkg\n\nfunc Target() { /* changed */ }\n")
+	sel := planTestSelection(t, dir, Spec{})
+
+	plan, err := buildReviewPlan(t.Context(), dir, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(planPromptText(plan), "PROMPT_CALL") {
+		t.Fatal("plan dropped the caller")
+	}
+
+	plain := t.TempDir()
+	writeRepoFile(t, plain, "pkg/target.go", "package pkg\n\nfunc Target() { /* changed */ }\n")
+	writeRepoFile(t, plain, "pkg/caller.go", "package pkg\n\nfunc Use() { Target() // PROMPT_CALL }\n")
+	degraded, err := buildReviewPlan(t.Context(), plain, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(planPromptText(degraded), "PROMPT_CALL") {
+		t.Fatal("grep failure still attached callers to the plan")
+	}
+}
+
+func planPromptText(plan *ReviewPlan) string {
+	var b strings.Builder
+	for _, task := range plan.Tasks {
+		b.WriteString(task.Prompt)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
