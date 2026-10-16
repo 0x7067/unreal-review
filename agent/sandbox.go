@@ -495,7 +495,7 @@ func sweepStaleSandboxes(root string) {
 		removeSandboxTree(filepath.Join(root, entry.Name()))
 	}
 }
-func verifierSandboxAddendum(active bool, perCommand time.Duration) string {
+func execVerifierAddendum(active bool, perCommand time.Duration) string {
 	if !active {
 		return ""
 	}
@@ -504,15 +504,27 @@ func verifierSandboxAddendum(active bool, perCommand time.Duration) string {
 	}
 	seconds := int(perCommand / time.Second)
 	minutes := int(sandboxTaskWall / time.Minute)
-	return fmt.Sprintf("\nVerifier sandbox: the workspace is a scratch copy of the reviewed commit and code may be run offline here (go build, go vet, go test of the changed packages, or a repro written in this scratch copy). Each command is killed after %d s; the network is off. Reads are free; anything that runs code counts against the %d-minute budget. After that budget, decide from the evidence you have and do not run more code. This severity rule applies only to claims about runtime behavior. A finding that claims runtime behavior and is demonstrated by a command you ran in this session keeps its severity; cite that command and a short output excerpt in the body. A runtime-behavior claim you could not demonstrate is re-emitted with severity note, not dropped. A finding settled by reading the code alone (exact quoted lines at the cited range, such as a compile error or an always-false condition) may keep its severity. A wrong or missing argument, option, or condition visible in the diff is settled by reading the code and keeps its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change.", seconds, minutes)
+	return fmt.Sprintf("\nVerifier sandbox: the workspace is a scratch copy of the reviewed commit and code may be run offline here (go build, go vet, go test of the changed packages, or a repro written in this scratch copy). Each command is killed after %d s; the network is off. Reads are free; anything that runs code counts against the %d-minute budget. After that budget, decide from the evidence you have and do not run more code. Run code only for a low-confidence candidate: severity error whose cited lines do not include a changed line of the diff. Do not run code for a warning, a note, or a diff-visible candidate. This severity rule applies only to claims about runtime behavior. A finding that claims runtime behavior and is demonstrated by a command you ran in this session keeps its severity; cite that command and a short output excerpt in the body. A runtime-behavior claim you could not demonstrate is re-emitted with severity note, not dropped. A finding settled by reading the code alone (exact quoted lines at the cited range, such as a compile error or an always-false condition) may keep its severity. A wrong or missing argument, option, or condition visible in the diff is settled by reading the code and keeps its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change.", seconds, minutes)
+}
+
+const readOnlyVerifierAddendum = "\nVerifier sandbox: this batch is read-only. Every candidate is high-confidence (severity warning or note) or diff-visible (its cited lines include a changed line of the selected diff: an added line when anchor is new, a removed line when anchor is old). Code execution has no budget. cat, ls, head, nl, wc, tail, rg, and git show, grep, log, and diff still run. Any other command is refused. Decide from the code you read. A finding settled by exact quoted lines may keep its severity. Re-emit each candidate with the same id, path, lines, and anchor; only severity and body may change."
+
+func verifierSandboxAddendum(active bool, perCommand time.Duration, readOnly bool) string {
+	if readOnly {
+		return readOnlyVerifierAddendum
+	}
+	return execVerifierAddendum(active, perCommand)
 }
 func installCommandBudget(dir, inner string, wall time.Duration) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	secs := int(wall / time.Second)
-	if secs < 1 {
+	if wall > 0 && secs < 1 {
 		secs = 1
+	}
+	if secs < 0 {
+		secs = 0
 	}
 	state := filepath.Join(dir, "state")
 	body := fmt.Sprintf(`#!/bin/sh
@@ -627,22 +639,34 @@ exit "$code"
 	}
 	return path, nil
 }
-func applyVerifierSandbox(child *review.AgentRequest, agent review.Agent, sb *verifierSandbox) review.Agent {
+func applyVerifierSandbox(child *review.AgentRequest, agent review.Agent, sb *verifierSandbox, execWall time.Duration) review.Agent {
 	if sb == nil {
 		return agent
 	}
 	c := *sb
 	sb = &c
-	if sb.active && sb.shell != "" {
-		budget, err := installCommandBudget(filepath.Join(filepath.Dir(sb.shell), "budget", focusedHash(child.ReviewID)), sb.shell, sandboxTaskWall)
+	readOnly := execWall <= 0
+	if sb.shell != "" && !sb.disableBash && (sb.active || readOnly) {
+		wall := execWall
+		if !readOnly {
+			wall = sandboxTaskWall
+		}
+		budget, err := installCommandBudget(filepath.Join(filepath.Dir(sb.shell), "budget", focusedHash(child.ReviewID)), sb.shell, wall)
 		if err != nil {
-			sb, _ = sb.fallback("verifier sandbox unavailable (" + firstLine(err.Error()) + ")")
+			if readOnly {
+				sb.disableBash = true
+				sb.shell = ""
+			} else {
+				sb, _ = sb.fallback("verifier sandbox unavailable (" + firstLine(err.Error()) + ")")
+			}
 		} else {
 			sb.shell = budget
-			child.Workspace = sb.tree
+			if sb.active {
+				child.Workspace = sb.tree
+			}
 		}
 	}
-	child.SystemPrompt += verifierSandboxAddendum(sb.active, sb.commandTimeout)
+	child.SystemPrompt += verifierSandboxAddendum(sb.active, sb.commandTimeout, readOnly)
 	h, ok := agent.(Harness)
 	if sb.disableBash {
 		child.Shell = ""

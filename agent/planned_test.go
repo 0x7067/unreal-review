@@ -159,11 +159,20 @@ func TestVerifierWallCapPublishesCandidates(t *testing.T) {
 		return report
 	}
 	t.Run("partial", func(t *testing.T) {
-		verified := kept
-		verified.Body = "verified kept"
 		report := run(t, func(ctx context.Context, r review.AgentRequest) (review.AgentResult, error) {
-			if err := focusedWriteReport(r.FindingsPath, findings.Report{Findings: []findings.Finding{verified}, Summary: "verified one"}); err != nil {
+			items, err := plannedTestCandidates(r.Prompt)
+			if err != nil {
 				return review.AgentResult{}, err
+			}
+			for _, item := range items {
+				if item.ID != "kept" {
+					continue
+				}
+				verified := item
+				verified.Body = "verified kept"
+				if err := focusedWriteReport(r.FindingsPath, findings.Report{Findings: []findings.Finding{verified}, Summary: "verified one"}); err != nil {
+					return review.AgentResult{}, err
+				}
 			}
 			<-ctx.Done()
 			return review.AgentResult{Cost: findings.Cost{Currency: "USD", Requests: 1}}, ctx.Err()

@@ -240,7 +240,7 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 		var stopped bool
 		var e error
 		if stage == "verification" {
-			agent = applyVerifierSandbox(&child, agent, sb)
+			agent = applyVerifierSandbox(&child, agent, sb, verifierExecWall(keep, changedLines(reviewDiffText(req))))
 			r, stopped, e = runVerifier(ctx, f.verifierWall, path, keep, func(runCtx context.Context) (review.AgentResult, error) {
 				return agent.Run(runCtx, child)
 			})

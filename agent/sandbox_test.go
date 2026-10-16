@@ -260,7 +260,7 @@ func TestVerifierSandboxFallbackReasons(t *testing.T) {
 			t.Setenv("HOME", tc.home)
 			sb, n := prepareNotice(t, t.TempDir(), "abc", tc.id)
 			contains(t, n, tc.want)
-			got := applyVerifierSandbox(&review.AgentRequest{}, Harness{MaxBashCalls: 32, Shell: "/bin/sh"}, sb).(Harness)
+			got := applyVerifierSandbox(&review.AgentRequest{}, Harness{MaxBashCalls: 32, Shell: "/bin/sh"}, sb, sandboxTaskWall).(Harness)
 			if !sb.disableBash || got.MaxBashCalls != -1 || got.Shell != "" {
 				t.Fatalf("bash still enabled: %+v\n%s", got, n)
 			}
@@ -330,7 +330,7 @@ func TestBudgetInstallFailureAnnouncesFallback(t *testing.T) {
 	must(t, os.WriteFile(blocked, []byte("x"), 0o600))
 	sb := &verifierSandbox{active: true, root: root, shell: filepath.Join(blocked, "shell"), tree: root, commandTimeout: time.Second}
 	child := review.AgentRequest{ReviewID: "budget-install-failed", SystemPrompt: "base"}
-	got := applyVerifierSandbox(&child, Harness{Shell: "/bin/sh"}, sb).(Harness)
+	got := applyVerifierSandbox(&child, Harness{Shell: "/bin/sh"}, sb, sandboxTaskWall).(Harness)
 	note := notices.String()
 	if !strings.Contains(note, "unreal-review: verifier sandbox unavailable (") || !strings.Contains(note, sandboxScrubbed) {
 		t.Fatalf("fallback notice:\n%s", note)
@@ -350,7 +350,7 @@ func TestVerifierBatchesKeepSeparateBudgets(t *testing.T) {
 	sb := &verifierSandbox{active: true, shell: inner, tree: dir, commandTimeout: time.Second}
 	wrap := func(id string) string {
 		child := review.AgentRequest{ReviewID: id, SystemPrompt: "base"}
-		return applyVerifierSandbox(&child, Harness{}, sb).(Harness).Shell
+		return applyVerifierSandbox(&child, Harness{}, sb, sandboxTaskWall).(Harness).Shell
 	}
 	first := wrap("batch-1")
 	second := wrap("batch-2")
@@ -547,6 +547,121 @@ func TestInactiveFocusedVerifierPromptIsUnchanged(t *testing.T) {
 	must(t, err)
 	if prompt != req.SystemPrompt+focusedVerificationSuffix {
 		t.Fatalf("inactive focused prompt:\n%s", prompt)
+	}
+}
+
+func TestPlannedVerifierSkipsExecForHighConfidence(t *testing.T) {
+	captureNotices(t)
+	req := plannedTestRequest(t)
+	req.Plan.Tasks[0].Prompt = "Review local a\n```diff\n" +
+		"diff --git a/a.go b/a.go\n" +
+		"--- a/a.go\n" +
+		"+++ b/a.go\n" +
+		"@@ -1,3 +1,3 @@\n" +
+		" package p\n" +
+		"-func Old() {}\n" +
+		"+func New() {}\n" +
+		" func Stay() {}\n" +
+		"```\n"
+	visible := plannedTestIssue("visible")
+	visible.StartLine, visible.EndLine = 2, 2
+	visible.Body = "Added function does the wrong thing"
+	removed := plannedTestIssue("removed")
+	removed.Anchor = findings.AnchorOld
+	removed.StartLine, removed.EndLine = 2, 2
+	removed.Body = "Removed function was the only check"
+	note := plannedTestIssue("note")
+	note.Severity = findings.SeverityNote
+	note.Path = "caller.go"
+	note.StartLine, note.EndLine = 40, 40
+	note.Body = "Small note outside the diff"
+	warning := plannedTestIssue("warning")
+	warning.Severity = findings.SeverityWarning
+	warning.Path = "other.go"
+	warning.StartLine, warning.EndLine = 9, 9
+	warning.Body = "Weak claim outside the diff"
+	contextLine := plannedTestIssue("context")
+	contextLine.StartLine, contextLine.EndLine = 1, 1
+	contextLine.Body = "Context line hides a crash"
+	hidden := plannedTestIssue("hidden")
+	hidden.Path = "caller.go"
+	hidden.StartLine, hidden.EndLine = 40, 41
+	hidden.Body = "Caller crashes on the new return"
+	noteFile := filepath.Join(t.TempDir(), "note.txt")
+	must(t, os.WriteFile(noteFile, []byte("readable-line\n"), 0o644))
+	catCmd := "cat " + shQuote(noteFile)
+
+	type batch struct {
+		ids  map[string]bool
+		echo string
+		cat  string
+	}
+	var batches []batch
+	fake := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		if strings.Contains(r.Prompt, "Planned discovery") {
+			if strings.Contains(r.Prompt, "local-a") {
+				return plannedTestEmit(r, []findings.Finding{visible, removed, note, warning, contextLine, hidden})
+			}
+			return plannedTestEmit(r, nil)
+		}
+		if strings.Contains(r.Prompt, "Planned consolidation") {
+			items, err := plannedTestCandidates(r.Prompt)
+			if err != nil {
+				return review.AgentResult{}, err
+			}
+			return plannedTestEmit(r, items)
+		}
+		if !strings.Contains(r.Prompt, "Planned verification") {
+			return plannedTestEmit(r, nil)
+		}
+		items, err := plannedTestCandidates(r.Prompt)
+		if err != nil {
+			return review.AgentResult{}, err
+		}
+		echo, echoCode := runShell(t, r.Shell, "echo ran-code")
+		cat, catCode := runShell(t, r.Shell, catCmd)
+		if echoCode != 0 || catCode != 0 {
+			t.Fatalf("shell exit echo=%d cat=%d\necho:\n%s\ncat:\n%s", echoCode, catCode, echo, cat)
+		}
+		ids := map[string]bool{}
+		for _, item := range items {
+			ids[item.ID] = true
+		}
+		batches = append(batches, batch{ids: ids, echo: echo, cat: cat})
+		return plannedTestEmit(r, items)
+	})
+	_, err := (Planned{Agent: fake, Verifier: fake, Consolidator: fake, Config: "single/high"}).Run(t.Context(), req)
+	must(t, err)
+	if len(batches) != 2 {
+		t.Fatalf("verification batches = %d, want 2", len(batches))
+	}
+	var high, low *batch
+	for i := range batches {
+		if batches[i].ids["visible"] {
+			high = &batches[i]
+		}
+		if batches[i].ids["hidden"] {
+			low = &batches[i]
+		}
+	}
+	if high == nil || low == nil {
+		t.Fatalf("batches did not separate confidence: %+v", batches)
+	}
+	for _, id := range []string{"visible", "removed", "note", "warning"} {
+		if !high.ids[id] {
+			t.Fatalf("high-confidence batch missing %s: %v", id, high.ids)
+		}
+	}
+	for _, id := range []string{"context", "hidden"} {
+		if high.ids[id] || !low.ids[id] {
+			t.Fatalf("low-confidence split = high %v low %v", high.ids, low.ids)
+		}
+	}
+	if strings.TrimSpace(high.echo) != sandboxBudgetSpent || strings.TrimSpace(high.cat) != "readable-line" {
+		t.Fatalf("high-confidence exec was not skipped:\necho:\n%s\ncat:\n%s", high.echo, high.cat)
+	}
+	if strings.TrimSpace(low.echo) != "ran-code" || strings.Contains(low.echo, sandboxBudgetSpent) || strings.TrimSpace(low.cat) != "readable-line" {
+		t.Fatalf("low-confidence exec was not allowed:\necho:\n%s\ncat:\n%s", low.echo, low.cat)
 	}
 }
 
