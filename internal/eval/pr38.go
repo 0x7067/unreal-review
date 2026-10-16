@@ -3,8 +3,6 @@ package eval
 import (
 	"context"
 	"fmt"
-	"path/filepath"
-	"time"
 
 	"github.com/0x7067/unreal-review/findings"
 	"github.com/0x7067/unreal-review/review"
@@ -49,14 +47,24 @@ var pr38Labels = []pr38Label{
 	{ID: "F11", Verdict: "weak", Sites: []pr38Site{{Path: "internal/agent/strategy.go", StartLine: 41, EndLine: 42}}},
 }
 
-func pr38RealCount() int {
+func realCount(labels []pr38Label) int {
 	n := 0
-	for _, label := range pr38Labels {
+	for _, label := range labels {
 		if label.Verdict == "real" {
 			n++
 		}
 	}
 	return n
+}
+
+func realIDs(labels []pr38Label) []string {
+	ids := make([]string, 0, len(labels))
+	for _, label := range labels {
+		if label.Verdict == "real" {
+			ids = append(ids, label.ID)
+		}
+	}
+	return ids
 }
 
 func PR38CaseNames() []string { return []string{pr38Name} }
@@ -109,6 +117,10 @@ type PR38Report struct {
 }
 
 func ScorePR38(report findings.Report) PR38Score {
+	return scoreLabels(pr38Labels, report)
+}
+
+func scoreLabels(labels []pr38Label, report findings.Report) PR38Score {
 	score := PR38Score{HitIDs: []string{}}
 	if report.Run != nil {
 		score.Status = string(report.Run.Status)
@@ -122,25 +134,25 @@ func ScorePR38(report findings.Report) PR38Score {
 		if finding.Severity == findings.SeverityError {
 			errors++
 		}
-		idx, ok := assignedLabel(finding)
+		idx, ok := assignedLabel(labels, finding)
 		if !ok {
 			score.Unlabeled++
 			continue
 		}
-		label := pr38Labels[idx]
+		label := labels[idx]
 		if label.Verdict == "real" {
 			hit[label.ID] = true
 			continue
 		}
 		score.Weak++
 	}
-	for _, label := range pr38Labels {
+	for _, label := range labels {
 		if label.Verdict == "real" && hit[label.ID] {
 			score.Hits++
 			score.HitIDs = append(score.HitIDs, label.ID)
 		}
 	}
-	score.Recall = Agreement(score.Hits, pr38RealCount())
+	score.Recall = Agreement(score.Hits, realCount(labels))
 	score.Precision = pr38Precision(score.Hits, score.Weak)
 	score.ErrorShare = pr38Rate(errors, score.Produced)
 	return score
@@ -161,11 +173,11 @@ func pr38Rate(part, total int) float64 {
 	return float64(part) / float64(total)
 }
 
-func assignedLabel(finding findings.Finding) (int, bool) {
+func assignedLabel(labels []pr38Label, finding findings.Finding) (int, bool) {
 	best, bestN := -1, 0
-	for i, label := range pr38Labels {
+	for i, label := range labels {
 		n := labelOverlap(finding, label)
-		weakWins := n == bestN && best >= 0 && pr38Labels[best].Verdict != "weak" && label.Verdict == "weak"
+		weakWins := n == bestN && best >= 0 && labels[best].Verdict != "weak" && label.Verdict == "weak"
 		if n > 0 && (best < 0 || n > bestN || weakWins) {
 			best, bestN = i, n
 		}
@@ -198,7 +210,11 @@ func overlapLen(a0, a1, b0, b1 int) int {
 }
 
 func AggregatePR38(scores []PR38Score) PR38Report {
-	report := PR38Report{Corpus: pr38Name, Runs: scores, Real: pr38RealCount(), UnionHits: []string{}}
+	return aggregateLabels(pr38Name, realIDs(pr38Labels), scores)
+}
+
+func aggregateLabels(corpus string, ids []string, scores []PR38Score) PR38Report {
+	report := PR38Report{Corpus: corpus, Runs: scores, Real: len(ids), UnionHits: []string{}}
 	seen := map[string]bool{}
 	var precSum float64
 	var precN int
@@ -236,9 +252,9 @@ func AggregatePR38(scores []PR38Score) PR38Report {
 		v := precSum / float64(precN)
 		report.Mean.Precision = &v
 	}
-	for _, label := range pr38Labels {
-		if label.Verdict == "real" && seen[label.ID] {
-			report.UnionHits = append(report.UnionHits, label.ID)
+	for _, id := range ids {
+		if seen[id] {
+			report.UnionHits = append(report.UnionHits, id)
 		}
 	}
 	report.Union = len(report.UnionHits)
@@ -246,22 +262,11 @@ func AggregatePR38(scores []PR38Score) PR38Report {
 }
 
 func RunPR38(ctx context.Context, root string, opts Options) (PR38Score, error) {
-	dir := filepath.Join(root, pr38Name)
-	head, err := checkoutMartian(ctx, MartianCase{
-		Name: pr38Name, Repo: pr38Repo, Base: pr38Base, Head: pr38Head, Title: "PR #38",
-	}, dir)
-	if err != nil {
-		return PR38Score{}, fmt.Errorf("set up %s: %w", pr38Name, err)
+	c, ok := labeledCaseByName(pr38Name)
+	if !ok {
+		return PR38Score{}, fmt.Errorf("set up %s: missing case", pr38Name)
 	}
-	findingsPath := filepath.Join(root, pr38Name+".findings.jsonl")
-	start := time.Now()
-	result, runErr := review.Run(ctx, pr38ReviewOptions(dir, head, findingsPath, opts))
-	score := ScorePR38(result.Report)
-	score.DurationMS = time.Since(start).Milliseconds()
-	if runErr != nil {
-		score.Err = runErr.Error()
-	}
-	return score, nil
+	return runLabeled(ctx, root, c, opts)
 }
 
 func pr38ReviewOptions(dir, head, findingsPath string, opts Options) review.Options {
