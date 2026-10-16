@@ -252,7 +252,7 @@ func offHostSink(t *testing.T) (*atomic.Int32, string) {
 	var lc net.ListenConfig
 	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.2:0")
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("127.0.0.2 is not bindable: %v", err)
 	}
 	var hits atomic.Int32
 	sink := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

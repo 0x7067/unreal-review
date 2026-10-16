@@ -161,10 +161,7 @@ func buildReviewPlan(ctx context.Context, workspace string, sel selection) (*Rev
 }
 
 func planJSON(value any) string {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return ""
-	}
+	data, _ := json.Marshal(value) //nolint:errcheck // marshaling strings and numbers cannot fail
 	return string(data)
 }
 

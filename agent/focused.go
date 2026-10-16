@@ -104,11 +104,11 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 	if err != nil {
 		return result, fmt.Errorf("focused: lock: %w", err)
 	}
-	defer func() { runErr = errors.Join(runErr, lockFile.Close()) }()
+	defer func() { _ = lockFile.Close() }() //nolint:errcheck // releasing the lock must not fail the run
 	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return result, fmt.Errorf("focused: review already running: %w", err)
 	}
-	defer func() { runErr = errors.Join(runErr, unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)) }()
+	defer func() { _ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN) }() //nolint:errcheck // unlocking must not fail the run
 	settings := []string{req.Workspace, req.Model, req.Prompt, req.SystemPrompt, focusedVersion, f.Config}
 	if f.DiscoveryOnly {
 		settings = append(settings, "discovery-only")
@@ -567,6 +567,6 @@ func focusedAtomic(path string, b []byte) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, dir.Close()) }()
+	defer func() { _ = dir.Close() }() //nolint:errcheck // directory close after a successful rename and sync must not fail the write
 	return dir.Sync()
 }

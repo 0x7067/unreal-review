@@ -174,10 +174,7 @@ func droppedLine(finding findings.Finding) string {
 
 func droppedMarker(finding findings.Finding) string {
 	finding.Body = strings.Join(strings.Fields(finding.Body), " ")
-	raw, err := json.Marshal(finding)
-	if err != nil {
-		return ""
-	}
+	raw, _ := json.Marshal(finding) //nolint:errcheck // a finding of strings and ints cannot fail to marshal
 	return droppedMarkerPrefix + base64.RawURLEncoding.EncodeToString(raw) + " -->"
 }
 

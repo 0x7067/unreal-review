@@ -72,7 +72,6 @@ func renderGitHub(args []string) error {
 	fs := flag.NewFlagSet("render github", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	f := registerGitHubFlags(fs)
-	prSpec, repo, commit, dryRun := f.pr, f.repo, f.commit, f.dryRun
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
@@ -80,14 +79,14 @@ func renderGitHub(args []string) error {
 	if err != nil {
 		return err
 	}
-	if !*dryRun && !report.Complete() {
+	if !*f.dryRun && !report.Complete() {
 		status := findings.StatusRunning
 		if report.Run != nil && report.Run.Status != "" {
 			status = report.Run.Status
 		}
 		return fmt.Errorf("findings are %s; resume the review before posting", status)
 	}
-	owner, name, number, err := resolvePR(*prSpec, *repo)
+	owner, name, number, err := resolvePR(*f.pr, *f.repo)
 	if err != nil {
 		return err
 	}
@@ -100,7 +99,7 @@ func renderGitHub(args []string) error {
 		Owner:      owner,
 		Repo:       name,
 		PullNumber: number,
-		CommitID:   *commit,
+		CommitID:   *f.commit,
 	}
 	var (
 		state           github.PullState
@@ -142,7 +141,7 @@ func renderGitHub(args []string) error {
 		opts.History = render.HistoryOf(state)
 	}
 	result := render.GitHub(report, opts)
-	if *dryRun {
+	if *f.dryRun {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetEscapeHTML(false)
 		enc.SetIndent("", "  ")

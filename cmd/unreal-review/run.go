@@ -49,27 +49,25 @@ func cmdRun(args []string) (err error) {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	f := registerRunFlags(fs)
-	workspace, spec, pr, repo, exclude, outPath, fresh, decompose := f.workspace, f.spec, f.pr, f.repo, f.exclude, f.outPath, f.fresh, f.decompose
-	model, thinking, strategy, timeout, agentLog := f.model, f.thinking, f.strategy, f.timeout, f.agentLog
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
-	if *model == "" {
+	if *f.model == "" {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")
 	}
 	key := secret("OPENROUTER_API_KEY")
 	if strings.TrimSpace(key) == "" {
-		return fmt.Errorf("%w", ErrAPIKey)
+		return ErrAPIKey
 	}
-	level, err := agent.SanitizeLevel(*thinking)
+	level, err := agent.SanitizeLevel(*f.thinking)
 	if err != nil {
 		return err
 	}
-	selected := spec.spec()
-	selected.Pull = *pr
+	selected := f.spec.spec()
+	selected.Pull = *f.pr
 	var resolver review.PullResolver
-	if *pr != "" {
-		resolver, err = newPullResolver(secret("GH_TOKEN"), *repo)
+	if *f.pr != "" {
+		resolver, err = newPullResolver(secret("GH_TOKEN"), *f.repo)
 		if err != nil {
 			return err
 		}
@@ -78,33 +76,33 @@ func cmdRun(args []string) (err error) {
 	// here would truncate an existing log when --strategy, the git range, or
 	// an empty diff fails first.
 	var logWriter io.Writer
-	if *agentLog != "" {
-		logFile := &agentLogFile{path: *agentLog}
+	if *f.agentLog != "" {
+		logFile := &agentLogFile{path: *f.agentLog}
 		defer func() { err = errors.Join(err, logFile.Close()) }()
 		logWriter = logFile
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	reviewer, err := agent.ReviewPipeline(*strategy, agent.Harness{
-		APIKey: key, ThinkingLevel: level, Log: logWriter, Timeout: *timeout,
+	reviewer, err := agent.ReviewPipeline(*f.strategy, agent.Harness{
+		APIKey: key, ThinkingLevel: level, Log: logWriter, Timeout: *f.timeout,
 	})
 	if err != nil {
 		return err
 	}
 	result, err := review.Run(ctx, review.Options{
-		Workspace: *workspace,
+		Workspace: *f.workspace,
 		Spec:      selected,
 		Paths:     fs.Args(),
-		Exclude:   *exclude,
-		Out:       *outPath,
-		Fresh:     *fresh,
-		Decompose: *decompose,
-		Model:     *model,
+		Exclude:   *f.exclude,
+		Out:       *f.outPath,
+		Fresh:     *f.fresh,
+		Decompose: *f.decompose,
+		Model:     *f.model,
 		Pull:      resolver,
 		Agent:     reviewer,
 	})
-	if (*outPath == "" || *outPath == "-") && result.Report.Run != nil {
-		out, writeErr := openOut(*outPath)
+	if (*f.outPath == "" || *f.outPath == "-") && result.Report.Run != nil {
+		out, writeErr := openOut(*f.outPath)
 		if writeErr != nil {
 			return writeErr
 		}

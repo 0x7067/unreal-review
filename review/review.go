@@ -114,7 +114,14 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 	if err != nil {
 		return Result{}, err
 	}
-	defer func() { err = errors.Join(err, cleanup()) }()
+	defer func() {
+		cleanErr := cleanup()
+		if err == nil {
+			// Removing the temp findings file must not fail a successful run.
+			return
+		}
+		err = errors.Join(err, cleanErr)
+	}()
 
 	prior, err := readWork(findingsPath)
 	if err != nil {
@@ -346,7 +353,13 @@ func prepareWork(out string, truncate bool) (string, func() error, error) {
 	if err := file.Close(); err != nil {
 		return "", func() error { return nil }, errors.Join(fmt.Errorf("close findings file: %w", err), os.Remove(path))
 	}
-	return path, func() error { return os.Remove(path) }, nil
+	return path, func() error {
+		rmErr := os.Remove(path)
+		if rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			return rmErr
+		}
+		return nil
+	}, nil
 }
 
 func openWork(path string, truncate bool) error {

@@ -110,7 +110,14 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (result revie
 	if err != nil {
 		return review.AgentResult{}, fmt.Errorf("create openrouter client: %w", err)
 	}
-	defer func() { err = errors.Join(err, closeAdapter()) }()
+	defer func() {
+		closeErr := closeAdapter()
+		if err != nil {
+			err = errors.Join(err, closeErr)
+			return
+		}
+		// Releasing the client must not fail a run that succeeded.
+	}()
 	return h.run(ctx, adapter, req)
 }
 

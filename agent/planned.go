@@ -150,11 +150,11 @@ func (p Planned) Run(ctx context.Context, req review.AgentRequest) (result revie
 	if err != nil {
 		return result, err
 	}
-	defer func() { runErr = errors.Join(runErr, lock.Close()) }()
+	defer func() { _ = lock.Close() }() //nolint:errcheck // releasing the lock must not fail the run
 	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		return result, fmt.Errorf("planned: already running: %w", err)
 	}
-	defer func() { runErr = errors.Join(runErr, unix.Flock(int(lock.Fd()), unix.LOCK_UN)) }()
+	defer func() { _ = unix.Flock(int(lock.Fd()), unix.LOCK_UN) }() //nolint:errcheck // unlocking must not fail the run
 	binding, err := plannedJSON(struct {
 		Workspace, Model, Prompt, System, Version, Config string
 		Parallel                                          int

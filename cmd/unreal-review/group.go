@@ -33,17 +33,16 @@ func cmdGroup(args []string) error {
 	fs := flag.NewFlagSet("group", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	f := registerGroupFlags(fs)
-	workspace, spec, exclude := f.workspace, f.spec, f.exclude
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	result, err := review.Groups(ctx, *workspace, spec.spec(), fs.Args(), *exclude)
+	result, err := review.Groups(ctx, *f.workspace, f.spec.spec(), fs.Args(), *f.exclude)
 	if err != nil {
 		return err
 	}
-	return printGroups(os.Stdout, result, *workspace, *exclude)
+	return printGroups(os.Stdout, result, *f.workspace, *f.exclude)
 }
 
 func printGroups(w io.Writer, result review.GroupResult, workspace string, exclude []string) error {
