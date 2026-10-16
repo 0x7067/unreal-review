@@ -84,6 +84,11 @@ func finishPR38(stdout, stderr io.Writer, report eval.PR38Report, asJSON bool, r
 }
 
 func printPR38(w io.Writer, report eval.PR38Report) {
+	printScoreTable(w, report)
+	_, _ = fmt.Fprintln(w, eval.PR38Rule())
+}
+
+func printScoreTable(w io.Writer, report eval.PR38Report) {
 	writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(writer, "run\tstatus\trecall\tprecision\thits\tweak\tunlabeled\terror\tfindings\tcost\trequests\ttime")
 	for _, score := range report.Runs {
@@ -101,7 +106,6 @@ func printPR38(w io.Writer, report eval.PR38Report) {
 		mean.Produced, mean.CostUSD, mean.Requests, int64(mean.DurationMS)/1000)
 	_, _ = fmt.Fprintf(writer, "union\t%s\t\t\t%d/%d\t\t\t\t\t$%.4f total\n", strings.Join(report.UnionHits, ","), report.Union, report.Real, report.CostUSD)
 	_ = writer.Flush()
-	_, _ = fmt.Fprintln(w, eval.PR38Rule())
 }
 
 func formatPrecision(p *float64) string {

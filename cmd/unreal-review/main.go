@@ -52,7 +52,7 @@ Usage:
                     [--agent-log <path>] [paths...]
   unreal-review group [--workspace <dir>] [--from <rev> [--to <rev>] | --commit <rev> | --branch <name>]
                       [--exclude <glob>] [paths...]
-  unreal-review eval [--model <id>] [--out <dir>] [--json] [--corpus planted|martian|pr38]
+  unreal-review eval [--model <id>] [--out <dir>] [--json] [--corpus planted|martian|pr38|labeled]
                      [--runs N] [--profile core|strict|all] [--parallel N] [--cases a,b] [--judge-model <id>]
                      [--thinking-level low|medium|high|xhigh|max] [--strategy single|focused]
                      [--decompose] [--timeout <duration>]
@@ -81,7 +81,9 @@ scores the findings file against the planted issues; --corpus martian
 reviews the Martian Code Review Bench pull requests and matches findings
 to golden comments with an LLM judge; --corpus pr38 reviews this
 repository's pull request #38 and scores real and weak labels from
-earlier runs of that range. --runs repeats the pr38 corpus. Eval calls the
+earlier runs of that range. --corpus labeled reviews that range plus
+other labeled pull requests of this repository and prints each case
+with a pooled score. --runs repeats the pr38 and labeled corpora. Eval calls the
 model and costs money. Render reads that document and produces a
 display-specific output. GitHub inline comments are a renderer, not
 the review itself. GitHub posting requires a complete review.

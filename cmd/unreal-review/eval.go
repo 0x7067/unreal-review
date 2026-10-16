@@ -44,25 +44,25 @@ func cmdEval(args []string) error {
 	decompose := fs.Bool("decompose", false, "use bounded aggregate scopes for every review case")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
 	asJSON := fs.Bool("json", false, "print machine-readable JSON instead of a table")
-	corpus := fs.String("corpus", "planted", "planted, martian, or pr38")
+	corpus := fs.String("corpus", "planted", "planted, martian, pr38, or labeled")
 	profile := fs.String("profile", "core", "martian golden categories: core, strict, or all")
 	parallel := fs.Int("parallel", 8, "martian cases reviewed at once")
 	only := fs.String("cases", "", "comma-separated case names for the selected corpus (default: all)")
 	judgeModel := fs.String("judge-model", "anthropic/claude-sonnet-5.5", "OpenRouter model that matches martian findings to golden comments")
-	runs := fs.Int("runs", 1, "repeat the pr38 corpus and print each run, the mean, and the union of hits")
+	runs := fs.Int("runs", 1, "repeat the pr38 or labeled corpus and print each run, the mean, and the union of hits")
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
 	switch *corpus {
-	case "planted", "martian", "pr38":
+	case "planted", "martian", "pr38", "labeled":
 	default:
-		return fmt.Errorf("unknown corpus %q: use planted, martian, or pr38", *corpus)
+		return fmt.Errorf("unknown corpus %q: use planted, martian, pr38, or labeled", *corpus)
 	}
 	if *runs < 1 {
 		return fmt.Errorf("--runs must be at least 1")
 	}
-	if *runs != 1 && *corpus != "pr38" {
-		return fmt.Errorf("--runs applies to the pr38 corpus")
+	if *runs != 1 && *corpus != "pr38" && *corpus != "labeled" {
+		return fmt.Errorf("--runs applies to the pr38 and labeled corpora")
 	}
 	if *model == "" {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")
@@ -100,6 +100,13 @@ func cmdEval(args []string) error {
 			return err
 		}
 	}
+	var labeledNames []string
+	if *corpus == "labeled" {
+		labeledNames, err = selectNamed(eval.LabeledCaseNames(), *only, "labeled", func(name string) string { return name })
+		if err != nil {
+			return err
+		}
+	}
 	root := *outDir
 	if root == "" {
 		temp, err := os.MkdirTemp("", "unreal-review-eval-")
@@ -119,6 +126,8 @@ func cmdEval(args []string) error {
 		return evalMartian(ctx, root, *model, reviewer, key, ready)
 	case "pr38":
 		return evalPR38(ctx, root, *model, reviewer, *runs, *decompose, *asJSON)
+	case "labeled":
+		return evalLabeled(ctx, root, *model, reviewer, *runs, *decompose, *asJSON, labeledNames)
 	}
 	scores := make([]eval.Score, 0, len(planted))
 	for _, c := range planted {

@@ -37,7 +37,7 @@ Preconditions:
 
 ## Gotchas
 
-- `--cases` selects names in the planted, martian, or pr38 corpus and rejects unknown or duplicate names. Compare the same selected cases with both strategies. Eval can exit successfully while a case is paused, so inspect `status`, `err`, and `total.completed` in stdout rather than treating exit zero as complete coverage.
+- `--cases` selects names in the planted, martian, pr38, or labeled corpus and rejects unknown or duplicate names. Compare the same selected cases with both strategies. Eval can exit successfully while a case is paused, so inspect `status`, `err`, and `total.completed` in stdout rather than treating exit zero as complete coverage.
 - The focused strategy costs more calls and may take longer. `--timeout` covers the whole invocation, not each child.
 - Notes are currently eligible for GitHub inline comments. They are not automatically hidden.
 - Candidate reports are not publishable reviews. Render only the root public findings file.

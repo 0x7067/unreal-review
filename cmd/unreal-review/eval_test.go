@@ -41,7 +41,7 @@ func TestEvalUnknownCorpusLeavesNoDirectory(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "artifacts")
 	before := evalScratchDirs(t)
 	err := cmdEval([]string{"--corpus", "nope", "--out", out})
-	if err == nil || err.Error() != `unknown corpus "nope": use planted, martian, or pr38` {
+	if err == nil || err.Error() != `unknown corpus "nope": use planted, martian, pr38, or labeled` {
 		t.Fatalf("cmdEval(--out) = %v", err)
 	}
 	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
@@ -49,7 +49,7 @@ func TestEvalUnknownCorpusLeavesNoDirectory(t *testing.T) {
 	}
 
 	err = cmdEval([]string{"--corpus", "nope"})
-	if err == nil || err.Error() != `unknown corpus "nope": use planted, martian, or pr38` {
+	if err == nil || err.Error() != `unknown corpus "nope": use planted, martian, pr38, or labeled` {
 		t.Fatalf("cmdEval() = %v", err)
 	}
 	for dir := range evalScratchDirs(t) {
@@ -58,10 +58,10 @@ func TestEvalUnknownCorpusLeavesNoDirectory(t *testing.T) {
 		}
 	}
 
-	for _, corpus := range []string{"planted", "martian", "pr38"} {
+	for _, corpus := range []string{"planted", "martian", "pr38", "labeled"} {
 		dir := filepath.Join(t.TempDir(), "artifacts")
 		err = cmdEval([]string{"--corpus", corpus, "--out", dir})
-		if err == nil || err.Error() == `unknown corpus "`+corpus+`": use planted, martian, or pr38` {
+		if err == nil || err.Error() == `unknown corpus "`+corpus+`": use planted, martian, pr38, or labeled` {
 			t.Fatalf("corpus %s: %v", corpus, err)
 		}
 		if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
@@ -136,8 +136,9 @@ func TestEvalRunsFlagLeavesNoDirectory(t *testing.T) {
 		want string
 	}{
 		{args: []string{"--corpus", "pr38", "--runs", "0"}, want: "--runs must be at least 1"},
-		{args: []string{"--corpus", "planted", "--runs", "3"}, want: "--runs applies to the pr38 corpus"},
-		{args: []string{"--corpus", "martian", "--runs", "2"}, want: "--runs applies to the pr38 corpus"},
+		{args: []string{"--corpus", "planted", "--runs", "3"}, want: "--runs applies to the pr38 and labeled corpora"},
+		{args: []string{"--corpus", "martian", "--runs", "2"}, want: "--runs applies to the pr38 and labeled corpora"},
+		{args: []string{"--corpus", "labeled", "--runs", "2"}, want: "set --model or UNREAL_HARNESS_LLM_MODEL"},
 	}
 	for _, check := range checks {
 		t.Run(check.want, func(t *testing.T) {
