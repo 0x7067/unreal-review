@@ -323,11 +323,45 @@ func TestLoopbackModelAdapterRefusesOffHostRedirect(t *testing.T) {
 			Data: llm.Message{Role: llm.RoleUser, Text: "hi"},
 		}},
 	}, llm.RequestOptions{})
-	if err == nil || !errors.Is(err, ErrNotLoopback) {
-		t.Fatalf("error = %v, want not loopback", err)
+	if err == nil {
+		t.Fatal("off-host redirect was followed")
 	}
 	if got := hits.Load(); got != 0 {
 		t.Fatalf("redirect target saw %d requests", got)
+	}
+}
+
+func TestProviderTextNotLoopbackIsNotSentinel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		if _, err := w.Write([]byte(`{"error":{"message":"not loopback","code":"bad_request"}}`)); err != nil {
+			t.Errorf("write: %v", err)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	adapter, closeAdapter, err := newLoopbackModelAdapter("secret", srv.URL+"/api/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := closeAdapter(); err != nil {
+			t.Error(err)
+		}
+	})
+	_, err = adapter.Respond(t.Context(), llm.Request{
+		Model: llm.Model{ID: "test"},
+		Input: []llm.Item{{
+			Type: llm.ItemMessage,
+			Data: llm.Message{Role: llm.RoleUser, Text: "hi"},
+		}},
+	}, llm.RequestOptions{})
+	if err == nil || !strings.Contains(err.Error(), "not loopback") {
+		t.Fatalf("error = %v, want the provider text", err)
+	}
+	if errors.Is(err, ErrNotLoopback) {
+		t.Fatalf("provider text identified as loopback refusal: %v", err)
 	}
 }
 

@@ -439,12 +439,15 @@ func AppendSummary(path, body string) error {
 	return appendLine(path, record{V: SchemaVersion, Type: TypeSummary, Body: body})
 }
 
+// closeWritten closes an appended findings file. A test replaces it to fail the close.
+var closeWritten = func(file *os.File) error { return file.Close() }
+
 func appendLine(path string, rec record) (err error) {
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
-	defer func() { _ = file.Close() }() //nolint:errcheck // closing after the append must not fail the run
+	defer func() { err = errors.Join(err, closeWritten(file)) }()
 	info, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("stat %s: %w", path, err)
