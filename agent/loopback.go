@@ -15,6 +15,11 @@ var ErrNotLoopback = errors.New("not loopback")
 // ErrAPIURL rejects an override that is not an http(s) URL.
 var ErrAPIURL = errors.New("must be an http or https URL on 127.0.0.1, ::1, or localhost")
 
+// urlParseError keeps the parser text and identifies the value as ErrAPIURL.
+type urlParseError struct{ error }
+
+func (e urlParseError) Unwrap() []error { return []error{e.error, ErrAPIURL} }
+
 // LoopbackBaseURL is the rule for UNREAL_REVIEW_OPENROUTER_API and
 // UNREAL_REVIEW_GITHUB_API. An empty value means the caller keeps the public
 // API. A set value is used only when it is an http(s) URL on 127.0.0.1, ::1,
@@ -27,7 +32,7 @@ func LoopbackBaseURL(envName, raw string) (string, error) {
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", envName, err)
+		return "", fmt.Errorf("%s: %w", envName, urlParseError{err})
 	}
 	schemeOK := strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")
 	host := strings.ToLower(u.Hostname())

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -295,7 +294,7 @@ func (c *Client) do(ctx context.Context, method, path string, payload, dest any)
 	if err != nil {
 		return fmt.Errorf("github %s %s: %w", method, path, err)
 	}
-	defer func() { err = errors.Join(err, resp.Body.Close()) }()
+	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // closing the response body must not fail a successful request
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("github %s %s: read body: %w", method, path, err)

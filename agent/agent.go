@@ -153,8 +153,23 @@ func newLoopbackModelAdapter(apiKey, base string) (llm.Adapter, func() error, er
 	if err != nil {
 		return nil, nil, errors.Join(err, remote.Close())
 	}
-	return adapter, remote.Close, nil
+	// The remote client stringifies transport failures, so reattach the sentinel.
+	return loopbackAdapter{adapter}, remote.Close, nil
 }
+
+type loopbackAdapter struct{ llm.Adapter }
+
+func (a loopbackAdapter) Respond(ctx context.Context, req llm.Request, opts llm.RequestOptions) (llm.Response, error) {
+	resp, err := a.Adapter.Respond(ctx, req, opts)
+	if err == nil || errors.Is(err, ErrNotLoopback) || !strings.Contains(err.Error(), ErrNotLoopback.Error()) {
+		return resp, err
+	}
+	return resp, loopbackRemoteError{err}
+}
+
+type loopbackRemoteError struct{ error }
+
+func (e loopbackRemoteError) Unwrap() []error { return []error{e.error, ErrNotLoopback} }
 
 func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentRequest) (review.AgentResult, error) {
 	storeDirectory, err := sessionDirectory()

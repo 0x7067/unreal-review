@@ -5,7 +5,6 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -287,7 +286,7 @@ func (j Judge) Match(ctx context.Context, c MartianCase, produced []findings.Fin
 	if err != nil {
 		return verdict{}, fmt.Errorf("judge: %w", err)
 	}
-	defer func() { err = errors.Join(err, resp.Body.Close()) }()
+	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // closing the judge response must not fail a successful match
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return verdict{}, fmt.Errorf("judge: %w", err)

@@ -78,7 +78,7 @@ func cmdRun(args []string) (err error) {
 	var logWriter io.Writer
 	if *f.agentLog != "" {
 		logFile := &agentLogFile{path: *f.agentLog}
-		defer func() { err = errors.Join(err, logFile.Close()) }()
+		defer func() { _ = logFile.Close() }() //nolint:errcheck // closing the agent log must not fail a successful review
 		logWriter = logFile
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

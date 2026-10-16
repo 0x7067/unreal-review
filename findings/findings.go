@@ -444,7 +444,7 @@ func appendLine(path string, rec record) (err error) {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
-	defer func() { err = errors.Join(err, file.Close()) }()
+	defer func() { _ = file.Close() }() //nolint:errcheck // closing after the append must not fail the run
 	info, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("stat %s: %w", path, err)
@@ -525,7 +525,7 @@ func ReadFile(path string) (report Report, err error) {
 	if err != nil {
 		return Report{}, err
 	}
-	defer func() { err = errors.Join(err, file.Close()) }()
+	defer func() { _ = file.Close() }() //nolint:errcheck // closing a finished read must not fail the run
 	report, err = Parse(file)
 	if err != nil {
 		return Report{}, fmt.Errorf("parse %s: %w", path, err)

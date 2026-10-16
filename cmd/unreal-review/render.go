@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -50,7 +49,7 @@ func renderMarkdown(args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, out.Close()) }()
+	defer func() { _ = out.Close() }() //nolint:errcheck // closing rendered output must not fail a successful render
 	return render.Markdown(out, report)
 }
 
@@ -218,7 +217,7 @@ func loadReport(path string) (report findings.Report, err error) {
 			return findings.Report{}, fmt.Errorf("open %s: %w", path, err)
 		}
 	}
-	defer func() { err = errors.Join(err, r.Close()) }()
+	defer func() { _ = r.Close() }() //nolint:errcheck // closing the findings file must not fail a successful parse
 	return findings.Parse(r)
 }
 

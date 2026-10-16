@@ -323,8 +323,8 @@ func TestLoopbackModelAdapterRefusesOffHostRedirect(t *testing.T) {
 			Data: llm.Message{Role: llm.RoleUser, Text: "hi"},
 		}},
 	}, llm.RequestOptions{})
-	if err == nil {
-		t.Fatal("off-host redirect was followed")
+	if err == nil || !errors.Is(err, ErrNotLoopback) {
+		t.Fatalf("error = %v, want not loopback", err)
 	}
 	if got := hits.Load(); got != 0 {
 		t.Fatalf("redirect target saw %d requests", got)

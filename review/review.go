@@ -191,9 +191,7 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 			return result, err
 		}
 		if fileOut(opts.Out) {
-			if rmErr := os.Remove(findingsPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
-				return result, rmErr
-			}
+			_ = os.Remove(findingsPath) //nolint:errcheck // removing the work file must not fail a completed review
 		}
 		return result, nil
 	case interrupted:

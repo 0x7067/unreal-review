@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -51,7 +50,7 @@ func receiveSecrets(raw string) (err error) {
 		return fmt.Errorf("%s: %w", secretsFDEnv, err)
 	}
 	file := os.NewFile(uintptr(fd), "secrets")
-	defer func() { err = errors.Join(err, file.Close()) }()
+	defer func() { _ = file.Close() }() //nolint:errcheck // closing the inherited secrets fd must not fail a successful decode
 	encoded, err := io.ReadAll(file)
 	if err != nil {
 		return fmt.Errorf("read secrets: %w", err)
