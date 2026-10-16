@@ -190,6 +190,7 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 		}
 	}
 	// All manifest updates and cost accounting happen on this coordinator.
+	var verifyCandidates map[string]findings.Finding
 	type outcome struct {
 		stage      string
 		cost       findings.Cost
@@ -232,6 +233,9 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 			report, e = focusedComplete(path, r.Cost)
 			if e == nil {
 				report.Findings, e = focusedCoalesce(report.Findings)
+			}
+			if e == nil && stage == "verification" {
+				e = restoreCanonicalLocations(report.Findings, verifyCandidates)
 			}
 			if e == nil {
 				e = focusedWriteReport(path, report)
@@ -390,6 +394,7 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 				return result, err
 			}
 		}
+		verifyCandidates = byID
 		o := run("verification", prompt)
 		o.dependency = dependency
 		// Invalid verification must remain incomplete, even if its child succeeded.

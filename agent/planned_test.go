@@ -384,3 +384,122 @@ func TestPlannedRebindsTwoCandidatesAtTheSameLocation(t *testing.T) {
 		t.Fatalf("published %+v", report.Findings)
 	}
 }
+
+func TestPlannedRestoresCanonicalLocationForKnownVerifierID(t *testing.T) {
+	candidate := plannedTestIssue("known-span")
+	moved := candidate
+	moved.StartLine = 6
+	moved.EndLine = 7
+	moved.Anchor = findings.AnchorOld
+	moved.Severity = findings.SeverityWarning
+	moved.Body = "Sharper confirmed body"
+
+	req := plannedTestRequest(t)
+	fake := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		switch {
+		case strings.Contains(r.Prompt, "verify:"):
+			return plannedTestEmit(r, []findings.Finding{moved})
+		case strings.Contains(r.Prompt, "local a"):
+			return plannedTestEmit(r, []findings.Finding{candidate})
+		}
+		return plannedTestEmit(r, nil)
+	})
+	if _, err := (Planned{Agent: fake, Verifier: fake, Consolidator: fake}).Run(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	report, err := findings.ReadFile(req.FindingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("published %+v", report.Findings)
+	}
+	got := report.Findings[0]
+	if got.ID != "known-span" || got.Path != "a.go" || got.StartLine != 4 || got.EndLine != 4 || got.Anchor != findings.AnchorNew || got.Severity != findings.SeverityWarning || got.Body != "Sharper confirmed body" {
+		t.Fatalf("published %+v", got)
+	}
+
+	req = plannedTestRequest(t)
+	stray := plannedTestIssue("not-a-candidate")
+	stray.Path = "elsewhere.go"
+	stray.StartLine = 2
+	stray.EndLine = 3
+	stray.Anchor = findings.AnchorOld
+	invent := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		switch {
+		case strings.Contains(r.Prompt, "verify:"):
+			return plannedTestEmit(r, []findings.Finding{stray})
+		case strings.Contains(r.Prompt, "local a"):
+			return plannedTestEmit(r, []findings.Finding{candidate})
+		}
+		return plannedTestEmit(r, nil)
+	})
+	if _, err := (Planned{Agent: invent, Verifier: invent, Consolidator: invent}).Run(t.Context(), req); err == nil {
+		t.Fatal("published a verifier id at an unknown location")
+	}
+	if _, err := os.Stat(req.FindingsPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("published a verifier id at an unknown location: %v", err)
+	}
+}
+
+func plannedRunVerified(t *testing.T, discovered, verified []findings.Finding) (string, error) {
+	t.Helper()
+	req := plannedTestRequest(t)
+	fake := plannedTestAgent(func(_ context.Context, r review.AgentRequest) (review.AgentResult, error) {
+		switch {
+		case strings.Contains(r.Prompt, "verify:"):
+			return plannedTestEmit(r, verified)
+		case strings.Contains(r.Prompt, "local a"):
+			return plannedTestEmit(r, discovered)
+		}
+		return plannedTestEmit(r, nil)
+	})
+	_, err := (Planned{Agent: fake, Verifier: fake, Consolidator: fake}).Run(t.Context(), req)
+	return req.FindingsPath, err
+}
+
+func TestPlannedRejectsFarOrOtherFileVerifierSpan(t *testing.T) {
+	candidate := plannedTestIssue("known-span")
+	far := candidate
+	far.StartLine, far.EndLine = 20, 22
+	other := candidate
+	other.Path = "other.go"
+	for _, moved := range []findings.Finding{far, other} {
+		path, err := plannedRunVerified(t, []findings.Finding{candidate}, []findings.Finding{moved})
+		if err == nil {
+			t.Fatalf("published span %+v", moved)
+		}
+		if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("published %+v: %v", moved, statErr)
+		}
+	}
+}
+
+func TestPlannedRejectsDuplicateKnownIDAtDifferentRawLocations(t *testing.T) {
+	candidate := plannedTestIssue("known-span")
+	nudged := candidate
+	nudged.StartLine, nudged.EndLine = 6, 7
+	path, err := plannedRunVerified(t, []findings.Finding{candidate}, []findings.Finding{candidate, nudged})
+	if err == nil || !strings.Contains(err.Error(), "duplicate verifier ID") {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("published merged duplicate: %v", statErr)
+	}
+}
+
+func TestPlannedRejectsCrossCandidateRelabel(t *testing.T) {
+	alpha := plannedTestIssue("alpha")
+	beta := plannedTestIssue("beta")
+	beta.StartLine, beta.EndLine = 6, 6
+	relabel := beta
+	relabel.ID = alpha.ID
+	relabel.Body = "Written on the other candidate"
+	path, err := plannedRunVerified(t, []findings.Finding{alpha, beta}, []findings.Finding{relabel})
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("published relabeled candidate: %v", statErr)
+	}
+}
