@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -43,18 +44,25 @@ func cmdEval(args []string) error {
 	decompose := fs.Bool("decompose", false, "use bounded aggregate scopes for every review case")
 	timeout := fs.Duration("timeout", 20*time.Minute, "agent timeout per case")
 	asJSON := fs.Bool("json", false, "print machine-readable JSON instead of a table")
-	corpus := fs.String("corpus", "planted", "planted or martian")
+	corpus := fs.String("corpus", "planted", "planted, martian, pr38, or labeled")
 	profile := fs.String("profile", "core", "martian golden categories: core, strict, or all")
 	parallel := fs.Int("parallel", 8, "martian cases reviewed at once")
 	only := fs.String("cases", "", "comma-separated case names for the selected corpus (default: all)")
 	judgeModel := fs.String("judge-model", "anthropic/claude-sonnet-5.5", "OpenRouter model that matches martian findings to golden comments")
+	runs := fs.Int("runs", 1, "repeat the pr38 or labeled corpus and print each run, the mean, and the union of hits")
 	if err := fs.Parse(args); err != nil {
 		return successOnHelp(err)
 	}
 	switch *corpus {
-	case "planted", "martian":
+	case "planted", "martian", "pr38", "labeled":
 	default:
-		return fmt.Errorf("unknown corpus %q: use planted or martian", *corpus)
+		return fmt.Errorf("unknown corpus %q: use planted, martian, pr38, or labeled", *corpus)
+	}
+	if *runs < 1 {
+		return fmt.Errorf("--runs must be at least 1")
+	}
+	if *runs != 1 && *corpus != "pr38" && *corpus != "labeled" {
+		return fmt.Errorf("--runs applies to the pr38 and labeled corpora")
 	}
 	if *model == "" {
 		return fmt.Errorf("set --model or UNREAL_HARNESS_LLM_MODEL")
@@ -87,6 +95,18 @@ func cmdEval(args []string) error {
 			return err
 		}
 	}
+	if *corpus == "pr38" {
+		if _, err = selectNamed(eval.PR38CaseNames(), *only, "pr38", func(name string) string { return name }); err != nil {
+			return err
+		}
+	}
+	var labeledNames []string
+	if *corpus == "labeled" {
+		labeledNames, err = selectNamed(eval.LabeledCaseNames(), *only, "labeled", func(name string) string { return name })
+		if err != nil {
+			return err
+		}
+	}
 	root := *outDir
 	if root == "" {
 		temp, err := os.MkdirTemp("", "unreal-review-eval-")
@@ -104,6 +124,10 @@ func cmdEval(args []string) error {
 	case "planted":
 	case "martian":
 		return evalMartian(ctx, root, *model, reviewer, key, ready)
+	case "pr38":
+		return evalPR38(ctx, root, *model, reviewer, *runs, *decompose, *asJSON)
+	case "labeled":
+		return evalLabeled(ctx, root, *model, reviewer, *runs, *decompose, *asJSON, labeledNames)
 	}
 	scores := make([]eval.Score, 0, len(planted))
 	for _, c := range planted {
@@ -118,16 +142,26 @@ func cmdEval(args []string) error {
 		scores = append(scores, score)
 		fmt.Fprintf(os.Stderr, "%s done\n", c.Name)
 	}
-	if *asJSON {
-		enc := json.NewEncoder(os.Stdout)
+	if err := writePlanted(os.Stdout, scores, *asJSON); err != nil {
+		return err
+	}
+	if !*asJSON {
+		fmt.Fprintf(os.Stderr, "artifacts: %s\n", root)
+	}
+	return nil
+}
+
+func writePlanted(w io.Writer, scores []eval.Score, asJSON bool) error {
+	if asJSON {
+		enc := json.NewEncoder(w)
 		enc.SetEscapeHTML(false)
 		enc.SetIndent("", "  ")
 		return enc.Encode(evalSummary{Cases: scores, Total: totals(scores)})
 	}
-	printScores(scores)
-	fmt.Fprintf(os.Stderr, "artifacts: %s\n", root)
+	printScores(w, scores)
 	return nil
 }
+
 func totals(scores []eval.Score) evalTotals {
 	total := evalTotals{Cases: len(scores)}
 	for _, score := range scores {
@@ -145,8 +179,8 @@ func totals(scores []eval.Score) evalTotals {
 	return total
 }
 
-func printScores(scores []eval.Score) {
-	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+func printScores(w io.Writer, scores []eval.Score) {
+	writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	defer func() { _ = writer.Flush() }()
 	_, _ = fmt.Fprintln(writer, "case\tstatus\trecall\tprecision\tseverity\tfound\tgold\textra\tcost\ttime")
 	for _, score := range scores {

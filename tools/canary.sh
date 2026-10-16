@@ -452,7 +452,25 @@ expect eval-corpus.md "set OPENROUTER_API_KEY" "$(stderr_of eval-key)" "eval-key
 
 OPENROUTER_API_KEY=dummy cli --name eval-corpus -- eval --model x --corpus bogus --out "$VERIFY_SCRATCH/e"
 require_exit eval-corpus 1
-expect eval-corpus.md 'unknown corpus "bogus": use planted or martian' "$(stderr_of eval-corpus)" "eval-corpus"
+expect eval-corpus.md 'unknown corpus "bogus": use planted, martian, pr38, or labeled' "$(stderr_of eval-corpus)" "eval-corpus"
+
+OPENROUTER_API_KEY=dummy cli --name eval-runs -- eval --model x --corpus pr38 --runs 0 --out "$VERIFY_SCRATCH/e"
+require_exit eval-runs 1
+expect eval-corpus.md '--runs must be at least 1' "$(stderr_of eval-runs)" "eval-runs"
+
+OPENROUTER_API_KEY=dummy cli --name eval-runs-corpus -- eval --model x --corpus planted --runs 3 --out "$VERIFY_SCRATCH/e"
+require_exit eval-runs-corpus 1
+expect eval-corpus.md '--runs applies to the pr38 and labeled corpora' "$(stderr_of eval-runs-corpus)" "eval-runs-corpus"
+
+env -u UNREAL_HARNESS_LLM_MODEL "$SCRIPTS/cli.sh" --name eval-runs-pr38 -- eval --corpus pr38 --runs 2 --out "$VERIFY_SCRATCH/e"
+require_exit eval-runs-pr38 1
+expect eval-corpus.md "set --model or UNREAL_HARNESS_LLM_MODEL" "$(stderr_of eval-runs-pr38)" "eval-runs-pr38"
+require_absent "$(stderr_of eval-runs-pr38)" "--runs applies to the pr38 and labeled corpora" "eval-runs-pr38"
+
+env -u UNREAL_HARNESS_LLM_MODEL "$SCRIPTS/cli.sh" --name eval-runs-labeled -- eval --corpus labeled --runs 2 --out "$VERIFY_SCRATCH/e"
+require_exit eval-runs-labeled 1
+expect eval-corpus.md "set --model or UNREAL_HARNESS_LLM_MODEL" "$(stderr_of eval-runs-labeled)" "eval-runs-labeled"
+require_absent "$(stderr_of eval-runs-labeled)" "--runs applies to the pr38 and labeled corpora" "eval-runs-labeled"
 
 OPENROUTER_API_KEY=dummy cli --name eval-cases -- eval --model x --cases nosuch --out "$VERIFY_SCRATCH/e"
 require_exit eval-cases 1
