@@ -50,6 +50,6 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Checkpoint and resume](./checkpoint.md) covers complete-file refuse, `--fresh`, SHA mismatch, failed resume, and empty-diff overwrite.
 - [Focused review](./focused-review.md) covers `--strategy focused`, its verification barrier, validation, empty diffs, durable stage state, and live cost/quality measurements.
 - [Aggregate large review](./large-review.md) covers automatic oversized decomposition, `--decompose`, full source ownership, boundary verification, interruption/resume, and unsupported indivisible input.
-- [Eval corpus runs](./eval-corpus.md) covers the `eval` gates, `--corpus`, `--cases`, `--runs`, and the skippable live planted, martian, and pr38 runs.
+- [Eval corpus runs](./eval-corpus.md) covers the `eval` gates, `--corpus`, `--cases`, `--runs`, and the skippable live planted, martian, pr38, and labeled runs.
 - [Render markdown](./render-markdown.md) covers stdout, `--out`, stdin, empty input, missing files, and incomplete status.
 - [Render GitHub](./render-github.md) covers `--dry-run` payloads, posting gates, PR specs, and what dry-run still fetches.
