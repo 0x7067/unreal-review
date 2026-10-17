@@ -46,6 +46,7 @@ Preconditions:
 - **Live planted.** If the model precondition is unmet, record `eval-planted` unreachable and stop this bullet. Otherwise run `scripts/cli.sh --name eval-planted -- eval --model "$UNREAL_HARNESS_LLM_MODEL" --cases race,clean --json --out "$VERIFY_SCRATCH/eval-planted"`. Inspect `total.completed`, per-case `status`/`err`, matched and extra findings, cost, requests, and elapsed; keep the stdout JSON and the per-case artifacts under `--out`. A single pass is a pilot, not a variance estimate.
 - **Live martian.** Same unreachable rule. Run `scripts/cli.sh --name eval-martian -- eval --corpus martian --model "$UNREAL_HARNESS_LLM_MODEL" --judge-model <judge> --cases <name> --json --out "$VERIFY_SCRATCH/eval-martian"` and inspect the matched/golden accounting rather than treating exit 0 as a benchmark score.
 - **Live pr38.** Same unreachable rule. Run `scripts/cli.sh --name eval-pr38 -- eval --corpus pr38 --model "$UNREAL_HARNESS_LLM_MODEL" --runs 3 --out "$VERIFY_SCRATCH/eval-pr38"`. The table has one row per run plus a mean and a union; read recall, precision, and error share. Repeat with `--json` and check `completed`, `failed`, `mean`, and `cost_usd`.
+- **Live labeled.** Same unreachable rule. Run `scripts/cli.sh --name eval-labeled -- eval --corpus labeled --model "$UNREAL_HARNESS_LLM_MODEL" --runs 3 --out "$VERIFY_SCRATCH/eval-labeled"`. The text has one table per case, a pooled table, and a `spent` line; read recall, precision, and error share. Repeat with `--json` and check `cases`, `pooled`, and `spent_cost_usd`.
 - **Proof.** Keep `eval-corpus/stderr.txt`, `eval-runs/stderr.txt`, `eval-runs-corpus/stderr.txt`, `eval-runs-pr38/stderr.txt`, `eval-runs-labeled/stderr.txt`, and `eval-cases/stderr.txt`. For a live run keep the stdout JSON and the `--out` directory.
 
 ## Gotchas
@@ -53,5 +54,5 @@ Preconditions:
 - `--cases` filters by name within the selected corpus; unknown and duplicate names fail before any case starts. Compare both strategies on the same selected cases.
 - Exit 0 does not mean every case completed. Read `status`, `err`, and `total.completed` in the output.
 - `--timeout` bounds the agent review inside each case, not checkout, Martian judging, or the whole invocation — `checkoutMartian` runs on the outer context with no deadline.
-- `--out` is created if missing. Use a fresh directory per comparison or stale case artifacts contaminate it. A pr38 rerun with the same `--out` starts fresh; planted and martian do not.
+- `--out` is created if missing. Use a fresh directory per comparison or stale case artifacts contaminate it. A pr38 or labeled rerun with the same `--out` starts fresh; planted and martian do not.
 - Planted scores and martian scores measure different things; a planted pilot is not a martian rank. Martian's built-in accounting is a direct matcher — the printed note explains how to get comparable benchmark scores.
