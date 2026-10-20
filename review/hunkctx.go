@@ -142,8 +142,9 @@ func formatSymbol(sym contextSymbol, hits []contextHit) string {
 	b := validText(sym.Path) + " " + sym.Name + "\n"
 	for _, hit := range hits {
 		prefix := validText(hit.Path) + ":" + strconv.Itoa(hit.Line) + " " + map[bool]string{true: "test", false: "caller"}[hit.Test] + " "
-		if room := contextSymbolBytes - len(b) - len(prefix) - 1; room >= 16 {
-			b += prefix + clipUTF8(strings.TrimSpace(validText(hit.Text)), min(160, room)) + "\n"
+		text := strings.TrimSpace(validText(hit.Text))
+		if room := contextSymbolBytes - len(b) - len(prefix) - 1; room >= min(16, len(text)) {
+			b += prefix + clipUTF8(text, min(160, room)) + "\n"
 		}
 	}
 	if strings.Count(b, "\n") < 2 {

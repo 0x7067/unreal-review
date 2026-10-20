@@ -164,8 +164,8 @@ func TestStaleCallerExcerptIsIgnored(t *testing.T) {
 	if run() == nil || strings.Contains(got, "STALE_KEY") || !strings.Contains(got, "NEWER_CALL") {
 		t.Fatalf("wrong key:\n%s", got)
 	}
-	if run() != nil {
-		t.Fatal("completion")
+	if err := run(); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := os.Stat(out + ".context"); !os.IsNotExist(err) {
 		t.Fatal("completed review left a sidecar")
@@ -188,8 +188,8 @@ func TestStaleCallerExcerptIsIgnored(t *testing.T) {
 	if werr, rerr := os.WriteFile(out+".context", []byte("x"), 0o644), run(); werr != nil || rerr != nil {
 		t.Fatal(werr, rerr)
 	}
-	if _, err := os.Stat(out + ".context"); !os.IsNotExist(err) {
-		t.Fatal(err)
+	if _, err := os.Stat(out + ".context"); err == nil || !os.IsNotExist(err) {
+		t.Fatalf("fresh empty diff left a sidecar: %v", err)
 	}
 }
 func renderContext(ctx context.Context, workspace string, r resolved, diff string, files []ChangedFile) (string, error) {
