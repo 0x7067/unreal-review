@@ -86,7 +86,7 @@ func (idx *callIndex) parts() []savedPart {
 	var out []savedPart
 	for _, sym := range idx.Symbols {
 		if text := formatSymbol(sym, idx.Hits[sym.Name]); text != "" {
-			out = append(out, savedPart{sym.Path, text})
+			out = append(out, savedPart{strings.ToValidUTF8(strings.Map(func(r rune) rune { return r }, sym.Path), "\uFFFD"), text})
 		}
 	}
 	return out
@@ -138,15 +138,14 @@ func newCallIndex(ctx context.Context, workspace string, r resolved, diff string
 	idx.Symbols = symbols
 	return idx, nil
 }
-func formatSymbol(sym contextSymbol, hits []contextHit) string {
-	b := sym.Path + " " + sym.Name + "\n"
+func formatSymbol(sym contextSymbol, hits []contextHit) string { // Map replaces each invalid byte with U+FFFD, matching JSON
+	b := strings.ToValidUTF8(strings.Map(func(r rune) rune { return r }, sym.Path), "\uFFFD") + " " + sym.Name + "\n"
 	for _, hit := range hits {
-		kind := map[bool]string{true: "test", false: "caller"}[hit.Test]
-		line := clipUTF8(hit.Path+":"+strconv.Itoa(hit.Line)+" "+kind+" "+clipUTF8(strings.TrimSpace(hit.Text), 160), contextSymbolBytes-len(b)-1)
-		if line == "" {
-			break
+		prefix := strings.ToValidUTF8(strings.Map(func(r rune) rune { return r }, hit.Path), "\uFFFD") + ":" + strconv.Itoa(hit.Line) + " " + map[bool]string{true: "test", false: "caller"}[hit.Test] + " "
+		if len(b)+len(prefix)+1 > contextSymbolBytes {
+			continue
 		}
-		b += line + "\n"
+		b += prefix + clipUTF8(strings.TrimSpace(strings.ToValidUTF8(strings.Map(func(r rune) rune { return r }, hit.Text), "\uFFFD")), min(160, contextSymbolBytes-len(b)-len(prefix)-1)) + "\n"
 	}
 	if strings.Count(b, "\n") < 2 {
 		return ""
@@ -154,16 +153,13 @@ func formatSymbol(sym contextSymbol, hits []contextHit) string {
 	return b
 }
 func clipUTF8(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
 	if n > len(s) {
 		n = len(s)
 	}
 	for n > 0 && n < len(s) && !utf8.RuneStart(s[n]) {
 		n--
 	}
-	return s[:n]
+	return s[:max(n, 0)]
 }
 func appendDiscoveryContext(prompt, extra string, budget int) string {
 	extra = strings.TrimSpace(extra)
@@ -283,10 +279,10 @@ func grepCalls(ctx context.Context, workspace, rev string, names []string) ([]co
 			break
 		}
 		if rev != "" {
-			if !strings.HasPrefix(path, rev+":") {
+			var ok bool
+			if path, ok = strings.CutPrefix(path, rev+":"); !ok {
 				continue
 			}
-			path = path[len(rev)+1:]
 		}
 		if nerr != nil || num <= 0 || !contextPathOK(path) {
 			continue

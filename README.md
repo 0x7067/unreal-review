@@ -68,7 +68,7 @@ Focused stage state stays inside the agent adapter under
 model, thinking level, source, and output file. Completed stages are reused and
 their durably recorded cost is reconciled against the root checkpoint.
 For working-tree reviews, keep `--out` outside the reviewed workspace or ignore
-the output and names that start with it (`.work`, `.context`, and crash temps) in Git. Otherwise generated untracked
+the output and names that start with it (`.work`, `<out>.context.*`, and `.<out>.tmp-*`) in Git. Otherwise generated untracked
 artifacts change the source fingerprint and correctly prevent continuation.
 Planted eval fixtures ignore their generated checkpoint files automatically.
 Changed settings or missing stage state require `--fresh`. `--timeout` covers

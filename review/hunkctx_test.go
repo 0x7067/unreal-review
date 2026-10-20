@@ -184,6 +184,13 @@ func TestStaleCallerExcerptIsIgnored(t *testing.T) {
 	if _, err := os.Stat(out + ".context"); !os.IsNotExist(err) {
 		t.Fatal("fresh left a sidecar")
 	}
+	commitAll(t, dir, "clean")
+	if os.WriteFile(out+".context", []byte("x"), 0o644) != nil || run() != nil {
+		t.Fatal("fresh empty diff")
+	}
+	if _, err := os.Stat(out + ".context"); !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
 }
 func renderContext(ctx context.Context, workspace string, r resolved, diff string, files []ChangedFile) (string, error) {
 	idx, err := newCallIndex(ctx, workspace, r, diff, files)
