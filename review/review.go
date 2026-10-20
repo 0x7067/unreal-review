@@ -84,6 +84,7 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 		if err != nil {
 			return Result{}, err
 		}
+		// After the diff fence; verifiers keep only the preface.
 		prompt = appendDiscoveryContext(prompt, idx.render(nil), 0)
 	}
 

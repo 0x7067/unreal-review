@@ -21,23 +21,43 @@ func TestDiscoveryContextStaysWithinCaps(t *testing.T) {
 	writeRepoFile(t, dir, "pkg/target.go", "package pkg\n\nfunc Target() { /* changed */ }\n")
 	got := discover(t, dir)
 	start := strings.Index(got, "pkg/target.go Target\n")
-	if start < 0 || len(got) > 8*1024 || len(got[start:]) > 1024 || !strings.Contains(got, "MARKER_00") || strings.Contains(got, "MARKER_29") {
-		t.Fatalf("per-function cap len=%d section=%d\n%s", len(got), len(got[start:]), got)
+	if start < 0 || len(got) > 8*1024 || len(got[start:]) > 1024 || !strings.Contains(got, "MARKER_11") || strings.Contains(got, "MARKER_12") {
+		t.Fatalf("per-name cap len=%d section=%d\n%s", len(got), len(got[start:]), got)
+	}
+
+	held := gitRepo(t)
+	writeRepoFile(t, held, "t.go", "package p\n\nfunc Target() {}\n")
+	for i := 0; i < 20; i++ {
+		writeRepoFile(t, held, fmt.Sprintf("c%02d.go", i), fmt.Sprintf("package p\n\nfunc Use%02d() { Target() }\n", i))
+	}
+	writeRepoFile(t, held, "z_test.go", "package p\n\nfunc TestTarget(t *testing.T) { Target() // TEST_KEPT }\n")
+	commitAll(t, held, "base")
+	writeRepoFile(t, held, "t.go", "package p\n\nfunc Target() { /* changed */ }\n")
+	if got = discover(t, held); !strings.Contains(got, "TEST_KEPT") {
+		t.Fatalf("callers crowded out the test:\n%s", got)
 	}
 
 	wide := gitRepo(t)
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 8; i++ {
 		name := fmt.Sprintf("Fn%02d", i)
-		writeRepoFile(t, wide, fmt.Sprintf("f%02d.go", i), "package p\n\nfunc "+name+"() {}\n")
-		writeRepoFile(t, wide, fmt.Sprintf("c%02d.go", i), fmt.Sprintf("package p\n\nfunc Use%02d() { %s() // M%02d %s }\n", i, name, i, strings.Repeat("a", 400)))
+		writeRepoFile(t, wide, fmt.Sprintf("a%02d.go", i), "package p\n\nfunc "+name+"() {}\n")
+		for j := 0; j < 6; j++ {
+			writeRepoFile(t, wide, fmt.Sprintf("c%02d_%d.go", i, j), fmt.Sprintf("package p\n\nfunc Use%02d_%d() { %s() // A%02d %s }\n", i, j, name, i, strings.Repeat("x", 180)))
+		}
+	}
+	// Equal hit counts render by path, so this short section comes after the large ones.
+	writeRepoFile(t, wide, "z.go", "package p\n\nfunc Tiny() {}\n")
+	for j := 0; j < 6; j++ {
+		writeRepoFile(t, wide, fmt.Sprintf("t%d.go", j), fmt.Sprintf("package p\n\nfunc T%d() { Tiny() // SMALL }\n", j))
 	}
 	commitAll(t, wide, "base")
-	for i := 0; i < 50; i++ {
-		writeRepoFile(t, wide, fmt.Sprintf("f%02d.go", i), fmt.Sprintf("package p\n\nfunc Fn%02d() { /* changed */ }\n", i))
+	for i := 0; i < 8; i++ {
+		writeRepoFile(t, wide, fmt.Sprintf("a%02d.go", i), fmt.Sprintf("package p\n\nfunc Fn%02d() { /* changed */ }\n", i))
 	}
+	writeRepoFile(t, wide, "z.go", "package p\n\nfunc Tiny() { /* changed */ }\n")
 	got = discover(t, wide)
-	if len(got) > 8*1024 || !strings.Contains(got, "M00") || strings.Contains(got, "M49") {
-		t.Fatalf("prompt cap len=%d\n%s", len(got), got)
+	if len(got) > 8*1024 || !strings.Contains(got, "A00") || strings.Contains(got, "A07") || !strings.Contains(got, "SMALL") {
+		t.Fatalf("skipped section len=%d\n%s", len(got), got)
 	}
 }
 
@@ -134,15 +154,20 @@ func TestRunPromptCarriesCallerContext(t *testing.T) {
 	if _, err := Run(t.Context(), Options{Workspace: dir, Out: t.TempDir() + "/findings.jsonl", Model: "test", Agent: backend}); err != nil {
 		t.Fatal(err)
 	}
-	if fence, call := strings.Index(prompt, "```diff"), strings.Index(prompt, "PROMPT_CALL"); fence < 0 || call < fence || !strings.Contains(prompt, "PROMPT_TEST") {
-		t.Fatalf("caller context is not after the diff fence:\n%s", prompt)
+	fence := strings.Index(prompt, "```diff")
+	call := strings.Index(prompt, "PROMPT_CALL")
+	testIdx := strings.Index(prompt, "PROMPT_TEST")
+	if fence < 0 || call < fence || testIdx < 0 || testIdx > call {
+		t.Fatalf("test excerpt is not before the caller after the diff fence:\n%s", prompt)
 	}
 
 	var root, planned string
 	backend = accountingAgentFunc(func(_ context.Context, req AgentRequest) (AgentResult, error) {
 		root = req.Prompt
 		for _, task := range req.Plan.Tasks {
-			if strings.Contains(task.Prompt, "PROMPT_CALL") && strings.Contains(task.Prompt, "PROMPT_TEST") {
+			call := strings.Index(task.Prompt, "PROMPT_CALL")
+			testIdx := strings.Index(task.Prompt, "PROMPT_TEST")
+			if call >= 0 && testIdx >= 0 && testIdx < call {
 				planned = task.Prompt
 			}
 		}
