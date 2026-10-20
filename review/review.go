@@ -148,6 +148,14 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 			destination = "selected commit " + source.HeadSHA + " (use git show for this commit, not the checked-out files)"
 		}
 		prompt = fmt.Sprintf("Review every local and boundary task in plan %s. Source base %s head %s full diff SHA %s (%d bytes). Destination: %s. Read old code at the merge-base of those source commits when a base exists; root commits and added files have no old content. Publish only after all task discovery and verification are complete. Never report partial coverage as clean.\n", plan.Digest, source.BaseSHA, source.HeadSHA, source.DiffSHA, len(diff), destination)
+		// Local task prompts carry the excerpts. Verification reads this root prompt.
+	} else {
+		extra, err := discoveryContext(ctx, workspace, selected.rangeSpec, diff, nil)
+		if err != nil {
+			return Result{}, err
+		}
+		// After the diff fence. Verification keeps only the preface before it.
+		prompt = appendDiscoveryContext(prompt, extra, 0)
 	}
 	agentResult, agentErr := opts.Agent.Run(ctx, AgentRequest{
 		Workspace:    workspace,

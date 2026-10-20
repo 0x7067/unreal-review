@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/0x7067/unreal-review/findings"
@@ -51,6 +52,37 @@ func focusedTestEmit(req review.AgentRequest, items []findings.Finding) (review.
 	}
 	err := focusedWriteReport(req.FindingsPath, findings.Report{Findings: items, Summary: summary})
 	return review.AgentResult{Cost: findings.Cost{AmountUSD: 1, Requests: 1, InputTokens: 10, OutputTokens: 2}}, err
+}
+
+func TestFocusedVerificationOmitsCallerContext(t *testing.T) {
+	req := focusedTestRequest(t)
+	req.Prompt = "From: base\nTo: head\n\n```diff\n+line\n```\nPre-read context from the destination tree: CALLER_ONLY\n"
+	var mu sync.Mutex
+	var sawDiscovery bool
+	var verify string
+	fake := focusedTestRunner(func(_ context.Context, child review.AgentRequest) (review.AgentResult, error) {
+		mu.Lock()
+		if strings.Contains(child.Prompt, "Discovery lens:") && strings.Contains(child.Prompt, "CALLER_ONLY") {
+			sawDiscovery = true
+		}
+		if strings.Contains(child.Prompt, "Verification and semantic deduplication") {
+			verify = child.Prompt
+		}
+		mu.Unlock()
+		return focusedTestEmit(child, []findings.Finding{focusedTestIssue("c1")})
+	})
+	if _, err := (Focused{Agent: fake}).Run(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	if !sawDiscovery {
+		t.Fatal("discovery prompt dropped the caller context")
+	}
+	if !strings.Contains(verify, "From: base") {
+		t.Fatalf("verification prompt dropped the diff preface: %q", verify)
+	}
+	if strings.Contains(verify, "CALLER_ONLY") || strings.Contains(verify, "Pre-read context") {
+		t.Fatalf("verification prompt included caller context:\n%s", verify)
+	}
 }
 
 func TestFocusedDiscoveryOnlyModeIsImmutableOnResume(t *testing.T) {
