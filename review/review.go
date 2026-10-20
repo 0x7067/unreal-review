@@ -59,6 +59,9 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 	}
 	diff, source := selected.diff, selected.source
 	runMeta := newRun(opts.Model, source)
+	if opts.Fresh {
+		removeExcerpt(opts.Out)
+	}
 	if strings.TrimSpace(diff) == "" {
 		runMeta.Status = findings.StatusComplete
 		result := Result{Report: findings.Report{
@@ -69,14 +72,6 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 			return result, err
 		}
 		return result, nil
-	}
-
-	var plan *ReviewPlan
-	if len(diff) > maxBriefDiff || opts.Decompose {
-		plan, err = buildReviewPlan(ctx, workspace, selected)
-		if err != nil {
-			return Result{}, fmt.Errorf("cannot safely decompose selected diff: %w", err)
-		}
 	}
 
 	checkpoint, err := loadCheckpoint(opts.Out)
@@ -104,6 +99,24 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 		if runMeta.Cost.Currency == "" {
 			runMeta.Cost.Currency = "USD"
 		}
+	}
+
+	selected.out, selected.reuse = opts.Out, resuming
+	var plan *ReviewPlan
+	if len(diff) > maxBriefDiff || opts.Decompose {
+		plan, err = buildReviewPlan(ctx, workspace, selected)
+		if err != nil {
+			return Result{}, fmt.Errorf("cannot safely decompose selected diff: %w", err)
+		}
+	}
+	prompt := reviewPrompt(selected)
+	if plan == nil {
+		parts, err := callsFor(ctx, workspace, selected.rangeSpec, diff, selected.files, opts.Out, resuming, source.BaseSHA, source.HeadSHA, source.DiffSHA)
+		if err != nil {
+			return Result{}, err
+		}
+		// After the diff fence; verifiers keep only the preface.
+		prompt = appendDiscoveryContext(prompt, renderParts(parts, nil), 0)
 	}
 
 	if opts.Agent == nil {
@@ -141,7 +154,6 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 		return result, err
 	}
 
-	prompt := reviewPrompt(selected)
 	if plan != nil {
 		destination := "working tree (read changed files here, not git show HEAD)"
 		if source.Head != "" {
@@ -192,6 +204,7 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 		}
 		if fileOut(opts.Out) {
 			_ = os.Remove(findingsPath) //nolint:errcheck // removing the work file must not fail a completed review
+			removeExcerpt(opts.Out)
 		}
 		return result, nil
 	case interrupted:

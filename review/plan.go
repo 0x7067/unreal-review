@@ -97,6 +97,10 @@ func buildReviewPlan(ctx context.Context, workspace string, sel selection) (*Rev
 	if err != nil {
 		return nil, err
 	}
+	parts, err := callsFor(ctx, workspace, r, sel.diff, sel.files, sel.out, sel.reuse, sel.source.BaseSHA, sel.source.HeadSHA, sel.source.DiffSHA)
+	if err != nil {
+		return nil, err
+	}
 	groups := clusterFilesEdges(files, edges)
 	locals := []planLocal{}
 	var pending []planFragment
@@ -105,7 +109,8 @@ func buildReviewPlan(ctx context.Context, workspace string, sel selection) (*Rev
 			return
 		}
 		paths, spans, patch := planFragmentFields(pending)
-		task := PlanTask{Kind: "local", Paths: paths, Spans: spans, Prompt: planLocalPrompt(base, paths, spans, patch)}
+		prompt := appendDiscoveryContext(planLocalPrompt(base, paths, spans, patch), renderParts(parts, paths), planPromptBudget)
+		task := PlanTask{Kind: "local", Paths: paths, Spans: spans, Prompt: prompt}
 		task.ID = planTaskID(task)
 		locals = append(locals, planLocal{task: task, patch: patch})
 		pending = nil
