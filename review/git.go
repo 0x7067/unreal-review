@@ -119,6 +119,7 @@ type selection struct {
 	source    findings.Source
 	files     []ChangedFile
 	pull      Pull
+	out       string
 }
 
 func loadGitDiff(ctx context.Context, workspace string, spec Spec, paths, exclude []string, pull PullResolver) (selection, error) {

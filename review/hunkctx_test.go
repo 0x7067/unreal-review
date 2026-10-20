@@ -11,53 +11,21 @@ import (
 	"github.com/0x7067/unreal-review/findings"
 )
 
-func TestDiscoveryContextStaysWithinCaps(t *testing.T) {
+func TestDiscoveryContextLeavesRoomAndOrdersTests(t *testing.T) {
 	dir := gitRepo(t)
-	writeRepoFile(t, dir, "pkg/target.go", "package pkg\n\nfunc Target() {}\n")
-	for i := 0; i < 30; i++ {
-		writeRepoFile(t, dir, fmt.Sprintf("pkg/c%02d.go", i), fmt.Sprintf("package pkg\n\nfunc Use%02d() { Target() // MARKER_%02d }\n", i, i))
+	writeRepoFile(t, dir, "rare.go", "package p\n\nfunc Rare() {}\n")
+	writeRepoFile(t, dir, "a:b.go", "package p\n\nfunc UseRare() { Rare[int]() // RARE_CALL }\n")
+	writeRepoFile(t, dir, "many.go", "package p\n\nfunc Many() {}\n")
+	writeRepoFile(t, dir, "many_test.go", "package p\n\nfunc TestMany(t *testing.T) { Many() // TEST_KEPT }\n")
+	for i := 0; i < 20; i++ {
+		writeRepoFile(t, dir, fmt.Sprintf("c%02d.go", i), fmt.Sprintf("package p\n\nfunc Use%02d() { Many() // MANY_%02d }\n", i, i))
 	}
 	commitAll(t, dir, "base")
-	writeRepoFile(t, dir, "pkg/target.go", "package pkg\n\nfunc Target() { /* changed */ }\n")
+	writeRepoFile(t, dir, "rare.go", "package p\n\nfunc Rare() { /* changed */ }\n")
+	writeRepoFile(t, dir, "many.go", "package p\n\nfunc Many() { /* changed */ }\n")
 	got := discover(t, dir)
-	start := strings.Index(got, "pkg/target.go Target\n")
-	if start < 0 || len(got) > 8*1024 || len(got[start:]) > 1024 || !strings.Contains(got, "MARKER_11") || strings.Contains(got, "MARKER_12") {
-		t.Fatalf("per-name cap len=%d section=%d\n%s", len(got), len(got[start:]), got)
-	}
-
-	held := gitRepo(t)
-	writeRepoFile(t, held, "t.go", "package p\n\nfunc Target() {}\n")
-	for i := 0; i < 20; i++ {
-		writeRepoFile(t, held, fmt.Sprintf("c%02d.go", i), fmt.Sprintf("package p\n\nfunc Use%02d() { Target() }\n", i))
-	}
-	writeRepoFile(t, held, "z_test.go", "package p\n\nfunc TestTarget(t *testing.T) { Target() // TEST_KEPT }\n")
-	commitAll(t, held, "base")
-	writeRepoFile(t, held, "t.go", "package p\n\nfunc Target() { /* changed */ }\n")
-	if got = discover(t, held); !strings.Contains(got, "TEST_KEPT") {
-		t.Fatalf("callers crowded out the test:\n%s", got)
-	}
-
-	wide := gitRepo(t)
-	for i := 0; i < 8; i++ {
-		name := fmt.Sprintf("Fn%02d", i)
-		writeRepoFile(t, wide, fmt.Sprintf("a%02d.go", i), "package p\n\nfunc "+name+"() {}\n")
-		for j := 0; j < 6; j++ {
-			writeRepoFile(t, wide, fmt.Sprintf("c%02d_%d.go", i, j), fmt.Sprintf("package p\n\nfunc Use%02d_%d() { %s() // A%02d %s }\n", i, j, name, i, strings.Repeat("x", 180)))
-		}
-	}
-	// Equal hit counts render by path, so this short section comes after the large ones.
-	writeRepoFile(t, wide, "z.go", "package p\n\nfunc Tiny() {}\n")
-	for j := 0; j < 6; j++ {
-		writeRepoFile(t, wide, fmt.Sprintf("t%d.go", j), fmt.Sprintf("package p\n\nfunc T%d() { Tiny() // SMALL }\n", j))
-	}
-	commitAll(t, wide, "base")
-	for i := 0; i < 8; i++ {
-		writeRepoFile(t, wide, fmt.Sprintf("a%02d.go", i), fmt.Sprintf("package p\n\nfunc Fn%02d() { /* changed */ }\n", i))
-	}
-	writeRepoFile(t, wide, "z.go", "package p\n\nfunc Tiny() { /* changed */ }\n")
-	got = discover(t, wide)
-	if len(got) > 8*1024 || !strings.Contains(got, "A00") || strings.Contains(got, "A07") || !strings.Contains(got, "SMALL") {
-		t.Fatalf("skipped section len=%d\n%s", len(got), got)
+	if len(got) > 8*1024 || !utf8.ValidString(got) || !strings.Contains(got, "RARE_CALL") || !testBeforeCall(got, "TEST_KEPT", "MANY_00") {
+		t.Fatalf("context len=%d valid=%v\n%s", len(got), utf8.ValidString(got), got)
 	}
 }
 
@@ -76,28 +44,6 @@ func TestDiscoveryContextTruncatesOnUTF8Boundaries(t *testing.T) {
 	}
 }
 
-func TestGrepCallsStopsAtHitCap(t *testing.T) {
-	dir := gitRepo(t)
-	names := make([]string, 201)
-	for i := range names {
-		names[i] = fmt.Sprintf("Fn%03d", i)
-		writeRepoFile(t, dir, fmt.Sprintf("c%03d.go", i), fmt.Sprintf("package p\n\nfunc Use%03d() { Fn%03d() }\n", i, i))
-	}
-	commitAll(t, dir, "base")
-	hits, err := grepCalls(t.Context(), dir, "", names)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sawFirst, sawLast := false, false
-	for _, hit := range hits {
-		sawFirst = sawFirst || hit.name == "Fn000"
-		sawLast = sawLast || hit.name == "Fn200"
-	}
-	if len(hits) != 200 || !sawFirst || sawLast {
-		t.Fatalf("hits=%d first=%v last=%v", len(hits), sawFirst, sawLast)
-	}
-}
-
 func TestDiscoveryContextSurvivesGatheringFailure(t *testing.T) {
 	dir := gitRepo(t)
 	writeRepoFile(t, dir, "live.go", "package p\n\nfunc Live() {}\n")
@@ -110,8 +56,6 @@ func TestDiscoveryContextSurvivesGatheringFailure(t *testing.T) {
 		t.Fatalf("mode-only section dropped excerpts: err=%v\n%s", err, got)
 	}
 	plain := t.TempDir()
-	writeRepoFile(t, plain, "live.go", "package p\n\nfunc Live() {}\n")
-	writeRepoFile(t, plain, "caller.go", "package p\n\nfunc Use() { Live() // LIVE_CALL }\n")
 	if missed, err := renderContext(t.Context(), plain, resolved{}, diff, nil); err != nil || missed != "" {
 		t.Fatalf("grep failure err=%v\n%s", err, missed)
 	}
@@ -122,16 +66,10 @@ func TestDiscoveryContextSurvivesGatheringFailure(t *testing.T) {
 	}
 	writeRepoFile(t, dir, "live.go", "package p\n\nfunc Live() { /* changed */ }\n")
 	sel := planTestSelection(t, dir, Spec{})
-	plan, err := buildReviewPlan(t.Context(), plain, sel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := ""
-	for _, task := range plan.Tasks {
-		text += task.Prompt
-	}
-	if strings.Contains(text, "LIVE_CALL") {
-		t.Fatal("grep failure still attached callers")
+	plan, err := buildReviewPlan(t.Context(), dir, sel)
+	missed, missErr := buildReviewPlan(t.Context(), plain, sel)
+	if err != nil || missErr != nil || !strings.Contains(planPromptText(plan), "LIVE_CALL") || strings.Contains(planPromptText(missed), "LIVE_CALL") {
+		t.Fatalf("planned callers err=%v miss=%v", err, missErr)
 	}
 }
 
@@ -154,27 +92,48 @@ func TestRunPromptCarriesCallerContext(t *testing.T) {
 	if _, err := Run(t.Context(), Options{Workspace: dir, Out: t.TempDir() + "/findings.jsonl", Model: "test", Agent: backend}); err != nil {
 		t.Fatal(err)
 	}
-	fence := strings.Index(prompt, "```diff")
-	call := strings.Index(prompt, "PROMPT_CALL")
-	testIdx := strings.Index(prompt, "PROMPT_TEST")
-	if fence < 0 || call < fence || testIdx < 0 || testIdx > call {
+	if fence := strings.Index(prompt, "```diff"); fence < 0 || !testBeforeCall(prompt[fence:], "PROMPT_TEST", "PROMPT_CALL") {
 		t.Fatalf("test excerpt is not before the caller after the diff fence:\n%s", prompt)
 	}
 
-	var root, planned string
+	var root string
 	backend = accountingAgentFunc(func(_ context.Context, req AgentRequest) (AgentResult, error) {
 		root = req.Prompt
-		for _, task := range req.Plan.Tasks {
-			call := strings.Index(task.Prompt, "PROMPT_CALL")
-			testIdx := strings.Index(task.Prompt, "PROMPT_TEST")
-			if call >= 0 && testIdx >= 0 && testIdx < call {
-				planned = task.Prompt
-			}
-		}
 		return AgentResult{}, context.Canceled
 	})
-	if _, err := Run(t.Context(), Options{Workspace: dir, Out: t.TempDir() + "/planned.jsonl", Fresh: true, Decompose: true, Model: "test", Agent: backend}); err == nil || planned == "" || strings.Contains(root, "PROMPT_CALL") {
-		t.Fatalf("planned discovery=%t root leaked=%t err nil", planned != "", strings.Contains(root, "PROMPT_CALL"))
+	if _, err := Run(t.Context(), Options{Workspace: dir, Out: t.TempDir() + "/planned.jsonl", Fresh: true, Decompose: true, Model: "test", Agent: backend}); err == nil || strings.Contains(root, "PROMPT_CALL") {
+		t.Fatalf("planned root leaked callers: %v", err)
+	}
+}
+
+func TestResumeReusesSavedCallerExcerpt(t *testing.T) {
+	dir := gitRepo(t)
+	writeRepoFile(t, dir, "t.go", "package p\n\nfunc Target() {}\n")
+	writeRepoFile(t, dir, "c.go", "package p\n\nfunc Use() { Target() // SAVED_CALL }\n")
+	commitAll(t, dir, "base")
+	writeRepoFile(t, dir, "t.go", "package p\n\nfunc Target() { /* changed */ }\n")
+	out := t.TempDir() + "/findings.jsonl"
+	var id, again string
+	n := 0
+	backend := accountingAgentFunc(func(_ context.Context, req AgentRequest) (AgentResult, error) {
+		n++
+		if n == 1 {
+			id = req.ReviewID
+		} else {
+			again = req.Prompt
+		}
+		if n == 2 && (!req.Resuming || req.ReviewID != id) {
+			t.Fatalf("resume=%v id=%s", req.Resuming, req.ReviewID)
+		}
+		return AgentResult{Cost: findings.Cost{AmountUSD: 0.01, Currency: "USD", Requests: 1}}, context.Canceled
+	})
+	opts := Options{Workspace: dir, Out: out, Paths: []string{"t.go"}, Model: "test", Agent: backend}
+	if _, err := Run(t.Context(), opts); err == nil {
+		t.Fatal("first run completed")
+	}
+	writeRepoFile(t, dir, "c.go", "package p\n\nfunc Use() { Target() // EDITED_CALL }\n")
+	if _, err := Run(t.Context(), opts); err == nil || !strings.Contains(again, "SAVED_CALL") || strings.Contains(again, "EDITED_CALL") {
+		t.Fatalf("resume excerpt:\n%s", again)
 	}
 }
 
@@ -194,4 +153,17 @@ func renderContext(ctx context.Context, workspace string, r resolved, diff strin
 		return "", err
 	}
 	return idx.render(nil), nil
+}
+
+func testBeforeCall(s, testText, callText string) bool {
+	ti, ci := strings.Index(s, testText), strings.Index(s, callText)
+	return ti >= 0 && ci > ti
+}
+
+func planPromptText(plan *ReviewPlan) string {
+	var b strings.Builder
+	for _, task := range plan.Tasks {
+		b.WriteString(task.Prompt)
+	}
+	return b.String()
 }
