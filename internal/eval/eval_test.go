@@ -82,15 +82,15 @@ func TestPlantedCaseExcludesFindingsOnce(t *testing.T) {
 	}
 	counts := map[string]int{}
 	for _, line := range strings.Split(string(body), "\n") {
-		if line == "/findings.jsonl" || line == "/findings.jsonl.work" {
+		if line == "/findings.jsonl" || line == "/findings.jsonl.work" || line == "/findings.jsonl.context" {
 			counts[line]++
 		}
 	}
-	if counts["/findings.jsonl"] != 1 || counts["/findings.jsonl.work"] != 1 {
-		t.Fatalf("exclude contains /findings.jsonl %d times and /findings.jsonl.work %d times:\n%s",
-			counts["/findings.jsonl"], counts["/findings.jsonl.work"], body)
+	if counts["/findings.jsonl"] != 1 || counts["/findings.jsonl.work"] != 1 || counts["/findings.jsonl.context"] != 1 {
+		t.Fatalf("exclude counts %+v:\n%s", counts, body)
 	}
 	gitCmd(t, fixture, "check-ignore", "-q", "findings.jsonl")
+	gitCmd(t, fixture, "check-ignore", "-q", "findings.jsonl.context")
 }
 
 func TestFixturesIgnoreInheritedGitDir(t *testing.T) {

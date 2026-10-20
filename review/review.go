@@ -59,6 +59,9 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 	}
 	diff, source := selected.diff, selected.source
 	runMeta := newRun(opts.Model, source)
+	if opts.Fresh {
+		removeExcerpt(opts.Out)
+	}
 	if strings.TrimSpace(diff) == "" {
 		runMeta.Status = findings.StatusComplete
 		result := Result{Report: findings.Report{
@@ -76,9 +79,7 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 		return Result{}, err
 	}
 	resuming := false
-	if opts.Fresh {
-		removeExcerpt(opts.Out)
-	} else if checkpoint.Run != nil {
+	if !opts.Fresh && checkpoint.Run != nil {
 		if checkpoint.Complete() {
 			return Result{Report: checkpoint}, fmt.Errorf(
 				"%s is a complete review of %s; pass --fresh to start over",
@@ -110,12 +111,12 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 	}
 	prompt := reviewPrompt(selected)
 	if plan == nil {
-		text, err := callsFor(ctx, workspace, selected.rangeSpec, diff, selected.files, opts.Out, resuming, source.BaseSHA, source.HeadSHA, source.DiffSHA)
+		parts, err := callsFor(ctx, workspace, selected.rangeSpec, diff, selected.files, opts.Out, resuming, source.BaseSHA, source.HeadSHA, source.DiffSHA)
 		if err != nil {
 			return Result{}, err
 		}
 		// After the diff fence; verifiers keep only the preface.
-		prompt = appendDiscoveryContext(prompt, text, 0)
+		prompt = appendDiscoveryContext(prompt, renderParts(parts, nil), 0)
 	}
 
 	if opts.Agent == nil {

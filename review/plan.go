@@ -97,7 +97,7 @@ func buildReviewPlan(ctx context.Context, workspace string, sel selection) (*Rev
 	if err != nil {
 		return nil, err
 	}
-	excerpt, err := callsFor(ctx, workspace, r, sel.diff, sel.files, sel.out, sel.reuse, sel.source.BaseSHA, sel.source.HeadSHA, sel.source.DiffSHA)
+	parts, err := callsFor(ctx, workspace, r, sel.diff, sel.files, sel.out, sel.reuse, sel.source.BaseSHA, sel.source.HeadSHA, sel.source.DiffSHA)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func buildReviewPlan(ctx context.Context, workspace string, sel selection) (*Rev
 			return
 		}
 		paths, spans, patch := planFragmentFields(pending)
-		prompt := appendDiscoveryContext(planLocalPrompt(base, paths, spans, patch), excerptFor(excerpt, paths), planPromptBudget)
+		prompt := appendDiscoveryContext(planLocalPrompt(base, paths, spans, patch), renderParts(parts, paths), planPromptBudget)
 		task := PlanTask{Kind: "local", Paths: paths, Spans: spans, Prompt: prompt}
 		task.ID = planTaskID(task)
 		locals = append(locals, planLocal{task: task, patch: patch})

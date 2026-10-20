@@ -41,7 +41,7 @@ Preconditions:
 - The focused strategy costs more calls and may take longer. `--timeout` covers the whole invocation, not each child.
 - Notes are currently eligible for GitHub inline comments. They are not automatically hidden.
 - Candidate reports are not publishable reviews. Render only the root public findings file.
-- For working-tree reviews, place `--out` outside the reviewed workspace or Git-ignore the output and its `.work` and `.context` files before starting. Untracked generated artifacts otherwise change the diff fingerprint. Planted eval fixtures exclude their own output automatically.
+- For working-tree reviews, place `--out` outside the reviewed workspace or Git-ignore the output and names that start with it before starting. Untracked generated artifacts otherwise change the diff fingerprint. Planted eval fixtures exclude their own output automatically.
 - Stage manifests/sessions live under HOME in the agent adapter. Preserve them for resume. `--fresh` changes the root id and isolates old state.
 - Costs durably captured in completed/failed stage records can be reconciled after parent checkpoint interruption. A hard process kill while an underlying provider request is still in flight can still leave unknown billed usage, as with the single harness.
 - Large diffs are automatically decomposed and coverage-gated. Combining that path with `--strategy focused` runs focused discovery inside each bounded task and can multiply cost substantially.

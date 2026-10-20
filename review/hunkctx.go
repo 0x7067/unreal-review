@@ -36,34 +36,38 @@ type callIndex struct {
 	Symbols []contextSymbol
 	Hits    map[string][]contextHit
 }
-type savedExcerpt struct{ Base, Head, Diff, Text string }
+type savedPart struct{ Path, Text string }
+type savedExcerpt struct {
+	Base, Head, Diff string
+	Parts            []savedPart
+}
 
-func callsFor(ctx context.Context, workspace string, r resolved, diff string, files []ChangedFile, out string, reuse bool, base, head, sha string) (string, error) {
+func callsFor(ctx context.Context, workspace string, r resolved, diff string, files []ChangedFile, out string, reuse bool, base, head, sha string) ([]savedPart, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return nil, err
 	}
 	if reuse && fileOut(out) {
 		var saved savedExcerpt
-		if b, err := os.ReadFile(out + ".context"); err == nil && json.Unmarshal(b, &saved) == nil && saved.Base == base && saved.Head == head && saved.Diff == sha && len(saved.Text) <= contextTotalBytes {
-			return saved.Text, nil
+		if b, err := os.ReadFile(out + ".context"); err == nil && json.Unmarshal(b, &saved) == nil && saved.Base == base && saved.Head == head && saved.Diff == sha {
+			return saved.Parts, nil
 		}
 	}
-	idx, cache, err := newCallIndex(ctx, workspace, r, diff, files)
+	idx, err := newCallIndex(ctx, workspace, r, diff, files)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	text := idx.render()
-	if cache && reuse && fileOut(out) {
-		writeExcerpt(out, base, head, sha, text)
+	parts := idx.parts()
+	if !reuse && fileOut(out) {
+		writeExcerpt(out, base, head, sha, parts)
 	}
-	return text, nil
+	return parts, nil
 }
-func writeExcerpt(out, base, head, sha, text string) {
-	b, err := json.Marshal(savedExcerpt{base, head, sha, text})
-	if err != nil || len(text) > contextTotalBytes {
+func writeExcerpt(out, base, head, sha string, parts []savedPart) {
+	b, err := json.Marshal(savedExcerpt{base, head, sha, parts})
+	if err != nil {
 		return
 	}
-	f, err := os.CreateTemp(filepath.Dir(out), ".context-*")
+	f, err := os.CreateTemp(filepath.Dir(out), filepath.Base(out)+".context.*")
 	if err != nil {
 		return
 	}
@@ -78,51 +82,52 @@ func removeExcerpt(out string) {
 		_ = os.Remove(out + ".context") //nolint:errcheck // a missing sidecar must not fail the review
 	}
 }
-func excerptFor(text string, only []string) string {
-	if text == "" || len(only) == 0 {
-		return text
+func (idx *callIndex) parts() []savedPart {
+	var out []savedPart
+	for _, sym := range idx.Symbols {
+		if text := formatSymbol(sym, idx.Hits[sym.Name]); text != "" {
+			out = append(out, savedPart{sym.Path, text})
+		}
 	}
+	return out
+}
+func renderParts(parts []savedPart, only []string) string {
 	var b strings.Builder
-	keep := false
-	for _, line := range strings.Split(text, "\n") {
-		if !strings.Contains(line, " caller ") && !strings.Contains(line, " test ") {
-			path, _, _ := strings.Cut(line, " ")
-			keep = slices.Contains(only, path)
+	b.WriteString(contextHeader)
+	for _, part := range parts {
+		if part.Text == "" || len(only) > 0 && !slices.Contains(only, part.Path) || b.Len()+len(part.Text) > contextTotalBytes {
+			continue
 		}
-		if keep && line != "" {
-			b.WriteString(line + "\n")
-		}
+		b.WriteString(part.Text)
 	}
-	if b.Len() == 0 {
+	if b.Len() == len(contextHeader) {
 		return ""
 	}
-	return contextHeader + b.String()
+	return b.String()
 }
-func newCallIndex(ctx context.Context, workspace string, r resolved, diff string, files []ChangedFile) (*callIndex, bool, error) {
+func newCallIndex(ctx context.Context, workspace string, r resolved, diff string, files []ChangedFile) (*callIndex, error) {
 	symbols := enclosingFuncs(ctx, workspace, r, diff, files)
 	if err := ctx.Err(); err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	idx := &callIndex{Hits: map[string][]contextHit{}}
 	if len(symbols) == 0 {
-		return idx, true, nil
+		return idx, nil
 	}
 	names := make([]string, len(symbols))
 	for i, sym := range symbols {
 		names[i] = sym.Name
 	}
-	rev := r.headSHA
-	if r.head == "" {
-		rev = ""
-	} else if rev == "" {
-		rev = r.head
+	rev := r.head
+	if r.head != "" && r.headSHA != "" {
+		rev = r.headSHA
 	}
 	hits, err := grepCalls(ctx, workspace, rev, names)
 	if ctx.Err() != nil {
-		return nil, false, ctx.Err()
+		return nil, ctx.Err()
 	}
 	if err != nil {
-		return &callIndex{}, false, nil
+		return &callIndex{}, nil
 	}
 	for _, hit := range hits {
 		idx.Hits[hit.Name] = append(idx.Hits[hit.Name], hit)
@@ -131,25 +136,7 @@ func newCallIndex(ctx context.Context, workspace string, r resolved, diff string
 		return cmp.Or(cmp.Compare(len(idx.Hits[a.Name]), len(idx.Hits[b.Name])), strings.Compare(a.Path, b.Path), strings.Compare(a.Name, b.Name))
 	})
 	idx.Symbols = symbols
-	return idx, true, nil
-}
-func (idx *callIndex) render() string {
-	if idx == nil || len(idx.Symbols) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString(contextHeader)
-	for _, sym := range idx.Symbols {
-		section := formatSymbol(sym, idx.Hits[sym.Name])
-		if section == "" || b.Len()+len(section) > contextTotalBytes {
-			continue
-		}
-		b.WriteString(section)
-	}
-	if b.Len() == len(contextHeader) {
-		return ""
-	}
-	return b.String()
+	return idx, nil
 }
 func formatSymbol(sym contextSymbol, hits []contextHit) string {
 	b := sym.Path + " " + sym.Name + "\n"
@@ -160,9 +147,6 @@ func formatSymbol(sym contextSymbol, hits []contextHit) string {
 			break
 		}
 		b += line + "\n"
-		if len(b) >= contextSymbolBytes {
-			break
-		}
 	}
 	if strings.Count(b, "\n") < 2 {
 		return ""
@@ -250,7 +234,6 @@ func hunkSpans(diff string, files []ChangedFile) map[string][][2]int {
 			if err != nil || h.newStart <= 0 {
 				continue
 			}
-			// A zero new count is a deletion between newStart and the next line.
 			span := [2]int{h.newStart, h.newStart + h.newCount - 1}
 			if h.newCount == 0 {
 				span = [2]int{h.newStart + 1, h.newStart}
@@ -272,6 +255,10 @@ func grepCalls(ctx context.Context, workspace, rev string, names []string) ([]co
 	names = slices.Compact(names)
 	if len(names) == 0 {
 		return nil, nil
+	}
+	pats := make([]*regexp.Regexp, len(names))
+	for i, name := range names {
+		pats[i] = regexp.MustCompile(`(?:^|[^A-Za-z0-9_])` + regexp.QuoteMeta(name) + `(?:\[[^]]*\])?\(`)
 	}
 	args := []string{"grep", "-n", "-I", "-z", "-E", `(^|[^A-Za-z0-9_])(` + strings.Join(names, "|") + `)(\[[^]]*])?\(`}
 	if rev == "" {
@@ -304,8 +291,8 @@ func grepCalls(ctx context.Context, workspace, rev string, names []string) ([]co
 		if nerr != nil || num <= 0 || !contextPathOK(path) {
 			continue
 		}
-		for _, name := range names {
-			if isFuncDef(text, name) || !containsCall(text, name) {
+		for i, name := range names {
+			if !strings.Contains(text, name) || isFuncDef(text, name) || !pats[i].MatchString(text) {
 				continue
 			}
 			hit := contextHit{Path: path, Text: text, Name: name, Line: num, Test: strings.HasSuffix(path, "_test.go")}
@@ -322,9 +309,6 @@ func grepCalls(ctx context.Context, workspace, rev string, names []string) ([]co
 		hits = append(hits, got[:min(len(got), contextNameHits)]...)
 	}
 	return hits, nil
-}
-func containsCall(text, name string) bool {
-	return regexp.MustCompile(`(?:^|[^A-Za-z0-9_])` + regexp.QuoteMeta(name) + `(?:\[[^]]*\])?\(`).MatchString(text)
 }
 func isFuncDef(text, name string) bool {
 	rest := strings.TrimSpace(text)
