@@ -26,17 +26,17 @@ func TestDiscoveryContextStaysWithinCaps(t *testing.T) {
 	}
 
 	wide := gitRepo(t)
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 50; i++ {
 		name := fmt.Sprintf("Fn%02d", i)
 		writeRepoFile(t, wide, fmt.Sprintf("f%02d.go", i), "package p\n\nfunc "+name+"() {}\n")
-		writeRepoFile(t, wide, fmt.Sprintf("c%02d.go", i), fmt.Sprintf("package p\n\nfunc Use%02d() { %s() // %sM%02d }\n", i, name, strings.Repeat("a", 700), i))
+		writeRepoFile(t, wide, fmt.Sprintf("c%02d.go", i), fmt.Sprintf("package p\n\nfunc Use%02d() { %s() // M%02d %s }\n", i, name, i, strings.Repeat("a", 400)))
 	}
 	commitAll(t, wide, "base")
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 50; i++ {
 		writeRepoFile(t, wide, fmt.Sprintf("f%02d.go", i), fmt.Sprintf("package p\n\nfunc Fn%02d() { /* changed */ }\n", i))
 	}
 	got = discover(t, wide)
-	if len(got) > 8*1024 || !strings.Contains(got, "M00") || strings.Contains(got, "M11") {
+	if len(got) > 8*1024 || !strings.Contains(got, "M00") || strings.Contains(got, "M49") {
 		t.Fatalf("prompt cap len=%d\n%s", len(got), got)
 	}
 }
@@ -46,7 +46,7 @@ func TestDiscoveryContextTruncatesOnUTF8Boundaries(t *testing.T) {
 	writeRepoFile(t, dir, "a.go", "package p\n\nfunc Keep() {}\n")
 	writeRepoFile(t, dir, "b.go", "package p\n\nfunc UseKeep() { Keep() // €kept }\n")
 	writeRepoFile(t, dir, "t.go", "package p\n\nfunc Target() {}\n")
-	writeRepoFile(t, dir, "c.go", "package p\n\nfunc Use() { Target() // "+strings.Repeat("a", 970)+"€TAIL }\n")
+	writeRepoFile(t, dir, "c.go", "package p\n\nfunc Use() { Target() // "+strings.Repeat("a", 133)+"€TAIL }\n")
 	commitAll(t, dir, "base")
 	writeRepoFile(t, dir, "a.go", "package p\n\nfunc Keep() { /* changed */ }\n")
 	writeRepoFile(t, dir, "t.go", "package p\n\nfunc Target() { /* changed */ }\n")
@@ -84,26 +84,34 @@ func TestDiscoveryContextSurvivesGatheringFailure(t *testing.T) {
 	writeRepoFile(t, dir, "caller.go", "package p\n\nfunc Use() { Live() // LIVE_CALL }\n")
 	commitAll(t, dir, "base")
 	diff := "diff --git a/live.go b/live.go\n--- a/live.go\n+++ b/live.go\n@@ -1,3 +1,3 @@\n package p\n\n-func Live() {}\n+func Live() { /* touch */ }\ndiff --git a/missing.go b/missing.go\n--- a/missing.go\n+++ b/missing.go\n@@ -1,3 +1,3 @@\n package p\n-func Absent() {}\n+func Absent() { /* GONE */ }\n"
-	got, err := discoveryContext(t.Context(), dir, resolved{}, diff, nil)
+	mode := "diff --git a/x.go b/x.go\nold mode 100644\nnew mode 100755\n" + diff
+	got, err := renderContext(t.Context(), dir, resolved{}, mode, []ChangedFile{{Path: "x.go"}, {Path: "live.go"}})
 	if err != nil || !strings.Contains(got, "LIVE_CALL") || strings.Contains(got, "GONE") {
-		t.Fatalf("err=%v\n%s", err, got)
+		t.Fatalf("mode-only section dropped excerpts: err=%v\n%s", err, got)
 	}
 	plain := t.TempDir()
 	writeRepoFile(t, plain, "live.go", "package p\n\nfunc Live() {}\n")
 	writeRepoFile(t, plain, "caller.go", "package p\n\nfunc Use() { Live() // LIVE_CALL }\n")
-	if missed, err := discoveryContext(t.Context(), plain, resolved{}, diff, nil); err != nil || missed != "" {
+	if missed, err := renderContext(t.Context(), plain, resolved{}, diff, nil); err != nil || missed != "" {
 		t.Fatalf("grep failure err=%v\n%s", err, missed)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := discoveryContext(ctx, dir, resolved{}, diff, nil); !errors.Is(err, context.Canceled) {
+	if _, err := renderContext(ctx, dir, resolved{}, diff, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled context returned %v", err)
 	}
 	writeRepoFile(t, dir, "live.go", "package p\n\nfunc Live() { /* changed */ }\n")
 	sel := planTestSelection(t, dir, Spec{})
 	plan, err := buildReviewPlan(t.Context(), plain, sel)
-	if err != nil || strings.Contains(planPromptText(plan), "LIVE_CALL") {
-		t.Fatalf("plan err=%v still has callers", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := ""
+	for _, task := range plan.Tasks {
+		text += task.Prompt
+	}
+	if strings.Contains(text, "LIVE_CALL") {
+		t.Fatal("grep failure still attached callers")
 	}
 }
 
@@ -148,17 +156,17 @@ func TestRunPromptCarriesCallerContext(t *testing.T) {
 func discover(t *testing.T, dir string) string {
 	t.Helper()
 	sel := planTestSelection(t, dir, Spec{})
-	got, err := discoveryContext(t.Context(), dir, sel.rangeSpec, sel.diff, nil)
+	got, err := renderContext(t.Context(), dir, sel.rangeSpec, sel.diff, sel.files)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return got
 }
 
-func planPromptText(plan *ReviewPlan) string {
-	var b strings.Builder
-	for _, task := range plan.Tasks {
-		b.WriteString(task.Prompt)
+func renderContext(ctx context.Context, workspace string, r resolved, diff string, files []ChangedFile) (string, error) {
+	idx, err := newCallIndex(ctx, workspace, r, diff, files)
+	if err != nil {
+		return "", err
 	}
-	return b.String()
+	return idx.render(nil), nil
 }

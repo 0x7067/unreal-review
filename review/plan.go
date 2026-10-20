@@ -97,7 +97,7 @@ func buildReviewPlan(ctx context.Context, workspace string, sel selection) (*Rev
 	if err != nil {
 		return nil, err
 	}
-	calls, err := newCallIndex(ctx, workspace, r, sel.diff)
+	calls, err := newCallIndex(ctx, workspace, r, sel.diff, sel.files)
 	if err != nil {
 		return nil, err
 	}

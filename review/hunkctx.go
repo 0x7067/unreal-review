@@ -12,9 +12,6 @@ import (
 	"unicode/utf8"
 )
 
-// Discovery context is caller and test excerpts for functions that enclose
-// changed hunks. Caps keep the prompt bounded. Gathering never fails a review;
-// only a canceled context is returned.
 const (
 	contextTotalBytes  = 8 * 1024
 	contextSymbolBytes = 1024
@@ -39,19 +36,11 @@ type callIndex struct {
 	hits    map[string][]contextHit
 }
 
-func discoveryContext(ctx context.Context, workspace string, r resolved, diff string, only []string) (string, error) {
-	idx, err := newCallIndex(ctx, workspace, r, diff)
-	if err != nil {
-		return "", err
-	}
-	return idx.render(only), nil
-}
-
-func newCallIndex(ctx context.Context, workspace string, r resolved, diff string) (*callIndex, error) {
+func newCallIndex(ctx context.Context, workspace string, r resolved, diff string, files []ChangedFile) (*callIndex, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	symbols := enclosingFuncs(ctx, workspace, r, diff)
+	symbols := enclosingFuncs(ctx, workspace, r, diff, files)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -59,13 +48,9 @@ func newCallIndex(ctx context.Context, workspace string, r resolved, diff string
 	if len(symbols) == 0 {
 		return idx, nil
 	}
-	names := make([]string, 0, len(symbols))
-	seen := map[string]bool{}
-	for _, sym := range symbols {
-		if !seen[sym.name] {
-			seen[sym.name] = true
-			names = append(names, sym.name)
-		}
+	names := make([]string, len(symbols))
+	for i, sym := range symbols {
+		names[i] = sym.name
 	}
 	hits, err := grepCalls(ctx, workspace, grepRev(r), names)
 	if err != nil {
@@ -79,6 +64,12 @@ func newCallIndex(ctx context.Context, workspace string, r resolved, diff string
 	}
 	for name, list := range idx.hits {
 		slices.SortFunc(list, func(a, b contextHit) int {
+			if a.test != b.test {
+				if a.test {
+					return -1
+				}
+				return 1
+			}
 			if c := strings.Compare(a.path, b.path); c != 0 {
 				return c
 			}
@@ -87,6 +78,9 @@ func newCallIndex(ctx context.Context, workspace string, r resolved, diff string
 		idx.hits[name] = list
 	}
 	slices.SortFunc(symbols, func(a, b contextSymbol) int {
+		if c := len(idx.hits[a.name]) - len(idx.hits[b.name]); c != 0 {
+			return c
+		}
 		if c := strings.Compare(a.path, b.path); c != 0 {
 			return c
 		}
@@ -122,9 +116,6 @@ func (idx *callIndex) render(only []string) string {
 		}
 		section := formatSymbol(sym, idx.hits[sym.name])
 		if section == "" || b.Len()+len(section) > contextTotalBytes {
-			if section != "" {
-				break
-			}
 			continue
 		}
 		b.WriteString(section)
@@ -141,15 +132,12 @@ func formatSymbol(sym contextSymbol, hits []contextHit) string {
 	}
 	var b strings.Builder
 	b.WriteString(sym.path + " " + sym.name + "\n")
-	if b.Len() >= contextSymbolBytes {
-		return ""
-	}
 	for _, hit := range hits {
 		kind := "caller"
 		if hit.test {
 			kind = "test"
 		}
-		line := hit.path + ":" + strconv.Itoa(hit.line) + " " + kind + " " + strings.TrimSpace(hit.text)
+		line := hit.path + ":" + strconv.Itoa(hit.line) + " " + kind + " " + clipUTF8(strings.TrimSpace(hit.text), 160)
 		room := contextSymbolBytes - b.Len() - 1
 		if room <= 0 {
 			break
@@ -186,8 +174,6 @@ func clipUTF8(s string, n int) string {
 	return s[:n]
 }
 
-// budget is the prompt ceiling. Overflow is clipped on a UTF-8 and newline
-// boundary so a packed task keeps the excerpts that fit and stays valid.
 func appendDiscoveryContext(prompt, extra string, budget int) string {
 	extra = strings.TrimSpace(extra)
 	if extra == "" {
@@ -211,26 +197,26 @@ func appendDiscoveryContext(prompt, extra string, budget int) string {
 	return prompt + "\n" + extra + "\n"
 }
 
-func enclosingFuncs(ctx context.Context, workspace string, r resolved, diff string) []contextSymbol {
+func enclosingFuncs(ctx context.Context, workspace string, r resolved, diff string, files []ChangedFile) []contextSymbol {
 	var out []contextSymbol
 	seen := map[string]bool{}
-	for path, spans := range hunkSpans(diff) {
+	for path, spans := range hunkSpans(diff, files) {
 		if ctx.Err() != nil || !strings.HasSuffix(path, ".go") || len(spans) == 0 {
 			continue
 		}
 		src, err := readRangeFile(ctx, workspace, r, path)
-		if err != nil || len(src) == 0 {
+		if err != nil || len(src) == 0 || len(src) > 512<<10 {
 			continue
 		}
 		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, path, src, 0)
+		file, err := parser.ParseFile(fset, path, src, parser.SkipObjectResolution)
 		if err != nil {
 			continue
 		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			fn, ok := n.(*ast.FuncDecl)
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Name == nil || fn.Body == nil || fn.Name.Name == "init" {
-				return true
+				continue
 			}
 			start, end := fset.Position(fn.Pos()).Line, fset.Position(fn.End()).Line
 			for _, span := range spans {
@@ -243,14 +229,13 @@ func enclosingFuncs(ctx context.Context, workspace string, r resolved, diff stri
 				}
 				break
 			}
-			return true
-		})
+		}
 	}
 	return out
 }
 
-func hunkSpans(diff string) map[string][][2]int {
-	sections, err := planSections(diff, nil)
+func hunkSpans(diff string, files []ChangedFile) map[string][][2]int {
+	sections, err := planSections(diff, files)
 	if err != nil {
 		return nil
 	}
@@ -284,7 +269,7 @@ func grepCalls(ctx context.Context, workspace, rev string, names []string) ([]co
 	if len(names) == 0 {
 		return nil, nil
 	}
-	args := []string{"grep", "-n", "-I", "-E"}
+	args := []string{"grep", "-n", "-I", "-m", "5", "-E"}
 	if rev == "" {
 		args = append(args, "--untracked")
 	}
@@ -299,11 +284,18 @@ func grepCalls(ctx context.Context, workspace, rev string, names []string) ([]co
 	if err != nil {
 		return nil, err
 	}
+	perName := map[string]int{}
 	var hits []contextHit
 	for _, line := range strings.Split(out, "\n") {
-		hits = append(hits, parseGrepHits(line, rev, names)...)
-		if len(hits) >= contextGrepHits {
-			return hits[:contextGrepHits], nil
+		for _, hit := range parseGrepHits(line, rev, names) {
+			if perName[hit.name] >= 12 {
+				continue
+			}
+			perName[hit.name]++
+			hits = append(hits, hit)
+			if len(hits) == contextGrepHits {
+				return hits, nil
+			}
 		}
 	}
 	return hits, nil
