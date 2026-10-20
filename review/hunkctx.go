@@ -86,7 +86,7 @@ func (idx *callIndex) parts() []savedPart {
 	var out []savedPart
 	for _, sym := range idx.Symbols {
 		if text := formatSymbol(sym, idx.Hits[sym.Name]); text != "" {
-			out = append(out, savedPart{strings.ToValidUTF8(strings.Map(func(r rune) rune { return r }, sym.Path), "\uFFFD"), text})
+			out = append(out, savedPart{validText(sym.Path), text})
 		}
 	}
 	return out
@@ -95,7 +95,7 @@ func renderParts(parts []savedPart, only []string) string {
 	var b strings.Builder
 	b.WriteString(contextHeader)
 	for _, part := range parts {
-		if part.Text == "" || len(only) > 0 && !slices.Contains(only, part.Path) || b.Len()+len(part.Text) > contextTotalBytes {
+		if part.Text == "" || len(only) > 0 && !slices.ContainsFunc(only, func(item string) bool { return validText(item) == part.Path }) || b.Len()+len(part.Text) > contextTotalBytes {
 			continue
 		}
 		b.WriteString(part.Text)
@@ -138,28 +138,26 @@ func newCallIndex(ctx context.Context, workspace string, r resolved, diff string
 	idx.Symbols = symbols
 	return idx, nil
 }
-func formatSymbol(sym contextSymbol, hits []contextHit) string { // Map replaces each invalid byte with U+FFFD, matching JSON
-	b := strings.ToValidUTF8(strings.Map(func(r rune) rune { return r }, sym.Path), "\uFFFD") + " " + sym.Name + "\n"
+func formatSymbol(sym contextSymbol, hits []contextHit) string {
+	b := validText(sym.Path) + " " + sym.Name + "\n"
 	for _, hit := range hits {
-		prefix := strings.ToValidUTF8(strings.Map(func(r rune) rune { return r }, hit.Path), "\uFFFD") + ":" + strconv.Itoa(hit.Line) + " " + map[bool]string{true: "test", false: "caller"}[hit.Test] + " "
-		if len(b)+len(prefix)+1 > contextSymbolBytes {
-			continue
+		prefix := validText(hit.Path) + ":" + strconv.Itoa(hit.Line) + " " + map[bool]string{true: "test", false: "caller"}[hit.Test] + " "
+		if room := contextSymbolBytes - len(b) - len(prefix) - 1; room >= 16 {
+			b += prefix + clipUTF8(strings.TrimSpace(validText(hit.Text)), min(160, room)) + "\n"
 		}
-		b += prefix + clipUTF8(strings.TrimSpace(strings.ToValidUTF8(strings.Map(func(r rune) rune { return r }, hit.Text), "\uFFFD")), min(160, contextSymbolBytes-len(b)-len(prefix)-1)) + "\n"
 	}
 	if strings.Count(b, "\n") < 2 {
 		return ""
 	}
 	return b
 }
+func validText(s string) string { return strings.Map(func(r rune) rune { return r }, s) }
 func clipUTF8(s string, n int) string {
-	if n > len(s) {
-		n = len(s)
-	}
+	n = min(max(n, 0), len(s))
 	for n > 0 && n < len(s) && !utf8.RuneStart(s[n]) {
 		n--
 	}
-	return s[:max(n, 0)]
+	return s[:n]
 }
 func appendDiscoveryContext(prompt, extra string, budget int) string {
 	extra = strings.TrimSpace(extra)

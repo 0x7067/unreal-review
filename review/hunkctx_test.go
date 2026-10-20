@@ -185,8 +185,8 @@ func TestStaleCallerExcerptIsIgnored(t *testing.T) {
 		t.Fatal("fresh left a sidecar")
 	}
 	commitAll(t, dir, "clean")
-	if os.WriteFile(out+".context", []byte("x"), 0o644) != nil || run() != nil {
-		t.Fatal("fresh empty diff")
+	if werr, rerr := os.WriteFile(out+".context", []byte("x"), 0o644), run(); werr != nil || rerr != nil {
+		t.Fatal(werr, rerr)
 	}
 	if _, err := os.Stat(out + ".context"); !os.IsNotExist(err) {
 		t.Fatal(err)
