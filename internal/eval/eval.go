@@ -214,7 +214,7 @@ func appendFindingsExclude(path string) error {
 		present[line] = true
 	}
 	var missing []string
-	for _, pattern := range []string{"/findings.jsonl", "/findings.jsonl.work"} {
+	for _, pattern := range []string{"/findings.jsonl", "/findings.jsonl.work", "/findings.jsonl.context"} {
 		if !present[pattern] {
 			missing = append(missing, pattern)
 		}

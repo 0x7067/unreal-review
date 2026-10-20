@@ -2,8 +2,10 @@ package review
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -15,35 +17,37 @@ func TestDiscoveryContextLeavesRoomAndOrdersTests(t *testing.T) {
 	dir := gitRepo(t)
 	writeRepoFile(t, dir, "rare.go", "package p\n\nfunc Rare() {}\n")
 	writeRepoFile(t, dir, "a:b.go", "package p\n\nfunc UseRare() { Rare[int]() // RARE_CALL }\n")
-	writeRepoFile(t, dir, "many.go", "package p\n\nfunc Many() {}\n")
-	writeRepoFile(t, dir, "many_test.go", "package p\n\nfunc TestMany(t *testing.T) { Many() // TEST_KEPT }\n")
-	for i := 0; i < 20; i++ {
-		writeRepoFile(t, dir, fmt.Sprintf("c%02d.go", i), fmt.Sprintf("package p\n\nfunc Use%02d() { Many() // MANY_%02d }\n", i, i))
+	writeRepoFile(t, dir, "edge.go", "package p\n\nfunc Edge() {}\n")
+	writeRepoFile(t, dir, "edge_c.go", "package p\n\nfunc UseEdge() { Edge() // "+strings.Repeat("a", 133)+"€TAIL }\n")
+	for i := 0; i < 9; i++ {
+		name := fmt.Sprintf("F%02d", i)
+		writeRepoFile(t, dir, fmt.Sprintf("f%02d.go", i), "package p\n\nfunc "+name+"() {}\n")
+		for j := 0; j < 6; j++ {
+			writeRepoFile(t, dir, fmt.Sprintf("u%02d%d.go", i, j), fmt.Sprintf("package p\n\nfunc U%02d%d() { %s() // %s }\n", i, j, name, strings.Repeat("x", 180)))
+		}
+	}
+	writeRepoFile(t, dir, "late.go", "package p\n\nfunc Late() {}\n")
+	writeRepoFile(t, dir, "late_test.go", "package p\n\nfunc TestLate(t *testing.T) { Late() // LATE_TEST }\n")
+	for j := 0; j < 6; j++ {
+		writeRepoFile(t, dir, fmt.Sprintf("l%d.go", j), fmt.Sprintf("package p\n\nfunc L%d() { Late() // LATE_CALL }\n", j))
 	}
 	commitAll(t, dir, "base")
 	writeRepoFile(t, dir, "rare.go", "package p\n\nfunc Rare() { /* changed */ }\n")
-	writeRepoFile(t, dir, "many.go", "package p\n\nfunc Many() { /* changed */ }\n")
-	got := discover(t, dir)
-	if len(got) > 8*1024 || !utf8.ValidString(got) || !strings.Contains(got, "RARE_CALL") || !testBeforeCall(got, "TEST_KEPT", "MANY_00") {
-		t.Fatalf("context len=%d valid=%v\n%s", len(got), utf8.ValidString(got), got)
+	writeRepoFile(t, dir, "edge.go", "package p\n\nfunc Edge() { /* changed */ }\n")
+	writeRepoFile(t, dir, "late.go", "package p\n\nfunc Late() { /* changed */ }\n")
+	for i := 0; i < 9; i++ {
+		writeRepoFile(t, dir, fmt.Sprintf("f%02d.go", i), fmt.Sprintf("package p\n\nfunc F%02d() { /* changed */ }\n", i))
+	}
+	sel := planTestSelection(t, dir, Spec{})
+	got, err := renderContext(t.Context(), dir, sel.rangeSpec, sel.diff, sel.files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i, j := strings.Index(got, "f00.go F00\n"), strings.Index(got, "\nf01.go")
+	if len(got) > 8*1024 || i < 0 || j <= i || j-i > 1024 || !utf8.ValidString(got) || strings.Contains(got, "f08.go") || strings.Contains(got, "TAIL") || !strings.Contains(got, strings.Repeat("a", 40)) || !strings.Contains(got, "RARE_CALL") || !testBeforeCall(got, "LATE_TEST", "LATE_CALL") {
+		t.Fatalf("len=%d section=%d valid=%v\n%s", len(got), j-i, utf8.ValidString(got), got)
 	}
 }
-
-func TestDiscoveryContextTruncatesOnUTF8Boundaries(t *testing.T) {
-	dir := gitRepo(t)
-	writeRepoFile(t, dir, "a.go", "package p\n\nfunc Keep() {}\n")
-	writeRepoFile(t, dir, "b.go", "package p\n\nfunc UseKeep() { Keep() // €kept }\n")
-	writeRepoFile(t, dir, "t.go", "package p\n\nfunc Target() {}\n")
-	writeRepoFile(t, dir, "c.go", "package p\n\nfunc Use() { Target() // "+strings.Repeat("a", 133)+"€TAIL }\n")
-	commitAll(t, dir, "base")
-	writeRepoFile(t, dir, "a.go", "package p\n\nfunc Keep() { /* changed */ }\n")
-	writeRepoFile(t, dir, "t.go", "package p\n\nfunc Target() { /* changed */ }\n")
-	got := discover(t, dir)
-	if !utf8.ValidString(got) || !strings.Contains(got, "€kept") || !strings.Contains(got, strings.Repeat("a", 40)) || strings.Contains(got, "TAIL") {
-		t.Fatalf("utf8 clip:\n%s", got)
-	}
-}
-
 func TestDiscoveryContextSurvivesGatheringFailure(t *testing.T) {
 	dir := gitRepo(t)
 	writeRepoFile(t, dir, "live.go", "package p\n\nfunc Live() {}\n")
@@ -64,15 +68,7 @@ func TestDiscoveryContextSurvivesGatheringFailure(t *testing.T) {
 	if _, err := renderContext(ctx, dir, resolved{}, diff, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled context returned %v", err)
 	}
-	writeRepoFile(t, dir, "live.go", "package p\n\nfunc Live() { /* changed */ }\n")
-	sel := planTestSelection(t, dir, Spec{})
-	plan, err := buildReviewPlan(t.Context(), dir, sel)
-	missed, missErr := buildReviewPlan(t.Context(), plain, sel)
-	if err != nil || missErr != nil || !strings.Contains(planPromptText(plan), "LIVE_CALL") || strings.Contains(planPromptText(missed), "LIVE_CALL") {
-		t.Fatalf("planned callers err=%v miss=%v", err, missErr)
-	}
 }
-
 func TestRunPromptCarriesCallerContext(t *testing.T) {
 	dir := gitRepo(t)
 	writeRepoFile(t, dir, "pkg/target.go", "package pkg\n\nfunc Target() {}\n")
@@ -80,14 +76,11 @@ func TestRunPromptCarriesCallerContext(t *testing.T) {
 	writeRepoFile(t, dir, "pkg/target_test.go", "package pkg\n\nfunc TestTarget(t *testing.T) { Target() // PROMPT_TEST }\n")
 	commitAll(t, dir, "base")
 	writeRepoFile(t, dir, "pkg/target.go", "package pkg\n\nfunc Target() { /* changed */ }\n")
-
-	var prompt string
+	var prompt, root, planned string
+	cost := findings.Cost{AmountUSD: 0.01, Currency: "USD", Requests: 1}
 	backend := accountingAgentFunc(func(_ context.Context, req AgentRequest) (AgentResult, error) {
 		prompt = req.Prompt
-		if err := findings.AppendSummary(req.FindingsPath, findings.CleanVerdict+": checked the changed function."); err != nil {
-			return AgentResult{}, err
-		}
-		return AgentResult{Cost: findings.Cost{AmountUSD: 0.01, Currency: "USD", Requests: 1}}, nil
+		return AgentResult{Cost: cost}, findings.AppendSummary(req.FindingsPath, findings.CleanVerdict+": checked the changed function.")
 	})
 	if _, err := Run(t.Context(), Options{Workspace: dir, Out: t.TempDir() + "/findings.jsonl", Model: "test", Agent: backend}); err != nil {
 		t.Fatal(err)
@@ -95,75 +88,95 @@ func TestRunPromptCarriesCallerContext(t *testing.T) {
 	if fence := strings.Index(prompt, "```diff"); fence < 0 || !testBeforeCall(prompt[fence:], "PROMPT_TEST", "PROMPT_CALL") {
 		t.Fatalf("test excerpt is not before the caller after the diff fence:\n%s", prompt)
 	}
-
-	var root string
 	backend = accountingAgentFunc(func(_ context.Context, req AgentRequest) (AgentResult, error) {
 		root = req.Prompt
+		if req.Plan != nil {
+			for _, task := range req.Plan.Tasks {
+				planned += task.Prompt
+			}
+		}
 		return AgentResult{}, context.Canceled
 	})
-	if _, err := Run(t.Context(), Options{Workspace: dir, Out: t.TempDir() + "/planned.jsonl", Fresh: true, Decompose: true, Model: "test", Agent: backend}); err == nil || strings.Contains(root, "PROMPT_CALL") {
-		t.Fatalf("planned root leaked callers: %v", err)
+	if _, err := Run(t.Context(), Options{Workspace: dir, Out: t.TempDir() + "/planned.jsonl", Fresh: true, Decompose: true, Model: "test", Agent: backend}); err == nil || strings.Contains(root, "PROMPT_CALL") || !testBeforeCall(planned, "PROMPT_TEST", "PROMPT_CALL") {
+		t.Fatalf("planned task excerpt missing: %v\n%s", err, planned)
 	}
 }
-
-func TestResumeReusesSavedCallerExcerpt(t *testing.T) {
+func TestStaleCallerExcerptIsIgnored(t *testing.T) {
 	dir := gitRepo(t)
 	writeRepoFile(t, dir, "t.go", "package p\n\nfunc Target() {}\n")
-	writeRepoFile(t, dir, "c.go", "package p\n\nfunc Use() { Target() // SAVED_CALL }\n")
+	writeRepoFile(t, dir, "c.go", "package p\n\nfunc Use() { Target() // LIVE_NOW }\n")
 	commitAll(t, dir, "base")
 	writeRepoFile(t, dir, "t.go", "package p\n\nfunc Target() { /* changed */ }\n")
 	out := t.TempDir() + "/findings.jsonl"
-	var id, again string
-	n := 0
-	backend := accountingAgentFunc(func(_ context.Context, req AgentRequest) (AgentResult, error) {
+	var n int
+	var got string
+	cost := findings.Cost{AmountUSD: 0.01, Currency: "USD", Requests: 1}
+	opts := Options{Workspace: dir, Out: out, Paths: []string{"t.go"}, Model: "test", Agent: accountingAgentFunc(func(_ context.Context, req AgentRequest) (AgentResult, error) {
 		n++
-		if n == 1 {
-			id = req.ReviewID
-		} else {
-			again = req.Prompt
+		got = req.Prompt
+		if n < 3 {
+			return AgentResult{Cost: cost}, context.Canceled
 		}
-		if n == 2 && (!req.Resuming || req.ReviewID != id) {
-			t.Fatalf("resume=%v id=%s", req.Resuming, req.ReviewID)
-		}
-		return AgentResult{Cost: findings.Cost{AmountUSD: 0.01, Currency: "USD", Requests: 1}}, context.Canceled
-	})
-	opts := Options{Workspace: dir, Out: out, Paths: []string{"t.go"}, Model: "test", Agent: backend}
-	if _, err := Run(t.Context(), opts); err == nil {
+		return AgentResult{Cost: cost}, findings.AppendSummary(req.FindingsPath, findings.CleanVerdict+": checked.")
+	})}
+	run := func() error { _, err := Run(t.Context(), opts); return err }
+	if run() == nil {
 		t.Fatal("first run completed")
 	}
-	writeRepoFile(t, dir, "c.go", "package p\n\nfunc Use() { Target() // EDITED_CALL }\n")
-	if _, err := Run(t.Context(), opts); err == nil || !strings.Contains(again, "SAVED_CALL") || strings.Contains(again, "EDITED_CALL") {
-		t.Fatalf("resume excerpt:\n%s", again)
+	if _, err := os.Stat(out + ".context"); !os.IsNotExist(err) {
+		t.Fatal("first run wrote a sidecar")
 	}
-}
-
-func discover(t *testing.T, dir string) string {
-	t.Helper()
-	sel := planTestSelection(t, dir, Spec{})
-	got, err := renderContext(t.Context(), dir, sel.rangeSpec, sel.diff, sel.files)
+	rep, err := findings.ReadFile(out)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return got
+	plant := func(diff, text string) {
+		t.Helper()
+		raw, merr := json.Marshal(savedExcerpt{rep.Run.Source.BaseSHA, rep.Run.Source.HeadSHA, diff, text})
+		if merr != nil || os.WriteFile(out+".context", raw, 0o644) != nil {
+			t.Fatal(merr)
+		}
+	}
+	plant("not-the-diff", "STALE_KEY")
+	if run() == nil || strings.Contains(got, "STALE_KEY") || !strings.Contains(got, "LIVE_NOW") {
+		t.Fatalf("wrong key:\n%s", got)
+	}
+	if run() != nil {
+		t.Fatal("completion")
+	}
+	if _, err := os.Stat(out + ".context"); !os.IsNotExist(err) {
+		t.Fatal("completed review left a sidecar")
+	}
+	plant(rep.Run.Source.DiffSHA, "STALE_DONE")
+	if err := run(); err == nil || !strings.Contains(err.Error(), "complete review") {
+		t.Fatalf("complete checkpoint: %v", err)
+	}
+	if body, err := os.ReadFile(out + ".context"); err != nil || !strings.Contains(string(body), "STALE_DONE") {
+		t.Fatal("refused run rewrote the sidecar")
+	}
+	writeRepoFile(t, dir, "c.go", "package p\n\nfunc Use() { Target() // NEWER_CALL }\n")
+	opts.Fresh = true
+	if err := run(); err != nil || strings.Contains(got, "STALE_DONE") || !strings.Contains(got, "NEWER_CALL") {
+		t.Fatalf("fresh: %v\n%s", err, got)
+	}
+	if _, err := os.Stat(out + ".context"); !os.IsNotExist(err) {
+		t.Fatal("fresh left a sidecar")
+	}
+	plant(rep.Run.Source.DiffSHA, "STALE_CANCEL")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := callsFor(ctx, dir, resolved{}, "", nil, out, true, rep.Run.Source.BaseSHA, rep.Run.Source.HeadSHA, rep.Run.Source.DiffSHA); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled cache read: %v", err)
+	}
 }
-
 func renderContext(ctx context.Context, workspace string, r resolved, diff string, files []ChangedFile) (string, error) {
-	idx, err := newCallIndex(ctx, workspace, r, diff, files)
+	idx, _, err := newCallIndex(ctx, workspace, r, diff, files)
 	if err != nil {
 		return "", err
 	}
-	return idx.render(nil), nil
+	return idx.render(), nil
 }
-
 func testBeforeCall(s, testText, callText string) bool {
 	ti, ci := strings.Index(s, testText), strings.Index(s, callText)
 	return ti >= 0 && ci > ti
-}
-
-func planPromptText(plan *ReviewPlan) string {
-	var b strings.Builder
-	for _, task := range plan.Tasks {
-		b.WriteString(task.Prompt)
-	}
-	return b.String()
 }

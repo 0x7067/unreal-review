@@ -53,11 +53,6 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("workspace: %w", err)
 	}
-	if abs, err := filepath.Abs(opts.Out); err == nil && fileOut(opts.Out) {
-		if rel, err := filepath.Rel(workspace, abs+".context"); err == nil && !strings.HasPrefix(rel, "..") {
-			opts.Exclude = append(append([]string{}, opts.Exclude...), filepath.ToSlash(rel))
-		}
-	}
 	selected, err := loadGitDiff(ctx, workspace, opts.Spec, opts.Paths, opts.Exclude, opts.Pull)
 	if err != nil {
 		return Result{}, err
@@ -76,30 +71,14 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 		return result, nil
 	}
 
-	selected.out = opts.Out
-	var plan *ReviewPlan
-	if len(diff) > maxBriefDiff || opts.Decompose {
-		plan, err = buildReviewPlan(ctx, workspace, selected)
-		if err != nil {
-			return Result{}, fmt.Errorf("cannot safely decompose selected diff: %w", err)
-		}
-	}
-	prompt := reviewPrompt(selected)
-	if plan == nil {
-		idx, err := callsFor(ctx, workspace, selected.rangeSpec, diff, selected.files, opts.Out, source.DiffSHA)
-		if err != nil {
-			return Result{}, err
-		}
-		// After the diff fence; verifiers keep only the preface.
-		prompt = appendDiscoveryContext(prompt, idx.render(nil), 0)
-	}
-
 	checkpoint, err := loadCheckpoint(opts.Out)
 	if err != nil {
 		return Result{}, err
 	}
 	resuming := false
-	if !opts.Fresh && checkpoint.Run != nil {
+	if opts.Fresh {
+		removeExcerpt(opts.Out)
+	} else if checkpoint.Run != nil {
 		if checkpoint.Complete() {
 			return Result{Report: checkpoint}, fmt.Errorf(
 				"%s is a complete review of %s; pass --fresh to start over",
@@ -119,6 +98,24 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 		if runMeta.Cost.Currency == "" {
 			runMeta.Cost.Currency = "USD"
 		}
+	}
+
+	selected.out, selected.reuse = opts.Out, resuming
+	var plan *ReviewPlan
+	if len(diff) > maxBriefDiff || opts.Decompose {
+		plan, err = buildReviewPlan(ctx, workspace, selected)
+		if err != nil {
+			return Result{}, fmt.Errorf("cannot safely decompose selected diff: %w", err)
+		}
+	}
+	prompt := reviewPrompt(selected)
+	if plan == nil {
+		text, err := callsFor(ctx, workspace, selected.rangeSpec, diff, selected.files, opts.Out, resuming, source.BaseSHA, source.HeadSHA, source.DiffSHA)
+		if err != nil {
+			return Result{}, err
+		}
+		// After the diff fence; verifiers keep only the preface.
+		prompt = appendDiscoveryContext(prompt, text, 0)
 	}
 
 	if opts.Agent == nil {
@@ -206,6 +203,7 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 		}
 		if fileOut(opts.Out) {
 			_ = os.Remove(findingsPath) //nolint:errcheck // removing the work file must not fail a completed review
+			removeExcerpt(opts.Out)
 		}
 		return result, nil
 	case interrupted:

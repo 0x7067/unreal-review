@@ -74,7 +74,7 @@ func TestFocusedVerificationOmitsCallerContext(t *testing.T) {
 	if _, err := (Focused{Agent: fake}).Run(t.Context(), req); err != nil {
 		t.Fatal(err)
 	}
-	if !sawDiscovery || !strings.Contains(verify, "From: base") || strings.Contains(verify, "CALLER_ONLY") {
+	if !sawDiscovery || !strings.Contains(verify, "From: base") || strings.Contains(verify, "CALLER_ONLY") || strings.Contains(verify, "Pre-read context") {
 		t.Fatalf("discovery=%v verify=%q", sawDiscovery, verify)
 	}
 }
