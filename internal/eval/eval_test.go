@@ -82,11 +82,11 @@ func TestPlantedCaseExcludesFindingsOnce(t *testing.T) {
 	}
 	counts := map[string]int{}
 	for _, line := range strings.Split(string(body), "\n") {
-		if line == "/findings.jsonl*" || line == "/.findings.jsonl*" {
+		if line == "/findings.jsonl" || line == "/findings.jsonl.work" || line == "/findings.jsonl.context" || line == "/findings.jsonl.context.*" || line == "/.findings.jsonl.tmp-*" {
 			counts[line]++
 		}
 	}
-	if counts["/findings.jsonl*"] != 1 || counts["/.findings.jsonl*"] != 1 {
+	if counts["/findings.jsonl"] != 1 || counts["/findings.jsonl.work"] != 1 || counts["/findings.jsonl.context"] != 1 || counts["/findings.jsonl.context.*"] != 1 || counts["/.findings.jsonl.tmp-*"] != 1 {
 		t.Fatalf("exclude counts %+v:\n%s", counts, body)
 	}
 	gitCmd(t, fixture, "check-ignore", "-q", "findings.jsonl")
