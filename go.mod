@@ -14,3 +14,5 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/image v0.46.0 // indirect
 )
+
+replace github.com/unreallabsai/unreal-agent => github.com/0x7067/unreal-agent v0.3.2-0.20261025140109-bbfde0d317a3
