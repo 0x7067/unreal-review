@@ -39,7 +39,7 @@ type martianReady struct {
 	base  string
 }
 
-func prepareMartian(flags martianFlags) (martianReady, error) {
+func prepareMartian(flags martianFlags, openRouterAPI string) (martianReady, error) {
 	if flags.parallel < 1 {
 		return martianReady{}, fmt.Errorf("--parallel must be at least 1")
 	}
@@ -54,14 +54,14 @@ func prepareMartian(flags martianFlags) (martianReady, error) {
 	if err != nil {
 		return martianReady{}, err
 	}
-	base, err := agent.OpenRouterBase()
+	base, err := agent.OpenRouterBase(openRouterAPI)
 	if err != nil {
 		return martianReady{}, err
 	}
 	return martianReady{flags: flags, cases: cases, base: base}, nil
 }
 
-func evalMartian(ctx context.Context, root, model string, reviewer review.Agent, apiKey string, ready martianReady) error {
+func evalMartian(ctx context.Context, root, model string, reviewer review.Agent, apiKey string, ready martianReady, sessionDir, openRouterAPI string) error {
 	flags := ready.flags
 	judge := eval.Judge{APIKey: apiKey, Model: flags.judgeModel, Base: ready.base}
 	scores := make([]eval.MartianScore, len(ready.cases))
@@ -74,7 +74,7 @@ func evalMartian(ctx context.Context, root, model string, reviewer review.Agent,
 			defer wg.Done()
 			slots <- struct{}{}
 			defer func() { <-slots }()
-			scores[i], errs[i] = eval.RunMartian(ctx, c, root, eval.Options{Model: model, Agent: reviewer, Decompose: flags.decompose}, judge, flags.profile)
+			scores[i], errs[i] = eval.RunMartian(ctx, c, root, eval.Options{Model: model, Agent: reviewer, Decompose: flags.decompose, SessionDir: sessionDir, OpenRouterAPI: openRouterAPI}, judge, flags.profile)
 			fmt.Fprintf(os.Stderr, "%s done\n", c.Name)
 		}()
 	}

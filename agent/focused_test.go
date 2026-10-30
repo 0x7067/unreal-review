@@ -21,7 +21,6 @@ func (fn focusedTestRunner) Run(ctx context.Context, r review.AgentRequest) (rev
 
 func focusedTestRequest(t *testing.T) review.AgentRequest {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	return review.AgentRequest{
 		Workspace:    dir,
@@ -30,6 +29,7 @@ func focusedTestRequest(t *testing.T) review.AgentRequest {
 		Prompt:       "Review diff source-sha-1",
 		SystemPrompt: "Review safely",
 		FindingsPath: filepath.Join(dir, "findings.jsonl"),
+		SessionDir:   t.TempDir(),
 	}
 }
 

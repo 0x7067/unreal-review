@@ -42,20 +42,24 @@ type Options struct {
 	Model     string
 	Agent     Agent
 	Pull      PullResolver
+	// SessionDir is the harness session root. The CLI sets it; an empty
+	// value is not a home-directory default.
+	SessionDir string
+	// OpenRouterAPI is the raw UNREAL_REVIEW_OPENROUTER_API value.
+	// Empty selects the public API.
+	OpenRouterAPI string
 }
 
-type Result struct {
-	Report findings.Report
-}
-
-func Run(ctx context.Context, opts Options) (_ Result, err error) {
+// Run reviews the selected diff and returns the findings report.
+// A non-nil error can still carry a partial or refused report.
+func Run(ctx context.Context, opts Options) (_ findings.Report, err error) {
 	workspace, err := filepath.Abs(opts.Workspace)
 	if err != nil {
-		return Result{}, fmt.Errorf("workspace: %w", err)
+		return findings.Report{}, fmt.Errorf("workspace: %w", err)
 	}
 	selected, err := loadGitDiff(ctx, workspace, opts.Spec, opts.Paths, opts.Exclude, opts.Pull)
 	if err != nil {
-		return Result{}, err
+		return findings.Report{}, err
 	}
 	diff, source := selected.diff, selected.source
 	runMeta := newRun(opts.Model, source)
@@ -64,30 +68,30 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 	}
 	if strings.TrimSpace(diff) == "" {
 		runMeta.Status = findings.StatusComplete
-		result := Result{Report: findings.Report{
+		report := findings.Report{
 			Run:     runMeta,
 			Summary: findings.CleanVerdict + ": the selected range has no changes.",
-		}}
-		if err := persist(opts.Out, result.Report); err != nil {
-			return result, err
 		}
-		return result, nil
+		if err := persist(opts.Out, report); err != nil {
+			return report, err
+		}
+		return report, nil
 	}
 
 	checkpoint, err := loadCheckpoint(opts.Out)
 	if err != nil {
-		return Result{}, err
+		return findings.Report{}, err
 	}
 	resuming := false
 	if !opts.Fresh && checkpoint.Run != nil {
 		if checkpoint.Complete() {
-			return Result{Report: checkpoint}, fmt.Errorf(
+			return checkpoint, fmt.Errorf(
 				"%s is a complete review of %s; pass --fresh to start over",
 				opts.Out, formatSource(checkpoint.Run.Source),
 			)
 		}
 		if !checkpoint.Run.Source.SameDiff(source) {
-			return Result{Report: checkpoint}, fmt.Errorf(
+			return checkpoint, fmt.Errorf(
 				"%s is a review of %s; workspace is %s",
 				opts.Out, formatSource(checkpoint.Run.Source), formatSource(source),
 			)
@@ -106,26 +110,26 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 	if len(diff) > maxBriefDiff || opts.Decompose {
 		plan, err = buildReviewPlan(ctx, workspace, selected)
 		if err != nil {
-			return Result{}, fmt.Errorf("cannot safely decompose selected diff: %w", err)
+			return findings.Report{}, fmt.Errorf("cannot safely decompose selected diff: %w", err)
 		}
 	}
 	prompt := reviewPrompt(selected)
 	if plan == nil {
 		parts, err := callsFor(ctx, workspace, selected.rangeSpec, diff, selected.files, opts.Out, resuming, source.BaseSHA, source.HeadSHA, source.DiffSHA)
 		if err != nil {
-			return Result{}, err
+			return findings.Report{}, err
 		}
 		// After the diff fence; verifiers keep only the preface.
 		prompt = appendDiscoveryContext(prompt, renderParts(parts, nil), 0)
 	}
 
 	if opts.Agent == nil {
-		return Result{}, fmt.Errorf("agent is required")
+		return findings.Report{}, fmt.Errorf("agent is required")
 	}
 
 	findingsPath, cleanup, err := prepareWork(opts.Out, !resuming)
 	if err != nil {
-		return Result{}, err
+		return findings.Report{}, err
 	}
 	defer func() {
 		cleanErr := cleanup()
@@ -138,20 +142,19 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 
 	prior, err := readWork(findingsPath)
 	if err != nil {
-		return Result{}, err
+		return findings.Report{}, err
 	}
 	if resuming && len(prior.Findings) == 0 && strings.TrimSpace(prior.Summary) == "" {
 		prior.Findings = checkpoint.Findings
 		prior.Summary = checkpoint.Summary
 		if err := writeWork(findingsPath, prior); err != nil {
-			return Result{}, err
+			return findings.Report{}, err
 		}
 	}
 	runMeta.Status = findings.StatusRunning
 	report := findings.Report{Run: runMeta, Findings: prior.Findings, Summary: prior.Summary}
-	result := Result{Report: report}
 	if err := persist(opts.Out, report); err != nil {
-		return result, err
+		return report, err
 	}
 
 	if plan != nil {
@@ -162,15 +165,17 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 		prompt = fmt.Sprintf("Review every local and boundary task in plan %s. Source base %s head %s full diff SHA %s (%d bytes). Destination: %s. Read old code at the merge-base of those source commits when a base exists; root commits and added files have no old content. Publish only after all task discovery and verification are complete. Never report partial coverage as clean.\n", plan.Digest, source.BaseSHA, source.HeadSHA, source.DiffSHA, len(diff), destination)
 	}
 	agentResult, agentErr := opts.Agent.Run(ctx, AgentRequest{
-		Workspace:    workspace,
-		ReviewID:     runMeta.ID,
-		FindingsPath: findingsPath,
-		Prompt:       prompt,
-		SystemPrompt: systemPrompt,
-		Model:        opts.Model,
-		PriorCost:    runMeta.Cost,
-		Resuming:     resuming,
-		Plan:         plan,
+		Workspace:     workspace,
+		ReviewID:      runMeta.ID,
+		FindingsPath:  findingsPath,
+		Prompt:        prompt,
+		SystemPrompt:  systemPrompt,
+		Model:         opts.Model,
+		PriorCost:     runMeta.Cost,
+		Resuming:      resuming,
+		Plan:          plan,
+		SessionDir:    opts.SessionDir,
+		OpenRouterAPI: opts.OpenRouterAPI,
 	})
 	if agentErr == nil && plan != nil {
 		agentErr = ValidateCoverage(plan, agentResult.Coverage)
@@ -188,50 +193,46 @@ func Run(ctx context.Context, opts Options) (_ Result, err error) {
 
 	work, err := readWork(findingsPath)
 	if err != nil {
-		return result, err
+		return report, err
 	}
 	report.Findings = mergeFindings(work.Findings)
 	report.Summary = work.Summary
-	result.Report = report
 
 	switch {
 	case agentErr == nil && strings.TrimSpace(report.Summary) != "" && runMeta.Cost.Recorded():
 		runMeta.Status = findings.StatusComplete
 		report.Run = runMeta
-		result.Report = report
 		if err := persist(opts.Out, report); err != nil {
-			return result, err
+			return report, err
 		}
 		if fileOut(opts.Out) {
 			_ = os.Remove(findingsPath) //nolint:errcheck // removing the work file must not fail a completed review
 			removeExcerpt(opts.Out)
 		}
-		return result, nil
+		return report, nil
 	case interrupted:
 		runMeta.Status = findings.StatusRunning
 		report.Run = runMeta
-		result.Report = report
 		if err := persist(opts.Out, report); err != nil {
-			return result, err
+			return report, err
 		}
 		if fileOut(opts.Out) {
-			return result, fmt.Errorf("review paused; resume with the same --out %s", opts.Out)
+			return report, fmt.Errorf("review paused; resume with the same --out %s", opts.Out)
 		}
-		return result, agentErr
+		return report, agentErr
 	default:
 		runMeta.Status = findings.StatusFailed
 		report.Run = runMeta
-		result.Report = report
 		if err := persist(opts.Out, report); err != nil {
-			return result, err
+			return report, err
 		}
 		if agentErr != nil {
-			return result, agentErr
+			return report, agentErr
 		}
 		if strings.TrimSpace(report.Summary) == "" {
-			return result, fmt.Errorf("review did not write a summary")
+			return report, fmt.Errorf("review did not write a summary")
 		}
-		return result, fmt.Errorf("review did not record cost")
+		return report, fmt.Errorf("review did not record cost")
 	}
 }
 

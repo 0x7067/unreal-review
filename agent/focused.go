@@ -90,7 +90,7 @@ func (f Focused) Run(ctx context.Context, req review.AgentRequest) (result revie
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	base, err := sessionDirectory()
+	base, err := sessionRoot(req.SessionDir)
 	if err != nil {
 		return result, err
 	}

@@ -143,8 +143,8 @@ func TestPR38ReviewStartsFreshOverCompletedCheckpoint(t *testing.T) {
 		t.Fatal("completed checkpoint was accepted without a fresh start")
 	}
 	result, err := review.Run(t.Context(), pr38ReviewOptions(dir, headSHA, out, Options{Model: "offline", Agent: agent}))
-	if err != nil || result.Report.Run == nil || result.Report.Run.Status != findings.StatusComplete {
-		t.Fatalf("fresh rerun: %v status=%v", err, result.Report.Run)
+	if err != nil || result.Run == nil || result.Run.Status != findings.StatusComplete {
+		t.Fatalf("fresh rerun: %v status=%v", err, result.Run)
 	}
 }
 

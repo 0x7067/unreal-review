@@ -112,9 +112,11 @@ func match(gold []Gold, produced []findings.Finding) (matched, severityHits, ext
 }
 
 type Options struct {
-	Model     string
-	Agent     review.Agent
-	Decompose bool
+	Model         string
+	Agent         review.Agent
+	Decompose     bool
+	SessionDir    string
+	OpenRouterAPI string
 }
 
 func Run(ctx context.Context, c Case, root string, opts Options) (Score, error) {
@@ -125,13 +127,15 @@ func Run(ctx context.Context, c Case, root string, opts Options) (Score, error) 
 	findingsPath := filepath.Join(dir, "findings.jsonl")
 	start := time.Now()
 	result, runErr := review.Run(ctx, review.Options{
-		Workspace: dir,
-		Out:       findingsPath,
-		Decompose: opts.Decompose,
-		Model:     opts.Model,
-		Agent:     opts.Agent,
+		Workspace:     dir,
+		Out:           findingsPath,
+		Decompose:     opts.Decompose,
+		Model:         opts.Model,
+		Agent:         opts.Agent,
+		SessionDir:    opts.SessionDir,
+		OpenRouterAPI: opts.OpenRouterAPI,
 	})
-	score := scoreReport(c, result.Report)
+	score := scoreReport(c, result)
 	score.DurationMS = time.Since(start).Milliseconds()
 	score.FindingsPath = findingsPath
 	if runErr != nil {

@@ -41,7 +41,6 @@ const (
 	openRouterBaseURL     = "https://openrouter.ai/api/v1"
 	openRouterBaseEnv     = "UNREAL_REVIEW_OPENROUTER_API"
 	toolHeartbeatInterval = 10 * time.Minute
-	sessionDirectoryName  = ".local/state/unreal-agent/sessions"
 	// compactionDisabled keeps the full session in the model request.
 	// The harness treats a zero threshold as "compact after every response".
 	compactionDisabled = math.MaxInt64
@@ -64,8 +63,10 @@ func withUnauthorized(err error) error {
 	return err
 }
 
-func OpenRouterBase() (string, error) {
-	base, err := LoopbackBaseURL(openRouterBaseEnv, os.Getenv(openRouterBaseEnv))
+// OpenRouterBase resolves a raw UNREAL_REVIEW_OPENROUTER_API value.
+// An empty value selects the public API. The caller reads the environment.
+func OpenRouterBase(raw string) (string, error) {
+	base, err := LoopbackBaseURL(openRouterBaseEnv, raw)
 	if err != nil {
 		return "", err
 	}
@@ -89,7 +90,7 @@ var _ review.Agent = Harness{}
 
 func (h Harness) Run(ctx context.Context, req review.AgentRequest) (result review.AgentResult, err error) {
 	if req.Resuming {
-		dir, err := sessionDirectory()
+		dir, err := sessionRoot(req.SessionDir)
 		if err != nil {
 			return review.AgentResult{}, err
 		}
@@ -102,7 +103,7 @@ func (h Harness) Run(ctx context.Context, req review.AgentRequest) (result revie
 		}
 	}
 
-	base, err := OpenRouterBase()
+	base, err := OpenRouterBase(req.OpenRouterAPI)
 	if err != nil {
 		return review.AgentResult{}, err
 	}
@@ -157,7 +158,7 @@ func newLoopbackModelAdapter(apiKey, base string) (llm.Adapter, func() error, er
 }
 
 func (h Harness) run(ctx context.Context, adapter llm.Adapter, req review.AgentRequest) (review.AgentResult, error) {
-	storeDirectory, err := sessionDirectory()
+	storeDirectory, err := sessionRoot(req.SessionDir)
 	if err != nil {
 		return review.AgentResult{}, fmt.Errorf("resolve session directory: %w", err)
 	}
@@ -334,12 +335,12 @@ func openSession(ctx context.Context, store *localfile.Store, id session.ID) (se
 	return sessionstore.ResumeState{}, nil
 }
 
-func sessionDirectory() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("find home directory: %w", err)
+func sessionRoot(dir string) (string, error) {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return "", fmt.Errorf("session directory is required")
 	}
-	return filepath.Join(home, sessionDirectoryName), nil
+	return dir, nil
 }
 
 func SanitizeLevel(level string) (string, error) {

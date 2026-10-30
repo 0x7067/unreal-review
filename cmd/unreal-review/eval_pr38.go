@@ -14,13 +14,13 @@ import (
 	"github.com/0x7067/unreal-review/review"
 )
 
-func evalPR38(ctx context.Context, root, model string, reviewer review.Agent, runs int, decompose, asJSON bool) error {
+func evalPR38(ctx context.Context, root, model string, reviewer review.Agent, runs int, decompose, asJSON bool, sessionDir, openRouterAPI string) error {
 	return runPR38s(ctx, os.Stdout, os.Stderr, root, runs, asJSON, func(n int) (eval.PR38Score, error) {
 		runRoot := filepath.Join(root, fmt.Sprintf("run-%d", n))
 		if err := os.MkdirAll(runRoot, 0o755); err != nil {
 			return eval.PR38Score{}, fmt.Errorf("create eval dir: %w", err)
 		}
-		return eval.RunPR38(ctx, runRoot, eval.Options{Model: model, Agent: reviewer, Decompose: decompose})
+		return eval.RunPR38(ctx, runRoot, eval.Options{Model: model, Agent: reviewer, Decompose: decompose, SessionDir: sessionDir, OpenRouterAPI: openRouterAPI})
 	})
 }
 

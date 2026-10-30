@@ -176,7 +176,7 @@ func TestBoundedBashKeepsCancellationOnAllowedFind(t *testing.T) {
 	if err := os.WriteFile(find, []byte("#!/bin/sh\nparent=$PPID\nwhile kill -0 \"$parent\" 2>/dev/null; do :; done\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+"/usr/bin"+string(os.PathListSeparator)+"/bin")
 	translator := newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,
@@ -209,7 +209,7 @@ func testBoundedBash(t *testing.T, workspace, marker string) interface {
 	if err := os.WriteFile(find, []byte("#!/bin/sh\ntouch "+marker+"\nsleep 30\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+"/usr/bin"+string(os.PathListSeparator)+"/bin")
 	return newBoundedBash(workspace, 0, bash.New(bash.Config{
 		Shell:         "/bin/sh",
 		Directory:     workspace,

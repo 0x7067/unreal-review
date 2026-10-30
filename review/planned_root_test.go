@@ -68,7 +68,7 @@ func TestPlannedRootRequiresCompleteVerifiedCoverage(t *testing.T) {
 				return AgentResult{Cost: findings.Cost{Currency: "USD", Requests: 1}, Coverage: ack}, nil
 			})
 			result, err := Run(t.Context(), Options{Workspace: dir, Out: out, Model: "test", Decompose: true, Agent: backend})
-			if err == nil || result.Report.Complete() || result.Report.Run.Status != findings.StatusFailed || result.Report.Run.Cost.Requests != 1 {
+			if err == nil || result.Complete() || result.Run.Status != findings.StatusFailed || result.Run.Cost.Requests != 1 {
 				t.Fatalf("incomplete coverage produced publishable root: %+v err=%v", result, err)
 			}
 			stored, err := findings.ReadFile(out)
@@ -103,10 +103,10 @@ func TestPlannedRootCompletesOnlyForUnchangedSource(t *testing.T) {
 			})
 			result, err := Run(t.Context(), Options{Workspace: dir, Out: out, Model: "test", Decompose: true, Agent: backend})
 			if mutate {
-				if err == nil || result.Report.Complete() {
+				if err == nil || result.Complete() {
 					t.Fatalf("changed source completed: %+v err=%v", result, err)
 				}
-			} else if err != nil || !result.Report.Complete() || !before.source.SameDiff(result.Report.Run.Source) {
+			} else if err != nil || !result.Complete() || !before.source.SameDiff(result.Run.Source) {
 				t.Fatalf("complete planned root lost source: %+v err=%v", result, err)
 			}
 		})
@@ -133,7 +133,7 @@ func TestOversizedRootAutomaticallySuppliesBoundedPlan(t *testing.T) {
 		return AgentResult{Cost: findings.Cost{Currency: "USD", Requests: 1}, Coverage: acknowledgePlan(req.Plan)}, nil
 	})
 	result, err := Run(t.Context(), Options{Workspace: dir, Out: out, Model: "test", Agent: backend})
-	if err != nil || !result.Report.Complete() {
+	if err != nil || !result.Complete() {
 		t.Fatalf("large plan did not complete: %+v err=%v", result, err)
 	}
 }
@@ -159,11 +159,11 @@ func TestPlannedRootInterruptedCostAndIdentitySurviveResume(t *testing.T) {
 	})
 	opts := Options{Workspace: dir, Out: out, Model: "test", Decompose: true, Agent: backend}
 	paused, err := Run(t.Context(), opts)
-	if err == nil || paused.Report.Run.Status != findings.StatusRunning || paused.Report.Complete() {
+	if err == nil || paused.Run.Status != findings.StatusRunning || paused.Complete() {
 		t.Fatalf("expected running partial review: %+v err=%v", paused, err)
 	}
 	complete, err := Run(t.Context(), opts)
-	if err != nil || !complete.Report.Complete() || complete.Report.Run.ID != id || complete.Report.Run.Cost.Requests != 2 {
+	if err != nil || !complete.Complete() || complete.Run.ID != id || complete.Run.Cost.Requests != 2 {
 		t.Fatalf("resumed planned review: %+v err=%v", complete, err)
 	}
 }

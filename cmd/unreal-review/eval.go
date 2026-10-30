@@ -93,6 +93,11 @@ func cmdEval(args []string) error {
 	if err != nil {
 		return err
 	}
+	sessionDir, err := defaultSessionDir()
+	if err != nil {
+		return err
+	}
+	openRouterAPI := os.Getenv("UNREAL_REVIEW_OPENROUTER_API")
 	reviewer, err := agent.ReviewPipeline(*f.strategy, agent.Harness{APIKey: key, ThinkingLevel: level, Timeout: *f.timeout})
 	if err != nil {
 		return err
@@ -108,7 +113,7 @@ func cmdEval(args []string) error {
 	if *f.corpus == "martian" {
 		ready, err = prepareMartian(martianFlags{
 			profile: *f.profile, parallel: *f.parallel, cases: *f.only, judgeModel: *f.judgeModel, asJSON: *f.asJSON, decompose: *f.decompose,
-		})
+		}, openRouterAPI)
 		if err != nil {
 			return err
 		}
@@ -141,18 +146,20 @@ func cmdEval(args []string) error {
 	switch *f.corpus {
 	case "planted":
 	case "martian":
-		return evalMartian(ctx, root, *f.model, reviewer, key, ready)
+		return evalMartian(ctx, root, *f.model, reviewer, key, ready, sessionDir, openRouterAPI)
 	case "pr38":
-		return evalPR38(ctx, root, *f.model, reviewer, *f.runs, *f.decompose, *f.asJSON)
+		return evalPR38(ctx, root, *f.model, reviewer, *f.runs, *f.decompose, *f.asJSON, sessionDir, openRouterAPI)
 	case "labeled":
-		return evalLabeled(ctx, root, *f.model, reviewer, *f.runs, *f.decompose, *f.asJSON, labeledNames)
+		return evalLabeled(ctx, root, *f.model, reviewer, *f.runs, *f.decompose, *f.asJSON, labeledNames, sessionDir, openRouterAPI)
 	}
 	scores := make([]eval.Score, 0, len(planted))
 	for _, c := range planted {
 		score, err := eval.Run(ctx, c, root, eval.Options{
-			Model:     *f.model,
-			Agent:     reviewer,
-			Decompose: *f.decompose,
+			Model:         *f.model,
+			Agent:         reviewer,
+			Decompose:     *f.decompose,
+			SessionDir:    sessionDir,
+			OpenRouterAPI: openRouterAPI,
 		})
 		if err != nil {
 			return err

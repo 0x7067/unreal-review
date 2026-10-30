@@ -323,8 +323,8 @@ func RunMartian(ctx context.Context, c MartianCase, root string, opts Options, j
 	findingsPath := filepath.Join(root, c.Name+".findings.jsonl")
 	start := time.Now()
 	result, runErr := review.Run(ctx, martianReviewOptions(dir, head, findingsPath, opts))
-	verdict, judgeErr := judge.Match(ctx, c, result.Report.Findings)
-	score, err := ScoreMartian(c, result.Report, verdict.Pairs, profile)
+	verdict, judgeErr := judge.Match(ctx, c, result.Findings)
+	score, err := ScoreMartian(c, result, verdict.Pairs, profile)
 	if err != nil {
 		return MartianScore{Score: Score{Name: c.Name}}, err
 	}
@@ -342,12 +342,14 @@ func RunMartian(ctx context.Context, c MartianCase, root string, opts Options, j
 
 func martianReviewOptions(dir, head, findingsPath string, opts Options) review.Options {
 	return review.Options{
-		Workspace: dir,
-		Spec:      review.Spec{Commit: head},
-		Out:       findingsPath,
-		Decompose: opts.Decompose,
-		Model:     opts.Model,
-		Agent:     opts.Agent,
+		Workspace:     dir,
+		Spec:          review.Spec{Commit: head},
+		Out:           findingsPath,
+		Decompose:     opts.Decompose,
+		Model:         opts.Model,
+		Agent:         opts.Agent,
+		SessionDir:    opts.SessionDir,
+		OpenRouterAPI: opts.OpenRouterAPI,
 	}
 }
 

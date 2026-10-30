@@ -54,16 +54,16 @@ func TestRunPassesRootCostAndResumeStateToAdapter(t *testing.T) {
 	})
 	opts := Options{Workspace: dir, Out: out, Model: "test", Agent: backend}
 	first, err := Run(t.Context(), opts)
-	if err == nil || first.Report.Run.Status != findings.StatusFailed || first.Report.Run.Cost != firstCost {
+	if err == nil || first.Run.Status != findings.StatusFailed || first.Run.Cost != firstCost {
 		t.Fatalf("first run: %+v err=%v", first, err)
 	}
 	second, err := Run(t.Context(), opts)
-	if err != nil || second.Report.Run.Status != findings.StatusComplete || second.Report.Run.Cost != firstCost.Add(secondCost) {
+	if err != nil || second.Run.Status != findings.StatusComplete || second.Run.Cost != firstCost.Add(secondCost) {
 		t.Fatalf("second run: %+v err=%v", second, err)
 	}
 	opts.Fresh = true
 	fresh, err := Run(t.Context(), opts)
-	if err != nil || fresh.Report.Run.Cost != secondCost {
+	if err != nil || fresh.Run.Cost != secondCost {
 		t.Fatalf("fresh run: %+v err=%v", fresh, err)
 	}
 }
@@ -78,7 +78,7 @@ func TestStdoutCancelKeepsRunningAndReturnsCanceled(t *testing.T) {
 		return AgentResult{}, context.Canceled
 	})
 	result, err := Run(t.Context(), Options{Workspace: dir, Out: "-", Model: "test", Agent: backend})
-	if result.Report.Run == nil || result.Report.Run.Status != findings.StatusRunning || !errors.Is(err, context.Canceled) {
+	if result.Run == nil || result.Run.Status != findings.StatusRunning || !errors.Is(err, context.Canceled) {
 		t.Fatalf("stdout cancel: %+v err=%v", result, err)
 	}
 }

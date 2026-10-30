@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -89,35 +90,51 @@ func cmdRun(args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	result, err := review.Run(ctx, review.Options{
-		Workspace: *f.workspace,
-		Spec:      selected,
-		Paths:     fs.Args(),
-		Exclude:   *f.exclude,
-		Out:       *f.outPath,
-		Fresh:     *f.fresh,
-		Decompose: *f.decompose,
-		Model:     *f.model,
-		Pull:      resolver,
-		Agent:     reviewer,
+	sessionDir, err := defaultSessionDir()
+	if err != nil {
+		return err
+	}
+	report, err := review.Run(ctx, review.Options{
+		Workspace:     *f.workspace,
+		Spec:          selected,
+		Paths:         fs.Args(),
+		Exclude:       *f.exclude,
+		Out:           *f.outPath,
+		Fresh:         *f.fresh,
+		Decompose:     *f.decompose,
+		Model:         *f.model,
+		Pull:          resolver,
+		Agent:         reviewer,
+		SessionDir:    sessionDir,
+		OpenRouterAPI: os.Getenv("UNREAL_REVIEW_OPENROUTER_API"),
 	})
-	if (*f.outPath == "" || *f.outPath == "-") && result.Report.Run != nil {
+	if (*f.outPath == "" || *f.outPath == "-") && report.Run != nil {
 		out, writeErr := openOut(*f.outPath)
 		if writeErr != nil {
 			return writeErr
 		}
 		defer func() { err = errors.Join(err, out.Close()) }()
-		if writeErr := findings.Write(out, result.Report); writeErr != nil {
+		if writeErr := findings.Write(out, report); writeErr != nil {
 			return writeErr
 		}
 	}
-	if result.Report.Run != nil {
-		fmt.Fprintf(os.Stderr, "cost: %s\n", result.Report.Run.Cost.Format())
-		if result.Report.Run.Status != "" && result.Report.Run.Status != findings.StatusComplete {
-			fmt.Fprintf(os.Stderr, "status: %s\n", result.Report.Run.Status)
+	if report.Run != nil {
+		fmt.Fprintf(os.Stderr, "cost: %s\n", report.Run.Cost.Format())
+		if report.Run.Status != "" && report.Run.Status != findings.StatusComplete {
+			fmt.Fprintf(os.Stderr, "status: %s\n", report.Run.Status)
 		}
 	}
 	return err
+}
+
+const defaultSessionDirRel = ".local/state/unreal-agent/sessions"
+
+func defaultSessionDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("find home directory: %w", err)
+	}
+	return filepath.Join(home, defaultSessionDirRel), nil
 }
 
 type stringList []string
