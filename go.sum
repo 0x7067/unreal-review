@@ -1,5 +1,5 @@
-github.com/0x7067/unreal-agent v0.3.2-0.20261025140109-bbfde0d317a3 h1:8uV4G6wG4UXEVlUFZgxrdM7ENvNxs2q0iuHsjgr5s8s=
-github.com/0x7067/unreal-agent v0.3.2-0.20261025140109-bbfde0d317a3/go.mod h1:blaXPxijHvknJyjpymKAmwio6y96WrbAD75Sy10EXkQ=
+github.com/0x7067/unreal-agent v0.4.1-fork.1 h1:v5fMkEVfDCwtgyqRLbbBj9f3S51J+dx6j8rTRd3jgho=
+github.com/0x7067/unreal-agent v0.4.1-fork.1/go.mod h1:blaXPxijHvknJyjpymKAmwio6y96WrbAD75Sy10EXkQ=
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0 h1:axGnT1gRIfimI7gJifB699GoE/oq+F2MU7Dml6nw9rQ=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0/go.mod h1:lvDnEdqiQrp0O42VQGgmlKpxL1AP2+08jFMw88y4klk=
