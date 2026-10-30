@@ -23,6 +23,10 @@ type AgentRequest struct {
 	PriorCost findings.Cost
 	Resuming  bool
 	Plan      *ReviewPlan
+	// SessionDir is the harness session root from Options.
+	SessionDir string
+	// OpenRouterAPI is the raw UNREAL_REVIEW_OPENROUTER_API value from Options.
+	OpenRouterAPI string
 }
 
 type AgentResult struct {

@@ -155,7 +155,7 @@ func runLabeled(ctx context.Context, root string, c labeledCase, opts Options) (
 	findingsPath := filepath.Join(root, c.Name+".findings.jsonl")
 	start := time.Now()
 	result, runErr := review.Run(ctx, pr38ReviewOptions(dir, head, findingsPath, opts))
-	score := scoreLabels(c.Labels, result.Report)
+	score := scoreLabels(c.Labels, result)
 	score.DurationMS = time.Since(start).Milliseconds()
 	if runErr != nil {
 		score.Err = runErr.Error()

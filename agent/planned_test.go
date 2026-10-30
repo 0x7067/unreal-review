@@ -24,7 +24,6 @@ func (fn plannedTestAgent) Run(ctx context.Context, r review.AgentRequest) (revi
 
 func plannedTestRequest(t *testing.T) review.AgentRequest {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	return review.AgentRequest{
 		Workspace:    dir,
@@ -33,6 +32,7 @@ func plannedTestRequest(t *testing.T) review.AgentRequest {
 		Prompt:       "Selected source: working tree from base abc",
 		SystemPrompt: "Evidence only",
 		FindingsPath: filepath.Join(dir, "public.jsonl"),
+		SessionDir:   t.TempDir(),
 		Plan: &review.ReviewPlan{
 			Version:   "test",
 			Digest:    "plan-digest",

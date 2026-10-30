@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -84,6 +85,7 @@ func reviewRequest(t *testing.T) review.AgentRequest {
 		Prompt:       "Review the diff.",
 		SystemPrompt: "You review a git unified diff.",
 		Model:        "test-model",
+		SessionDir:   t.TempDir(),
 	}
 }
 
@@ -99,7 +101,6 @@ func recordedFinding() findings.Finding {
 }
 
 func TestRunRecordsFindingAndSummary(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	req := reviewRequest(t)
 	adapter := &scriptedAdapter{responses: []llm.Response{
 		toolCallResponse("resp-1"),
@@ -143,7 +144,6 @@ func TestRunRecordsFindingAndSummary(t *testing.T) {
 }
 
 func TestRunCorrectsBrokenSummary(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	req := reviewRequest(t)
 	adapter := &scriptedAdapter{responses: []llm.Response{
 		toolCallResponse("resp-1"),
@@ -169,7 +169,6 @@ func TestRunCorrectsBrokenSummary(t *testing.T) {
 }
 
 func TestRunFailsAfterRepeatedSummaryViolations(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	req := reviewRequest(t)
 	adapter := &scriptedAdapter{responses: []llm.Response{
 		toolCallResponse("resp-1"),
@@ -196,7 +195,6 @@ func TestRunFailsAfterRepeatedSummaryViolations(t *testing.T) {
 }
 
 func TestRunRecordsCleanSummaryWithoutFindings(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	req := reviewRequest(t)
 	summary := "No material issues in the reviewed registry and workflow changes."
 	adapter := &scriptedAdapter{responses: []llm.Response{
@@ -366,16 +364,18 @@ func TestProviderTextNotLoopbackIsNotSentinel(t *testing.T) {
 }
 
 func TestHarnessRunRejectsNonLoopbackOpenRouter(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv(openRouterBaseEnv, "https://openrouter.ai/api/v1")
-	_, err := (Harness{APIKey: "dummy", ThinkingLevel: "high"}).Run(t.Context(), reviewRequest(t))
+	req := reviewRequest(t)
+	req.OpenRouterAPI = "https://openrouter.ai/api/v1"
+	_, err := (Harness{APIKey: "dummy", ThinkingLevel: "high"}).Run(t.Context(), req)
 	if err == nil || !errors.Is(err, ErrNotLoopback) {
 		t.Fatalf("error = %v, want a loopback refusal", err)
 	}
 }
 
 func TestHarnessRunUsesLocalOpenRouterAndReports401(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	session := t.TempDir()
 	arrived := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.Host, "openrouter.ai") {
@@ -401,11 +401,12 @@ func TestHarnessRunUsesLocalOpenRouterAndReports401(t *testing.T) {
 		}
 	}))
 	t.Cleanup(server.Close)
-	t.Setenv(openRouterBaseEnv, server.URL+"/api/v1")
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	req := reviewRequest(t)
+	req.SessionDir = session
+	req.OpenRouterAPI = server.URL + "/api/v1"
 	_, err := (Harness{APIKey: "dummy", ThinkingLevel: "high"}).Run(ctx, req)
 	select {
 	case <-arrived:
@@ -414,5 +415,12 @@ func TestHarnessRunUsesLocalOpenRouterAndReports401(t *testing.T) {
 	}
 	if err == nil || !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("run: %v, want status 401", err)
+	}
+	if _, err := os.Stat(filepath.Join(session, "operations", req.ReviewID)); err != nil {
+		t.Fatalf("session directory: %v", err)
+	}
+	legacy := filepath.Join(home, ".local", "state", "unreal-agent", "sessions")
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatalf("sessions were written under the home directory: %v", err)
 	}
 }

@@ -12,13 +12,13 @@ import (
 	"github.com/0x7067/unreal-review/review"
 )
 
-func evalLabeled(ctx context.Context, root, model string, reviewer review.Agent, runs int, decompose, asJSON bool, names []string) error {
+func evalLabeled(ctx context.Context, root, model string, reviewer review.Agent, runs int, decompose, asJSON bool, names []string, sessionDir, openRouterAPI string) error {
 	return runLabeledCases(ctx, os.Stdout, os.Stderr, root, runs, asJSON, names, func(n int, name string) (eval.PR38Score, error) {
 		runRoot := filepath.Join(root, fmt.Sprintf("run-%d", n))
 		if err := os.MkdirAll(runRoot, 0o755); err != nil {
 			return eval.PR38Score{}, fmt.Errorf("create eval dir: %w", err)
 		}
-		return eval.RunLabeled(ctx, runRoot, name, eval.Options{Model: model, Agent: reviewer, Decompose: decompose})
+		return eval.RunLabeled(ctx, runRoot, name, eval.Options{Model: model, Agent: reviewer, Decompose: decompose, SessionDir: sessionDir, OpenRouterAPI: openRouterAPI})
 	})
 }
 

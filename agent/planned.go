@@ -103,7 +103,7 @@ func (p Planned) Run(ctx context.Context, req review.AgentRequest) (result revie
 		ctx, cancel = context.WithTimeout(ctx, p.Timeout)
 		defer cancel()
 	}
-	base, err := sessionDirectory()
+	base, err := sessionRoot(req.SessionDir)
 	if err != nil {
 		return result, err
 	}
