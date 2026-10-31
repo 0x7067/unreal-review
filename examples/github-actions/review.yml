@@ -42,6 +42,13 @@ jobs:
             *) ver="$version" ;;
           esac
           os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          case "$os" in
+            linux | darwin) ;;
+            *)
+              echo "::error::unsupported OS ${os}"
+              exit 1
+              ;;
+          esac
           case "$(uname -m)" in
             x86_64 | amd64) arch=amd64 ;;
             aarch64 | arm64) arch=arm64 ;;
@@ -50,13 +57,36 @@ jobs:
               exit 1
               ;;
           esac
+          # A version bump must update these digests too.
+          case "${os}_${arch}" in
+            darwin_amd64) expect=948cf8b0d95b42a47c5593e3b12d8ddb2b08c09f0f8f19fb0f531a2332cb24e7 ;;
+            darwin_arm64) expect=c675e5bff4392eb968f34ca467bef29698f0ac7fb486d9d42e3b652655fb1067 ;;
+            linux_amd64) expect=0b1e0f705f4656e3171b7e3efaf32ae8ab403c9b561a53cc9f252e8ccd157827 ;;
+            linux_arm64) expect=0bebeb9198be087bc70255aa340d21cd459ca8e107489945c08f964aa6419840 ;;
+            *)
+              echo "::error::no pinned digest for ${os}_${arch}"
+              exit 1
+              ;;
+          esac
+          file_sha256() {
+            case "$1" in
+              darwin) shasum -a 256 "$2" ;;
+              linux) sha256sum "$2" ;;
+            esac | awk '{print $1}'
+          }
           asset="unreal-agent_${ver}_${os}_${arch}.tar.gz"
-          base="https://github.com/0x7067/unreal-agent/releases/download/${version}"
+          url="https://github.com/0x7067/unreal-agent/releases/download/${version}/${asset}"
           work="$(mktemp -d)"
-          curl -fsSL -o "${work}/${asset}" "${base}/${asset}"
-          curl -fsSL -o "${work}/SHA256SUMS" "${base}/SHA256SUMS"
-          awk -v asset="$asset" '$2 == asset { print }' "${work}/SHA256SUMS" | (cd "$work" && sha256sum -c -)
-          tar -xzf "${work}/${asset}" -C "$work"
+          curl -fsSL -o "${work}/${asset}" "$url"
+          got="$(file_sha256 "$os" "${work}/${asset}")"
+          if [ "$got" != "$expect" ]; then
+            echo "::error::checksum mismatch for ${asset}: got ${got}, want ${expect}"
+            exit 1
+          fi
+          if ! tar -xzf "${work}/${asset}" -C "$work" unreal-review || [ ! -f "${work}/unreal-review" ]; then
+            echo "::error::${url} has no archive member named unreal-review"
+            exit 1
+          fi
           dest="${RUNNER_TEMP}/unreal-review-bin"
           mkdir -p "$dest"
           install -m 0755 "${work}/unreal-review" "${dest}/unreal-review"
@@ -96,6 +126,13 @@ jobs:
             *) ver="$version" ;;
           esac
           os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          case "$os" in
+            linux | darwin) ;;
+            *)
+              echo "::error::unsupported OS ${os}"
+              exit 1
+              ;;
+          esac
           case "$(uname -m)" in
             x86_64 | amd64) arch=amd64 ;;
             aarch64 | arm64) arch=arm64 ;;
@@ -104,13 +141,36 @@ jobs:
               exit 1
               ;;
           esac
+          # A version bump must update these digests too.
+          case "${os}_${arch}" in
+            darwin_amd64) expect=948cf8b0d95b42a47c5593e3b12d8ddb2b08c09f0f8f19fb0f531a2332cb24e7 ;;
+            darwin_arm64) expect=c675e5bff4392eb968f34ca467bef29698f0ac7fb486d9d42e3b652655fb1067 ;;
+            linux_amd64) expect=0b1e0f705f4656e3171b7e3efaf32ae8ab403c9b561a53cc9f252e8ccd157827 ;;
+            linux_arm64) expect=0bebeb9198be087bc70255aa340d21cd459ca8e107489945c08f964aa6419840 ;;
+            *)
+              echo "::error::no pinned digest for ${os}_${arch}"
+              exit 1
+              ;;
+          esac
+          file_sha256() {
+            case "$1" in
+              darwin) shasum -a 256 "$2" ;;
+              linux) sha256sum "$2" ;;
+            esac | awk '{print $1}'
+          }
           asset="unreal-agent_${ver}_${os}_${arch}.tar.gz"
-          base="https://github.com/0x7067/unreal-agent/releases/download/${version}"
+          url="https://github.com/0x7067/unreal-agent/releases/download/${version}/${asset}"
           work="$(mktemp -d)"
-          curl -fsSL -o "${work}/${asset}" "${base}/${asset}"
-          curl -fsSL -o "${work}/SHA256SUMS" "${base}/SHA256SUMS"
-          awk -v asset="$asset" '$2 == asset { print }' "${work}/SHA256SUMS" | (cd "$work" && sha256sum -c -)
-          tar -xzf "${work}/${asset}" -C "$work"
+          curl -fsSL -o "${work}/${asset}" "$url"
+          got="$(file_sha256 "$os" "${work}/${asset}")"
+          if [ "$got" != "$expect" ]; then
+            echo "::error::checksum mismatch for ${asset}: got ${got}, want ${expect}"
+            exit 1
+          fi
+          if ! tar -xzf "${work}/${asset}" -C "$work" unreal-review || [ ! -f "${work}/unreal-review" ]; then
+            echo "::error::${url} has no archive member named unreal-review"
+            exit 1
+          fi
           dest="${RUNNER_TEMP}/unreal-review-bin"
           mkdir -p "$dest"
           install -m 0755 "${work}/unreal-review" "${dest}/unreal-review"
