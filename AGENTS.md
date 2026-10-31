@@ -53,7 +53,7 @@ Apply [principle-test-behavior-not-implementation](.agents/skills/principle-test
 - `make canary-live` is a live OpenRouter smoke, separate from `make canary`. It builds `bin/unreal-review` and reviews one committed one-line change in a temporary repository (`run --commit HEAD`, `--thinking-level low`). It requires `OPENROUTER_API_KEY` and `UNREAL_HARNESS_LLM_MODEL` (documented model `openai/gpt-6-luna-pro`), calls `https://openrouter.ai/api/v1`, and exits non-zero if either variable is unset or if `UNREAL_REVIEW_OPENROUTER_API` is set. It is not part of the required CI `canary` job.
 - CI jobs `check` and `canary` are the pair that must pass on pull requests and on pushes to `main` (both also run on `workflow_dispatch`).
 - Marking those two checks required is a GitHub branch-protection setting.
-- Workflow `Review` (`.github/workflows/review.yml`) is live dogfood: it reviews a same-repo pull request with the base commit's binary and posts to GitHub.
+- Workflow `Review` (`.github/workflows/review.yml`) is live dogfood: it reviews a same-repo pull request with the released `unreal-review` binary from `0x7067/unreal-agent` and posts to GitHub. Both jobs load `.github/actions/unreal-review` from the pull request's base commit. The release tag is the fixed `UNREAL_AGENT_VERSION` in `.github/actions/unreal-review/install.sh`.
 - `eval` stays outside both jobs.
 
 Five of the six gate project-local hooks behind one-time trust, so a fresh clone is ungated until it is granted: Claude Code's workspace trust dialog, Codex `[hooks.state]` in `~/.codex/config.toml`, Cursor `--trust`, Pi `--approve`, Grok's `trusted_folders.toml`. An untrusted hook does not error, it just never runs.

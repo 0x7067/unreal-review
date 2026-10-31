@@ -1,3 +1,5 @@
+# Self-contained review workflow. Copy this file into another repository.
+
 name: Review
 
 on:
@@ -5,6 +7,9 @@ on:
     types: [opened, synchronize, reopened, edited]
 
 permissions: {}
+
+env:
+  UNREAL_AGENT_VERSION: v0.4.2-fork.1
 
 concurrency:
   group: ${{ (github.event.action == 'edited' && github.event.changes.base == null) && github.run_id || format('review-{0}', github.event.pull_request.number) }}
@@ -28,21 +33,70 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Add base worktree
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: ${{ runner.temp }}/base/go.mod
-          cache: false
       - name: Install unreal-review
         run: |
-          cd "$RUNNER_TEMP/base"
-          go install ./cmd/unreal-review
+          set -euo pipefail
+          version="${UNREAL_AGENT_VERSION}"
+          case "$version" in
+            v*) ver="${version#v}" ;;
+            *) ver="$version" ;;
+          esac
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          case "$os" in
+            linux | darwin) ;;
+            *)
+              echo "::error::unsupported OS ${os}"
+              exit 1
+              ;;
+          esac
+          case "$(uname -m)" in
+            x86_64 | amd64) arch=amd64 ;;
+            aarch64 | arm64) arch=arm64 ;;
+            *)
+              echo "::error::unsupported architecture $(uname -m)"
+              exit 1
+              ;;
+          esac
+          # A version bump must update these digests too. This table matches
+          # .github/actions/unreal-review/install.sh; update both.
+          case "${os}_${arch}" in
+            darwin_amd64) expect=948cf8b0d95b42a47c5593e3b12d8ddb2b08c09f0f8f19fb0f531a2332cb24e7 ;;
+            darwin_arm64) expect=c675e5bff4392eb968f34ca467bef29698f0ac7fb486d9d42e3b652655fb1067 ;;
+            linux_amd64) expect=0b1e0f705f4656e3171b7e3efaf32ae8ab403c9b561a53cc9f252e8ccd157827 ;;
+            linux_arm64) expect=0bebeb9198be087bc70255aa340d21cd459ca8e107489945c08f964aa6419840 ;;
+            *)
+              echo "::error::no pinned digest for ${os}_${arch}"
+              exit 1
+              ;;
+          esac
+          file_sha256() {
+            case "$1" in
+              darwin) shasum -a 256 "$2" ;;
+              linux) sha256sum "$2" ;;
+            esac | awk '{print $1}'
+          }
+          asset="unreal-agent_${ver}_${os}_${arch}.tar.gz"
+          url="https://github.com/0x7067/unreal-agent/releases/download/${version}/${asset}"
+          work="$(mktemp -d)"
+          curl -fsSL -o "${work}/${asset}" "$url"
+          got="$(file_sha256 "$os" "${work}/${asset}")"
+          if [ "$got" != "$expect" ]; then
+            echo "::error::checksum mismatch for ${asset}: got ${got}, want ${expect}"
+            exit 1
+          fi
+          if ! tar -xzf "${work}/${asset}" -C "$work" unreal-review || [ ! -f "${work}/unreal-review" ]; then
+            echo "::error::${url} has no archive member named unreal-review"
+            exit 1
+          fi
+          dest="${RUNNER_TEMP}/unreal-review-bin"
+          mkdir -p "$dest"
+          install -m 0755 "${work}/unreal-review" "${dest}/unreal-review"
+          echo "$dest" >>"$GITHUB_PATH"
+          rm -rf "$work"
       - name: Review pull request
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          UNREAL_HARNESS_LLM_PROVIDER: openrouter
           UNREAL_HARNESS_LLM_MODEL: ${{ vars.UNREAL_HARNESS_LLM_MODEL }}
           GH_TOKEN: ${{ github.token }}
           PULL_REQUEST: ${{ github.repository }}#${{ github.event.pull_request.number }}
@@ -64,17 +118,66 @@ jobs:
       issues: write
       checks: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.base.sha }}
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-          cache: false
-      - name: Install unreal-review from base commit
+      - name: Install unreal-review
         run: |
-          go install ./cmd/unreal-review
+          set -euo pipefail
+          version="${UNREAL_AGENT_VERSION}"
+          case "$version" in
+            v*) ver="${version#v}" ;;
+            *) ver="$version" ;;
+          esac
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          case "$os" in
+            linux | darwin) ;;
+            *)
+              echo "::error::unsupported OS ${os}"
+              exit 1
+              ;;
+          esac
+          case "$(uname -m)" in
+            x86_64 | amd64) arch=amd64 ;;
+            aarch64 | arm64) arch=arm64 ;;
+            *)
+              echo "::error::unsupported architecture $(uname -m)"
+              exit 1
+              ;;
+          esac
+          # A version bump must update these digests too. This table matches
+          # .github/actions/unreal-review/install.sh; update both.
+          case "${os}_${arch}" in
+            darwin_amd64) expect=948cf8b0d95b42a47c5593e3b12d8ddb2b08c09f0f8f19fb0f531a2332cb24e7 ;;
+            darwin_arm64) expect=c675e5bff4392eb968f34ca467bef29698f0ac7fb486d9d42e3b652655fb1067 ;;
+            linux_amd64) expect=0b1e0f705f4656e3171b7e3efaf32ae8ab403c9b561a53cc9f252e8ccd157827 ;;
+            linux_arm64) expect=0bebeb9198be087bc70255aa340d21cd459ca8e107489945c08f964aa6419840 ;;
+            *)
+              echo "::error::no pinned digest for ${os}_${arch}"
+              exit 1
+              ;;
+          esac
+          file_sha256() {
+            case "$1" in
+              darwin) shasum -a 256 "$2" ;;
+              linux) sha256sum "$2" ;;
+            esac | awk '{print $1}'
+          }
+          asset="unreal-agent_${ver}_${os}_${arch}.tar.gz"
+          url="https://github.com/0x7067/unreal-agent/releases/download/${version}/${asset}"
+          work="$(mktemp -d)"
+          curl -fsSL -o "${work}/${asset}" "$url"
+          got="$(file_sha256 "$os" "${work}/${asset}")"
+          if [ "$got" != "$expect" ]; then
+            echo "::error::checksum mismatch for ${asset}: got ${got}, want ${expect}"
+            exit 1
+          fi
+          if ! tar -xzf "${work}/${asset}" -C "$work" unreal-review || [ ! -f "${work}/unreal-review" ]; then
+            echo "::error::${url} has no archive member named unreal-review"
+            exit 1
+          fi
+          dest="${RUNNER_TEMP}/unreal-review-bin"
+          mkdir -p "$dest"
+          install -m 0755 "${work}/unreal-review" "${dest}/unreal-review"
+          echo "$dest" >>"$GITHUB_PATH"
+          rm -rf "$work"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: unreal-review-findings
