@@ -1,0 +1,11 @@
+name: Install unreal-review
+description: >-
+  Download the unreal-review binary from a 0x7067/unreal-agent GitHub release
+  and put it on PATH.
+
+runs:
+  using: composite
+  steps:
+    - name: Install unreal-review from the unreal-agent release
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/install.sh"

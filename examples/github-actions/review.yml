@@ -1,3 +1,5 @@
+# Self-contained review workflow. Copy this file into another repository.
+
 name: Review
 
 on:
@@ -5,6 +7,9 @@ on:
     types: [opened, synchronize, reopened, edited]
 
 permissions: {}
+
+env:
+  UNREAL_AGENT_VERSION: v0.4.2-fork.1
 
 concurrency:
   group: ${{ (github.event.action == 'edited' && github.event.changes.base == null) && github.run_id || format('review-{0}', github.event.pull_request.number) }}
@@ -28,21 +33,39 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Add base worktree
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: ${{ runner.temp }}/base/go.mod
-          cache: false
       - name: Install unreal-review
         run: |
-          cd "$RUNNER_TEMP/base"
-          go install ./cmd/unreal-review
+          set -euo pipefail
+          version="${UNREAL_AGENT_VERSION}"
+          case "$version" in
+            v*) ver="${version#v}" ;;
+            *) ver="$version" ;;
+          esac
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          case "$(uname -m)" in
+            x86_64 | amd64) arch=amd64 ;;
+            aarch64 | arm64) arch=arm64 ;;
+            *)
+              echo "::error::unsupported architecture $(uname -m)"
+              exit 1
+              ;;
+          esac
+          asset="unreal-agent_${ver}_${os}_${arch}.tar.gz"
+          base="https://github.com/0x7067/unreal-agent/releases/download/${version}"
+          work="$(mktemp -d)"
+          curl -fsSL -o "${work}/${asset}" "${base}/${asset}"
+          curl -fsSL -o "${work}/SHA256SUMS" "${base}/SHA256SUMS"
+          awk -v asset="$asset" '$2 == asset { print }' "${work}/SHA256SUMS" | (cd "$work" && sha256sum -c -)
+          tar -xzf "${work}/${asset}" -C "$work"
+          dest="${RUNNER_TEMP}/unreal-review-bin"
+          mkdir -p "$dest"
+          install -m 0755 "${work}/unreal-review" "${dest}/unreal-review"
+          echo "$dest" >>"$GITHUB_PATH"
+          rm -rf "$work"
       - name: Review pull request
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          UNREAL_HARNESS_LLM_PROVIDER: openrouter
           UNREAL_HARNESS_LLM_MODEL: ${{ vars.UNREAL_HARNESS_LLM_MODEL }}
           GH_TOKEN: ${{ github.token }}
           PULL_REQUEST: ${{ github.repository }}#${{ github.event.pull_request.number }}
@@ -64,17 +87,35 @@ jobs:
       issues: write
       checks: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.base.sha }}
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-          cache: false
-      - name: Install unreal-review from base commit
+      - name: Install unreal-review
         run: |
-          go install ./cmd/unreal-review
+          set -euo pipefail
+          version="${UNREAL_AGENT_VERSION}"
+          case "$version" in
+            v*) ver="${version#v}" ;;
+            *) ver="$version" ;;
+          esac
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          case "$(uname -m)" in
+            x86_64 | amd64) arch=amd64 ;;
+            aarch64 | arm64) arch=arm64 ;;
+            *)
+              echo "::error::unsupported architecture $(uname -m)"
+              exit 1
+              ;;
+          esac
+          asset="unreal-agent_${ver}_${os}_${arch}.tar.gz"
+          base="https://github.com/0x7067/unreal-agent/releases/download/${version}"
+          work="$(mktemp -d)"
+          curl -fsSL -o "${work}/${asset}" "${base}/${asset}"
+          curl -fsSL -o "${work}/SHA256SUMS" "${base}/SHA256SUMS"
+          awk -v asset="$asset" '$2 == asset { print }' "${work}/SHA256SUMS" | (cd "$work" && sha256sum -c -)
+          tar -xzf "${work}/${asset}" -C "$work"
+          dest="${RUNNER_TEMP}/unreal-review-bin"
+          mkdir -p "$dest"
+          install -m 0755 "${work}/unreal-review" "${dest}/unreal-review"
+          echo "$dest" >>"$GITHUB_PATH"
+          rm -rf "$work"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: unreal-review-findings
