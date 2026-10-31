@@ -4,17 +4,11 @@
 # Asset URL (from .goreleaser.yaml at e9ed99e9):
 #   https://github.com/0x7067/unreal-agent/releases/download/<tag>/unreal-agent_<version>_<os>_<arch>.tar.gz
 # <version> is <tag> with one leading "v" removed (goreleaser {{ .Version }}).
-# That archive currently packs unreal-agent-runner and unreal-agent-tui only.
-# A tag that does not contain an unreal-review binary fails this step.
+# The archive contains the unreal-review binary. A release without that file fails this step.
 set -euo pipefail
 
-# TODO(p2): set to fork release tag
-UNREAL_AGENT_VERSION="v0.0.0-PLACEHOLDER"
+UNREAL_AGENT_VERSION="v0.4.2-fork.1"
 version="$UNREAL_AGENT_VERSION"
-if [ -z "$version" ] || [ "$version" = "v0.0.0-PLACEHOLDER" ]; then
-	echo "::error::UNREAL_AGENT_VERSION is '${version:-<empty>}' (.github/actions/unreal-review/install.sh). Set that value to a 0x7067/unreal-agent release tag that contains the unreal-review binary. The review is not skipped."
-	exit 1
-fi
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 case "$os" in

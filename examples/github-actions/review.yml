@@ -1,5 +1,4 @@
 # Self-contained review workflow. Copy this file into another repository.
-# Set UNREAL_AGENT_VERSION below to a 0x7067/unreal-agent release tag.
 
 name: Review
 
@@ -10,7 +9,7 @@ on:
 permissions: {}
 
 env:
-  UNREAL_AGENT_VERSION: v0.0.0-PLACEHOLDER  # set to a 0x7067/unreal-agent release tag
+  UNREAL_AGENT_VERSION: v0.4.2-fork.1
 
 concurrency:
   group: ${{ (github.event.action == 'edited' && github.event.changes.base == null) && github.run_id || format('review-{0}', github.event.pull_request.number) }}
@@ -38,10 +37,6 @@ jobs:
         run: |
           set -euo pipefail
           version="${UNREAL_AGENT_VERSION}"
-          if [ -z "$version" ] || [ "$version" = "v0.0.0-PLACEHOLDER" ]; then
-            echo "::error::Set UNREAL_AGENT_VERSION at the top of this workflow to a 0x7067/unreal-agent release tag. The review is not skipped."
-            exit 1
-          fi
           case "$version" in
             v*) ver="${version#v}" ;;
             *) ver="$version" ;;
@@ -96,10 +91,6 @@ jobs:
         run: |
           set -euo pipefail
           version="${UNREAL_AGENT_VERSION}"
-          if [ -z "$version" ] || [ "$version" = "v0.0.0-PLACEHOLDER" ]; then
-            echo "::error::Set UNREAL_AGENT_VERSION at the top of this workflow to a 0x7067/unreal-agent release tag. The review is not skipped."
-            exit 1
-          fi
           case "$version" in
             v*) ver="${version#v}" ;;
             *) ver="$version" ;;
