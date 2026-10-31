@@ -8,9 +8,11 @@
 # A tag that does not contain an unreal-review binary fails this step.
 set -euo pipefail
 
-version="${UNREAL_AGENT_VERSION:-}"
+# TODO(p2): set to fork release tag
+UNREAL_AGENT_VERSION="v0.0.0-PLACEHOLDER"
+version="$UNREAL_AGENT_VERSION"
 if [ -z "$version" ] || [ "$version" = "v0.0.0-PLACEHOLDER" ]; then
-	echo "::error::UNREAL_AGENT_VERSION is '${version:-<empty>}' (.github/actions/unreal-review/action.yml). Set that default to a 0x7067/unreal-agent release tag that contains the unreal-review binary. The review is not skipped."
+	echo "::error::UNREAL_AGENT_VERSION is '${version:-<empty>}' (.github/actions/unreal-review/install.sh). Set that value to a 0x7067/unreal-agent release tag that contains the unreal-review binary. The review is not skipped."
 	exit 1
 fi
 

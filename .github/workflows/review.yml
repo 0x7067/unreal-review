@@ -28,8 +28,15 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
-      # Release tag: UNREAL_AGENT_VERSION in .github/actions/unreal-review/action.yml
-      - uses: ./.github/actions/unreal-review
+      # Installer is the base commit's action, not the pull request head.
+      # A PR that bumps the release tag takes effect only after it merges.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: .github/actions/unreal-review
+          path: base-action
+      - uses: ./base-action/.github/actions/unreal-review
       - name: Review pull request
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -62,12 +69,15 @@ jobs:
       issues: write
       checks: write
     steps:
+      # Base commit only. This job does not check out the pull request head.
+      # A PR that bumps the release tag takes effect only after it merges.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
           sparse-checkout: .github/actions/unreal-review
-      - uses: ./.github/actions/unreal-review
+          path: base-action
+      - uses: ./base-action/.github/actions/unreal-review
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: unreal-review-findings
