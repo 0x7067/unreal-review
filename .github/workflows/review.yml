@@ -28,21 +28,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Add base worktree
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: ${{ runner.temp }}/base/go.mod
-          cache: false
-      - name: Install unreal-review
-        run: |
-          cd "$RUNNER_TEMP/base"
-          go install ./cmd/unreal-review
+      # Release tag: UNREAL_AGENT_VERSION in .github/actions/unreal-review/action.yml
+      - uses: ./.github/actions/unreal-review
       - name: Review pull request
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          UNREAL_HARNESS_LLM_PROVIDER: openrouter
           UNREAL_HARNESS_LLM_MODEL: ${{ vars.UNREAL_HARNESS_LLM_MODEL }}
           GH_TOKEN: ${{ github.token }}
           PULL_REQUEST: ${{ github.repository }}#${{ github.event.pull_request.number }}
@@ -74,14 +65,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.base.sha }}
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-          cache: false
-      - name: Install unreal-review from base commit
-        run: |
-          go install ./cmd/unreal-review
+          ref: ${{ github.event.pull_request.head.sha }}
+          sparse-checkout: .github/actions/unreal-review
+      - uses: ./.github/actions/unreal-review
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: unreal-review-findings
