@@ -57,7 +57,8 @@ jobs:
               exit 1
               ;;
           esac
-          # A version bump must update these digests too.
+          # A version bump must update these digests too. This table matches
+          # .github/actions/unreal-review/install.sh; update both.
           case "${os}_${arch}" in
             darwin_amd64) expect=948cf8b0d95b42a47c5593e3b12d8ddb2b08c09f0f8f19fb0f531a2332cb24e7 ;;
             darwin_arm64) expect=c675e5bff4392eb968f34ca467bef29698f0ac7fb486d9d42e3b652655fb1067 ;;
@@ -141,7 +142,8 @@ jobs:
               exit 1
               ;;
           esac
-          # A version bump must update these digests too.
+          # A version bump must update these digests too. This table matches
+          # .github/actions/unreal-review/install.sh; update both.
           case "${os}_${arch}" in
             darwin_amd64) expect=948cf8b0d95b42a47c5593e3b12d8ddb2b08c09f0f8f19fb0f531a2332cb24e7 ;;
             darwin_arm64) expect=c675e5bff4392eb968f34ca467bef29698f0ac7fb486d9d42e3b652655fb1067 ;;

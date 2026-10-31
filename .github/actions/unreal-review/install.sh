@@ -11,7 +11,9 @@ set -euo pipefail
 UNREAL_AGENT_VERSION="v0.4.2-fork.1"
 version="$UNREAL_AGENT_VERSION"
 
-# A version bump must update these digests too.
+# A version bump must update these digests too. The same version and digest
+# table is copied into examples/github-actions/review.yml (both jobs); a bump
+# must update that file too.
 pinned_digest() {
 	case "$1" in
 	darwin_amd64) printf '%s\n' 948cf8b0d95b42a47c5593e3b12d8ddb2b08c09f0f8f19fb0f531a2332cb24e7 ;;
